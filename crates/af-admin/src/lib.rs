@@ -430,7 +430,8 @@ pub use plugin_lifecycle::{
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
     AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
-    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginPackageUpload,
+    AdminPluginEventResult, AdminPluginEventResultPage, PluginArtifactRegistrationCommand,
+    PluginDeploymentCommand, PluginEventDeliveryWorker, PluginPackageUpload,
 };
 pub use plugin_operations::{
     AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,

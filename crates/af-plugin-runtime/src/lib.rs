@@ -1406,6 +1406,7 @@ mod tests {
                 "required": ["scope"],
                 "additionalProperties": false
             }),
+            ui_contributions: Vec::new(),
         };
         ConnectorRegistration::new(Arc::new(GenericConnector { manifest })).with_capability_handler(
             Arc::new(EchoCapability {
@@ -1514,6 +1515,7 @@ mod tests {
                     "required": ["baseUrl"],
                     "additionalProperties": false
                 }),
+                ui_contributions: Vec::new(),
             },
             invalid_balance,
         });
@@ -1865,6 +1867,7 @@ mod tests {
                     max_page_size: 100,
                 },
                 config_schema: serde_json::json!({ "type": "object" }),
+                ui_contributions: Vec::new(),
             },
             invalid_balance: false,
         }));

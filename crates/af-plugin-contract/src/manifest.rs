@@ -66,6 +66,67 @@ pub struct PluginManifest {
     pub authentication_modes: Vec<String>,
     pub limits: ConnectorLimits,
     pub config_schema: Value,
+    /// Optional static, host-rendered UI cards. They contain no markup, routes, links, or actions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_contributions: Vec<PluginUiContribution>,
+}
+
+/// A bounded declarative card rendered with host-owned components and translations.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUiContribution {
+    pub id: String,
+    pub slot: PluginUiSlot,
+    pub component: PluginUiComponent,
+    pub title: PluginUiText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<PluginUiText>,
+}
+
+/// Fixed UI locations supported by the host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginUiSlot {
+    PluginManagement,
+}
+
+/// Fixed host-owned presentation components.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginUiComponent {
+    InfoCard,
+}
+
+/// Plain localized text. No markup, URL, or executable content is interpreted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginUiText {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub en: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zh: Option<String>,
+}
+
+impl PluginUiText {
+    fn validate(&self) -> bool {
+        [&self.en, &self.zh].into_iter().any(|value| {
+            value.as_deref().is_some_and(|text| valid_ui_text(text))
+        }) && [&self.en, &self.zh].into_iter().all(|value| {
+            value.as_deref().is_none_or(valid_ui_text)
+        })
+    }
+}
+
+fn valid_ui_text(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    !text.trim().is_empty()
+        && text.len() <= 512
+        && !text.chars().any(char::is_control)
+        && !text.contains('<')
+        && !text.contains('>')
+        && !["http://", "https://", "javascript:", "data:", "mailto:", "www."]
+            .iter()
+            .any(|marker| lower.contains(marker))
 }
 
 impl PluginManifest {
@@ -112,6 +173,38 @@ impl PluginManifest {
             if !ids.insert(&capability.id) {
                 return Err(ContractValidationError::DuplicateCapability);
             }
+        }
+        if self.ui_contributions.len() > 16 {
+            return Err(ContractValidationError::InvalidManifest);
+        }
+        let mut contribution_ids = BTreeSet::new();
+        if self.ui_contributions.iter().any(|contribution| {
+            contribution.id.is_empty()
+                || contribution.id.len() > 64
+                || !contribution
+                    .id
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                || !contribution
+                    .id
+                    .as_bytes()
+                    .last()
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                || !contribution.id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || byte == b'-'
+                        || byte == b'_'
+                })
+                || !contribution_ids.insert(&contribution.id)
+                || !contribution.title.validate()
+                || contribution
+                    .description
+                    .as_ref()
+                    .is_some_and(|description| !description.validate())
+        }) {
+            return Err(ContractValidationError::InvalidManifest);
         }
         Ok(())
     }
@@ -178,6 +271,7 @@ mod tests {
                 max_page_size: 1,
             },
             config_schema,
+            ui_contributions: Vec::new(),
         }
     }
 
@@ -196,6 +290,39 @@ mod tests {
         );
         assert_eq!(
             manifest(serde_json::json!(true)).validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+    }
+
+    #[test]
+    fn manifest_accepts_only_bounded_static_plugin_management_cards() {
+        let mut value = manifest(serde_json::json!({ "type": "object" }));
+        value.ui_contributions.push(PluginUiContribution {
+            id: "service-summary".to_owned(),
+            slot: PluginUiSlot::PluginManagement,
+            component: PluginUiComponent::InfoCard,
+            title: PluginUiText {
+                en: Some("Service summary".to_owned()),
+                zh: Some("服务摘要".to_owned()),
+            },
+            description: Some(PluginUiText {
+                en: Some("Static information rendered by AnyFlows.".to_owned()),
+                zh: None,
+            }),
+        });
+        assert!(value.validate().is_ok());
+
+        let mut duplicate = value.clone();
+        duplicate.ui_contributions.push(duplicate.ui_contributions[0].clone());
+        assert_eq!(
+            duplicate.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut unsafe_text = value;
+        unsafe_text.ui_contributions[0].title.en = Some("<script>alert(1)</script>".to_owned());
+        assert_eq!(
+            unsafe_text.validate(),
             Err(ContractValidationError::InvalidManifest)
         );
     }

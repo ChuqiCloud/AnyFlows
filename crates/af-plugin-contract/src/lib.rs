@@ -17,7 +17,10 @@ pub use capability::{
     ExternalWriteSemantics, ResultLookupSupport, SideEffectClass,
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
-pub use manifest::{ConnectorLimits, PluginId, PluginManifest};
+pub use manifest::{
+    ConnectorLimits, PluginId, PluginManifest, PluginUiComponent, PluginUiContribution,
+    PluginUiSlot, PluginUiText,
+};
 pub use proposal::HostActionProposal;
 pub use schema::{openapi_document, schema_document};
 pub use value::{

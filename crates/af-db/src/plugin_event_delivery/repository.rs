@@ -14,8 +14,105 @@ use super::{
 };
 use crate::{DatabasePool, entity::plugin_event_deliveries};
 
+pub(super) fn serialize_event_result(
+    result: &Value,
+) -> Result<String, PluginEventDeliveryRepositoryError> {
+    if !result.is_object() || super::contains_sensitive_fields(result) {
+        return Err(PluginEventDeliveryRepositoryError::InvalidResult);
+    }
+    let encoded = serde_json::to_string(result)
+        .map_err(|_| PluginEventDeliveryRepositoryError::InvalidResult)?;
+    if encoded.len() > super::MAX_EVENT_RESULT_BYTES {
+        return Err(PluginEventDeliveryRepositoryError::InvalidResult);
+    }
+    Ok(encoded)
+}
+
+fn result_record_from_model(
+    row: plugin_event_deliveries::Model,
+) -> Result<PluginEventDeliveryResultRecord, PluginEventDeliveryRepositoryError> {
+    let result_json = row
+        .result_json
+        .ok_or(PluginEventDeliveryRepositoryError::Invariant)?;
+    let result: Value = serde_json::from_str(&result_json)
+        .map_err(|_| PluginEventDeliveryRepositoryError::Invariant)?;
+    serialize_event_result(&result)?;
+    let capability_version = u16::try_from(row.capability_version)
+        .map_err(|_| PluginEventDeliveryRepositoryError::Invariant)?;
+    let attempt_count = u16::try_from(row.attempt_count)
+        .map_err(|_| PluginEventDeliveryRepositoryError::Invariant)?;
+    Ok(PluginEventDeliveryResultRecord {
+        id: row.id,
+        plugin_id: row.plugin_id,
+        event_kind: row.event_kind,
+        deployment_generation: row.deployment_generation,
+        capability_id: row.capability_id,
+        capability_version,
+        attempt_count,
+        completed_at: row
+            .completed_at
+            .ok_or(PluginEventDeliveryRepositoryError::Invariant)?,
+        result,
+    })
+}
+
 const CANDIDATE_LIMIT: u64 = 32;
 const DELIVERY_LEASE_SECONDS: i64 = 60;
+const MAX_EVENT_RESULT_BYTES: usize = 16 * 1024;
+pub const MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE: u32 = 100;
+
+/// Cursor and bounded page size for completed plugin event results.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PluginEventDeliveryResultQuery {
+    before_id: Option<i64>,
+    limit: u32,
+}
+
+impl PluginEventDeliveryResultQuery {
+    pub fn new(before_id: Option<i64>, limit: u32) -> Result<Self, PluginEventDeliveryRepositoryError> {
+        if before_id.is_some_and(|id| id <= 0) || limit == 0 || limit > MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE {
+            return Err(PluginEventDeliveryRepositoryError::Invariant);
+        }
+        Ok(Self { before_id, limit })
+    }
+}
+
+/// A completed result without its event payload or any plugin connection details.
+#[derive(Clone, PartialEq)]
+pub struct PluginEventDeliveryResultRecord {
+    pub id: i64,
+    pub plugin_id: String,
+    pub event_kind: String,
+    pub deployment_generation: i64,
+    pub capability_id: String,
+    pub capability_version: u16,
+    pub attempt_count: u16,
+    pub completed_at: i64,
+    pub result: Value,
+}
+
+impl fmt::Debug for PluginEventDeliveryResultRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PluginEventDeliveryResultRecord")
+            .field("id", &self.id)
+            .field("plugin_id", &self.plugin_id)
+            .field("event_kind", &self.event_kind)
+            .field("deployment_generation", &self.deployment_generation)
+            .field("capability_id", &self.capability_id)
+            .field("capability_version", &self.capability_version)
+            .field("attempt_count", &self.attempt_count)
+            .field("completed_at", &self.completed_at)
+            .field("result", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Page of completed event results in descending delivery ID order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PluginEventDeliveryResultPage {
+    pub results: Vec<PluginEventDeliveryResultRecord>,
+    pub next_before_id: Option<i64>,
+}
 
 /// A successfully stored event or a replay of its immutable idempotency key.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -158,6 +255,8 @@ pub enum PluginEventDeliveryRepositoryError {
     Invariant,
     #[error("plugin event idempotency key conflicts with existing delivery")]
     Conflict,
+    #[error("plugin event output is invalid or exceeds its size limit")]
+    InvalidResult,
 }
 
 /// Database lease and lifecycle operations for the host-owned plugin delivery queue.
@@ -191,6 +290,7 @@ impl PluginEventDeliveryRepository {
         }
         match timeout(self.operation_timeout, async {
             self.retire_expired(now).await?;
+            self.purge_expired_inner(now).await?;
             self.claim_next_inner(now).await
         })
         .await
@@ -202,19 +302,118 @@ impl PluginEventDeliveryRepository {
         }
     }
 
+    /// Remove unleased delivery rows after their TTL so queue retention does not block artifact
+    /// collection. Expired leases are first retired by the normal lease lifecycle.
+    pub async fn purge_expired(
+        &self,
+        now: i64,
+    ) -> Result<u64, PluginEventDeliveryRepositoryError> {
+        if now <= 0 {
+            return Err(PluginEventDeliveryRepositoryError::Invariant);
+        }
+        match timeout(self.operation_timeout, async {
+            self.retire_expired(now).await?;
+            self.purge_expired_inner(now).await
+        })
+        .await
+        {
+            Ok(result) => result.map_err(record_internal_error),
+            Err(_) => Err(record_internal_error(
+                PluginEventDeliveryRepositoryError::Timeout,
+            )),
+        }
+    }
+
+    async fn purge_expired_inner(
+        &self,
+        now: i64,
+    ) -> Result<u64, PluginEventDeliveryRepositoryError> {
+        const PURGE_BATCH: u64 = 256;
+        let rows = plugin_event_deliveries::Entity::find()
+            .filter(plugin_event_deliveries::Column::ExpiresAt.lte(now))
+            .filter(plugin_event_deliveries::Column::Status.ne(STATUS_LEASED))
+            .order_by_asc(plugin_event_deliveries::Column::Id)
+            .limit(PURGE_BATCH)
+            .all(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+        if rows.is_empty() {
+            return Ok(0);
+        }
+        let ids = rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+        let deleted = plugin_event_deliveries::Entity::delete_many()
+            .filter(plugin_event_deliveries::Column::Id.is_in(ids))
+            .filter(plugin_event_deliveries::Column::ExpiresAt.lte(now))
+            .filter(plugin_event_deliveries::Column::Status.ne(STATUS_LEASED))
+            .exec(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+        Ok(deleted.rows_affected)
+    }
+
     /// Complete only if the lease version still belongs to this worker.
     pub async fn mark_delivered(
         &self,
         lease: &PluginEventDeliveryLease,
         now: i64,
+        result: &Value,
     ) -> Result<PluginEventDeliveryCompletionOutcome, PluginEventDeliveryRepositoryError> {
         if now <= 0 {
             return Err(PluginEventDeliveryRepositoryError::Invariant);
         }
+        let result_json = serialize_event_result(result)?;
         match timeout(
             self.operation_timeout,
-            self.mark_delivered_inner(lease, now),
+            self.mark_delivered_inner(lease, now, result_json),
         )
+        .await
+        {
+            Ok(result) => result.map_err(record_internal_error),
+            Err(_) => Err(record_internal_error(
+                PluginEventDeliveryRepositoryError::Timeout,
+            )),
+        }
+    }
+
+    /// Return only completed deliveries with a validated output; event input is never selected.
+    pub async fn list_results(
+        &self,
+        query: PluginEventDeliveryResultQuery,
+        now: i64,
+    ) -> Result<PluginEventDeliveryResultPage, PluginEventDeliveryRepositoryError> {
+        if now <= 0 {
+            return Err(PluginEventDeliveryRepositoryError::Invariant);
+        }
+        match timeout(self.operation_timeout, async {
+            let mut select = plugin_event_deliveries::Entity::find()
+                .filter(plugin_event_deliveries::Column::Status.eq(STATUS_DELIVERED))
+                .filter(plugin_event_deliveries::Column::ResultJson.is_not_null())
+                .filter(plugin_event_deliveries::Column::CompletedAt.is_not_null())
+                .filter(plugin_event_deliveries::Column::ExpiresAt.gt(now))
+                .order_by_desc(plugin_event_deliveries::Column::Id)
+                .limit(u64::from(query.limit) + 1);
+            if let Some(before_id) = query.before_id {
+                select = select.filter(plugin_event_deliveries::Column::Id.lt(before_id));
+            }
+            let mut rows = select
+                .all(self.pool.connection())
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+            let has_more = rows.len() > query.limit as usize;
+            rows.truncate(query.limit as usize);
+            let next_before_id = has_more.then(|| rows.last().map(|row| row.id)).flatten();
+            let results = rows
+                .into_iter()
+                .map(result_record_from_model)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(PluginEventDeliveryResultPage {
+                results,
+                next_before_id,
+            })
+        })
         .await
         {
             Ok(result) => result.map_err(record_internal_error),
@@ -400,6 +599,7 @@ impl PluginEventDeliveryRepository {
         &self,
         lease: &PluginEventDeliveryLease,
         now: i64,
+        result_json: String,
     ) -> Result<PluginEventDeliveryCompletionOutcome, PluginEventDeliveryRepositoryError> {
         if now >= lease.expires_at {
             let update = plugin_event_deliveries::Entity::update_many()
@@ -449,6 +649,10 @@ impl PluginEventDeliveryRepository {
             .col_expr(
                 plugin_event_deliveries::Column::CompletedAt,
                 Expr::value(Some(now)),
+            )
+            .col_expr(
+                plugin_event_deliveries::Column::ResultJson,
+                Expr::value(Some(result_json)),
             )
             .col_expr(
                 plugin_event_deliveries::Column::Version,

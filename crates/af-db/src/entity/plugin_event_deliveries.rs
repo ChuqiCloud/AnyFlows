@@ -17,6 +17,7 @@ pub struct Model {
     pub capability_id: String,
     pub capability_version: i32,
     pub payload_json: String,
+    pub result_json: Option<String>,
     pub status: i16,
     pub attempt_count: i16,
     pub max_attempts: i16,
@@ -71,6 +72,7 @@ impl ActiveModelBehavior for ActiveModel {
                 .payload_json
                 .try_as_ref()
                 .is_none_or(|value| value.len() > 32 * 1024)
+            || self.result_json.try_as_ref().is_some_and(Option::is_some)
             || self.status.try_as_ref() != Some(&1)
             || self.attempt_count.try_as_ref() != Some(&0)
             || self

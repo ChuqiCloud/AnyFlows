@@ -266,7 +266,9 @@ pub use plugin_event_delivery::{
     PluginEventDeliveryCreate, PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryInputError,
     PluginEventDeliveryLease, PluginEventDeliveryRepository,
     PluginEventDeliveryRepositoryConfigError, PluginEventDeliveryRepositoryError,
-    PluginEventFailureKind, PluginEventKind, enqueue_plugin_event_delivery,
+    PluginEventDeliveryResultPage, PluginEventDeliveryResultQuery,
+    PluginEventDeliveryResultRecord, PluginEventFailureKind, PluginEventKind,
+    MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE, enqueue_plugin_event_delivery,
 };
 mod quota;
 #[cfg(test)]

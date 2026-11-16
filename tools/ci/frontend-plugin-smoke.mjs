@@ -31,6 +31,21 @@ const artifact = {
   manifest: {
     pluginId: 'org.example.catalog', pluginVersion: '1.0.0', displayName: 'CI model directory',
     capabilities: [{ id: 'catalog.models.read', version: 1, access: 'read', sideEffect: 'none' }],
+    uiContributions: [
+      {
+        id: 'overview', slot: 'plugin_management', component: 'info_card',
+        title: { en: 'Plugin overview', zh: '插件概览' },
+        description: { en: 'Static information from the plugin.', zh: '插件提供的静态说明。' },
+      },
+      {
+        id: 'script', slot: 'plugin_management', component: 'info_card',
+        title: { en: '<img src=x onerror=alert(1)>', zh: '<img src=x onerror=alert(1)>' },
+      },
+      {
+        id: 'action', slot: 'plugin_management', component: 'info_card',
+        title: { en: 'Unexpected action', zh: '越权操作' }, action: { url: 'javascript:alert(1)' },
+      },
+    ],
     configSchema: {
       type: 'object', additionalProperties: false, required: ['displayName'],
       properties: {
@@ -179,6 +194,11 @@ try {
   assert.equal(await runtimePanel.getByText(label('pluginLifecycle.runtime.readyNodes').replace('{{ready}}', '3').replace('{{total}}', '3'), { exact: true }).count(), 0, 'An old generation or failed process cannot count as ready')
   const deploymentCard = page.locator('article').filter({ has: page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }) })
   await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
+  const contributionSection = deploymentCard.getByRole('region', { name: label('pluginLifecycle.ui.section'), exact: true })
+  await contributionSection.getByRole('heading', { name: '插件概览', exact: true }).waitFor()
+  await contributionSection.getByText('插件提供的静态说明。', { exact: true }).waitFor()
+  assert.equal(await contributionSection.locator('[data-plugin-ui-card]').count(), 1, 'Only schema-valid host-owned card declarations render')
+  assert.equal(await contributionSection.locator('img, script, a').count(), 0, 'Plugin contributions cannot inject markup or links')
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
   await advanced.locator('summary').first().click()

@@ -732,9 +732,14 @@
             "type": "string"
           },
           "pluginVersion": {
-            "maxLength": 128,
-            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
-            "type": "string"
+            "$ref": "#/components/schemas/PluginVersion"
+          },
+          "uiContributions": {
+            "items": {
+              "$ref": "#/components/schemas/PluginUiContribution"
+            },
+            "maxItems": 16,
+            "type": "array"
           }
         },
         "required": [
@@ -794,7 +799,7 @@
             "type": "string"
           },
           "pluginVersion": {
-            "$ref": "#/components/schemas/PluginManifest/properties/pluginVersion"
+            "$ref": "#/components/schemas/PluginVersion"
           },
           "protocolVersion": {
             "const": 1
@@ -852,7 +857,7 @@
             "type": "string"
           },
           "pluginVersion": {
-            "$ref": "#/components/schemas/PluginManifest/properties/pluginVersion"
+            "$ref": "#/components/schemas/PluginVersion"
           },
           "protocolVersion": {
             "const": 1
@@ -918,6 +923,69 @@
             "type": "object"
           }
         ]
+      },
+      "PluginUiContribution": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "enum": [
+              "info_card"
+            ]
+          },
+          "description": {
+            "$ref": "#/components/schemas/PluginUiText"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "slot": {
+            "enum": [
+              "plugin_management"
+            ]
+          },
+          "title": {
+            "$ref": "#/components/schemas/PluginUiText"
+          }
+        },
+        "required": [
+          "id",
+          "slot",
+          "component",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PluginUiText": {
+        "additionalProperties": false,
+        "maxProperties": 2,
+        "minProperties": 1,
+        "properties": {
+          "en": {
+            "maxLength": 512,
+            "minLength": 1,
+            "not": {
+              "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
+            },
+            "type": "string"
+          },
+          "zh": {
+            "maxLength": 512,
+            "minLength": 1,
+            "not": {
+              "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
+            },
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PluginVersion": {
+        "maxLength": 128,
+        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+        "type": "string"
       }
     },
     "securitySchemes": {

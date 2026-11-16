@@ -50,6 +50,21 @@ class ExamplePackageTests(unittest.TestCase):
                 "channel.monitor.events.review.read",
             )
 
+    def test_durable_channel_health_event_example_contains_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "channel-health-event.afplugin"
+            package = self.package(output, "channel-health-event")
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                package["metadata"]["manifest"]["capabilities"][0]["id"],
+                "events.channel-health.changed.consume",
+            )
+            self.assertEqual(
+                package["metadata"]["manifest"]["uiContributions"][0]["slot"],
+                "plugin_management",
+            )
+
     def test_channel_model_mapping_review_example_contains_the_python_sdk(self):
         with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
             output = Path(temporary) / "channel-model-mapping-review.afplugin"

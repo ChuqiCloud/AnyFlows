@@ -5,7 +5,8 @@ use std::sync::Arc;
 use af_admin::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
-    AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    AdminPluginDeploymentPage, AdminPluginEventResult, AdminPluginEventResultPage,
+    AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
     PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
@@ -306,6 +307,59 @@ impl From<AdminPluginDeploymentPage> for PluginDeploymentPageResponse {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(as = PluginEventResultResponse)]
+pub(crate) struct PluginEventResultResponse {
+    delivery_id: i64,
+    plugin_id: String,
+    event_kind: String,
+    deployment_generation: i64,
+    capability_id: String,
+    capability_version: u16,
+    attempt_count: u16,
+    status: String,
+    completed_at: i64,
+    summary: String,
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
+    result: Value,
+}
+
+impl From<AdminPluginEventResult> for PluginEventResultResponse {
+    fn from(value: AdminPluginEventResult) -> Self {
+        Self {
+            delivery_id: value.delivery_id,
+            plugin_id: value.plugin_id,
+            event_kind: value.event_kind,
+            deployment_generation: value.deployment_generation,
+            capability_id: value.capability_id,
+            capability_version: value.capability_version,
+            attempt_count: value.attempt_count,
+            status: value.status,
+            completed_at: value.completed_at,
+            summary: value.summary,
+            result: value.result,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginEventResultPageResponse)]
+pub(crate) struct PluginEventResultPageResponse {
+    results: Vec<PluginEventResultResponse>,
+    next_before_id: Option<i64>,
+}
+
+impl From<AdminPluginEventResultPage> for PluginEventResultPageResponse {
+    fn from(value: AdminPluginEventResultPage) -> Self {
+        Self {
+            results: value.results.into_iter().map(Into::into).collect(),
+            next_before_id: value.next_before_id,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct PluginActionResponse {
     completed: bool,
     request_id: String,
@@ -437,6 +491,13 @@ struct DeploymentListQuery {
     limit: Option<u32>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginEventResultListQuery {
+    before_id: Option<i64>,
+    limit: Option<u32>,
+}
+
 /// Build admin-only routes. Package paths are relative to the configured root;
 /// signer public keys come from host configuration and are never request inputs.
 pub fn build_plugin_lifecycle_router(
@@ -459,6 +520,10 @@ pub fn build_plugin_lifecycle_router(
             get(list_artifacts).post(register_artifact),
         )
         .route("/api/admin/plugins/deployments", get(list_deployments))
+        .route(
+            "/api/admin/plugins/events/results",
+            get(list_event_results),
+        )
         .route(
             "/api/admin/plugins/artifacts/{artifact_id}/approve",
             post(approve_artifact),
@@ -803,6 +868,24 @@ async fn list_deployments(
     Ok(no_store_json(PluginDeploymentPageResponse::from(page)))
 }
 
+async fn list_event_results(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    query: Result<Query<PluginEventResultListQuery>, QueryRejection>,
+) -> Result<Response, ManagementError> {
+    let Query(query) = query.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let page = state
+        .service
+        .list_event_results(
+            authentication.principal(),
+            query.before_id,
+            query.limit.unwrap_or(20),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginEventResultPageResponse::from(page)))
+}
+
 async fn deployment_history(
     State(state): State<PluginLifecycleHttpState>,
     PathParam(plugin_id): PathParam<String>,
@@ -1071,6 +1154,10 @@ mod tests {
                 get(|| async { StatusCode::OK }),
             )
             .route(
+                "/api/admin/plugins/events/results",
+                get(|| async { StatusCode::OK }),
+            )
+            .route(
                 "/api/admin/plugins/{plugin_id}/uninstall",
                 post(|| async { StatusCode::OK }),
             )
@@ -1099,6 +1186,7 @@ mod tests {
     async fn plugin_admin_operations_require_admin_but_catalog_accepts_authenticated_users() {
         for (method, path) in [
             ("GET", "/api/admin/plugins/runtime"),
+            ("GET", "/api/admin/plugins/events/results"),
             ("POST", "/api/admin/plugins/org.example.catalog/uninstall"),
             ("POST", "/api/admin/plugins/artifacts/1/cleanup"),
         ] {
@@ -1158,6 +1246,7 @@ mod tests {
         }
         let policies = [
             ("GET", "/api/admin/plugins/runtime"),
+            ("GET", "/api/admin/plugins/events/results"),
             ("POST", "/api/admin/plugins/{plugin_id}/uninstall"),
             ("POST", "/api/admin/plugins/artifacts/{artifact_id}/cleanup"),
         ]
@@ -1171,6 +1260,43 @@ mod tests {
             assert!(policy.required_scopes[0].starts_with("admin:"));
             assert!(grants.insert(policy.required_scopes[0].clone()));
         }
+        let event_results = crate::access_token_routes::policy(
+            "GET",
+            "/api/admin/plugins/events/results",
+        )
+        .unwrap();
+        assert_eq!(
+            event_results.required_scopes,
+            ["admin:list_admin_plugin_event_results:execute"]
+        );
+        assert!(event_results.admin_only && !event_results.session_only);
+    }
+
+    #[test]
+    fn plugin_event_result_response_contains_only_result_metadata_and_output() {
+        let response = PluginEventResultPageResponse::from(AdminPluginEventResultPage {
+            results: vec![AdminPluginEventResult {
+                delivery_id: 31,
+                plugin_id: "org.example.events".to_owned(),
+                event_kind: "channel.health.changed".to_owned(),
+                deployment_generation: 2,
+                capability_id: "events.channel-health.changed.consume".to_owned(),
+                capability_version: 1,
+                attempt_count: 1,
+                status: "delivered".to_owned(),
+                completed_at: 1_800_000_012,
+                summary: "Channel recovered".to_owned(),
+                result: serde_json::json!({ "summary": "Channel recovered", "checks": [] }),
+            }],
+            next_before_id: None,
+        });
+        let value = serde_json::to_value(response).unwrap();
+        let result = &value["results"][0];
+        assert_eq!(result["deliveryId"], 31);
+        assert!(result.get("eventKey").is_none());
+        assert!(result.get("payload").is_none());
+        assert!(result.get("pluginUrl").is_none());
+        assert!(result.get("credential").is_none());
     }
 
     #[test]

@@ -40,6 +40,11 @@ pub fn schema_document() -> Value {
                     "maximum": { "$ref": "#/$defs/ContractVersion" }
                 }
             },
+            "PluginVersion": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+                "maxLength": 128
+            },
             "CapabilityDeclaration": {
                 "type": "object",
                 "additionalProperties": true,
@@ -85,12 +90,35 @@ pub fn schema_document() -> Value {
                 "properties": {
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
                     "displayName": { "type": "string", "maxLength": 128 },
-                    "pluginVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$", "maxLength": 128 },
+                    "pluginVersion": { "$ref": "#/$defs/PluginVersion" },
                     "contractRange": { "$ref": "#/$defs/ContractVersionRange" },
                     "capabilities": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
                     "authenticationModes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$", "maxLength": 128 } },
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
-                    "configSchema": { "type": "object" }
+                    "configSchema": { "type": "object" },
+                    "uiContributions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiContribution" } }
+                }
+            },
+            "PluginUiContribution": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "slot", "component", "title"],
+                "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$", "minLength": 1, "maxLength": 64 },
+                    "slot": { "enum": ["plugin_management"] },
+                    "component": { "enum": ["info_card"] },
+                    "title": { "$ref": "#/$defs/PluginUiText" },
+                    "description": { "$ref": "#/$defs/PluginUiText" }
+                }
+            },
+            "PluginUiText": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "maxProperties": 2,
+                "properties": {
+                    "en": { "type": "string", "minLength": 1, "maxLength": 512, "not": { "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]" } },
+                    "zh": { "type": "string", "minLength": 1, "maxLength": 512, "not": { "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]" } }
                 }
             },
             "HostHttpMethod": { "type": "string", "enum": ["GET", "HEAD"] },
@@ -117,7 +145,7 @@ pub fn schema_document() -> Value {
                 "properties": {
                     "protocolVersion": { "const": 1 },
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
-                    "pluginVersion": { "$ref": "#/$defs/PluginManifest/properties/pluginVersion" },
+                    "pluginVersion": { "$ref": "#/$defs/PluginVersion" },
                     "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
                     "deploymentGeneration": { "type": "integer", "minimum": 1 },
                     "requestId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
@@ -144,7 +172,7 @@ pub fn schema_document() -> Value {
                 "properties": {
                     "protocolVersion": { "const": 1 },
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
-                    "pluginVersion": { "$ref": "#/$defs/PluginManifest/properties/pluginVersion" },
+                    "pluginVersion": { "$ref": "#/$defs/PluginVersion" },
                     "artifactSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
                     "deploymentGeneration": { "type": "integer", "minimum": 1 },
                     "requestId": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
@@ -515,6 +543,16 @@ mod tests {
                 max_page_size: 100,
             },
             config_schema: json!({ "type": "object" }),
+            ui_contributions: vec![crate::PluginUiContribution {
+                id: "service-summary".to_owned(),
+                slot: crate::PluginUiSlot::PluginManagement,
+                component: crate::PluginUiComponent::InfoCard,
+                title: crate::PluginUiText {
+                    en: Some("Service summary".to_owned()),
+                    zh: Some("服务摘要".to_owned()),
+                },
+                description: None,
+            }],
         };
         let account = ExternalAccountProfile {
             subject: "opaque-123".to_owned(),

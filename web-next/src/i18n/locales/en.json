@@ -151,6 +151,10 @@
       "history": "View history",
       "empty": "There are no plugin deployments."
     },
+    "ui": {
+      "section": "Plugin information",
+      "scope": "Static text rendered by AnyFlows; this area does not run plugin code or actions."
+    },
     "errors": {
       "action": "The operation did not complete. Refresh the current state and retry, or check the service logs.",
       "loadArtifacts": "Could not load plugin artifacts.",

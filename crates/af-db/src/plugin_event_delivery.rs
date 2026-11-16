@@ -7,9 +7,10 @@
 use std::fmt;
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
@@ -21,7 +22,8 @@ pub use repository::{
     PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
     PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryLease, PluginEventDeliveryRepository,
     PluginEventDeliveryRepositoryConfigError, PluginEventDeliveryRepositoryError,
-    PluginEventFailureKind,
+    PluginEventDeliveryResultPage, PluginEventDeliveryResultQuery,
+    PluginEventDeliveryResultRecord, PluginEventFailureKind, MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE,
 };
 
 const STATUS_PENDING: i16 = 1;
@@ -30,6 +32,7 @@ const STATUS_DELIVERED: i16 = 3;
 const STATUS_DEAD: i16 = 4;
 const INITIAL_VERSION: i64 = 1;
 const MAX_EVENT_PAYLOAD_BYTES: usize = 32 * 1024;
+pub(crate) const MAX_EVENT_RESULT_BYTES: usize = 16 * 1024;
 const MAX_EVENT_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
 const MAX_EVENT_ATTEMPTS: i16 = 12;
 
@@ -173,7 +176,10 @@ where
         .await
         .map_err(|_| PluginEventDeliveryRepositoryError::Query)?
         .ok_or(PluginEventDeliveryRepositoryError::Conflict)?;
-    if artifact.plugin_id != input.plugin_id || artifact.digest != input.artifact_digest {
+    if artifact.plugin_id != input.plugin_id
+        || artifact.digest != input.artifact_digest
+        || artifact.source_kind != "local_process"
+    {
         return Err(PluginEventDeliveryRepositoryError::Conflict);
     }
     let approved = crate::entity::plugin_artifact_approvals::Entity::find_by_id(input.artifact_id)
@@ -214,6 +220,7 @@ where
         capability_id: Set(input.capability_id.clone()),
         capability_version: Set(i32::from(input.capability_version)),
         payload_json: Set(payload_json),
+        result_json: Set(None),
         status: Set(STATUS_PENDING),
         attempt_count: Set(0),
         max_attempts: Set(input.max_attempts),
@@ -234,6 +241,137 @@ where
                 .await?
                 .ok_or(PluginEventDeliveryRepositoryError::Query)?;
             verify_duplicate(&existing, &input)
+        }
+    }
+}
+
+/// Persist a channel monitor transition for every currently eligible plugin deployment.
+///
+/// This is intentionally a closed producer rather than a general event API. The monitor event
+/// ID is the stable idempotency key; delivery creation shares the caller's transaction with the
+/// monitor event and state transition.
+pub(crate) async fn enqueue_channel_health_changed<C>(
+    connection: &C,
+    event_id: i64,
+    target_id: i64,
+    channel_id: i64,
+    status: ChannelHealthTransition,
+    observed_at: i64,
+) -> Result<(), PluginEventDeliveryRepositoryError>
+where
+    C: ConnectionTrait,
+{
+    if event_id <= 0 || target_id <= 0 || channel_id <= 0 || observed_at <= 0 {
+        return Err(PluginEventDeliveryRepositoryError::Invariant);
+    }
+
+    let expires_at = observed_at
+        .checked_add(MAX_EVENT_TTL_SECONDS)
+        .ok_or(PluginEventDeliveryRepositoryError::Invariant)?;
+    let payload = json!({
+        "targetId": target_id,
+        "channelId": channel_id,
+        "status": status.as_str(),
+        "observedAt": observed_at,
+    });
+    let mut after_plugin_id: Option<String> = None;
+    loop {
+        let mut query = crate::entity::plugin_deployments::Entity::find()
+            .filter(crate::entity::plugin_deployments::Column::Enabled.eq(true))
+            .order_by_asc(crate::entity::plugin_deployments::Column::PluginId)
+            .limit(crate::MAX_PLUGIN_DEPLOYMENT_HISTORY as u64);
+        if let Some(cursor) = after_plugin_id.as_ref() {
+            query = query
+                .filter(crate::entity::plugin_deployments::Column::PluginId.gt(cursor.clone()));
+        }
+        let deployments = query
+            .all(connection)
+            .await
+            .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+        let is_full_page = deployments.len() == crate::MAX_PLUGIN_DEPLOYMENT_HISTORY as usize;
+        for deployment in &deployments {
+            if !has_grant(
+                &deployment.capability_grants,
+                PluginEventKind::ChannelHealthChanged.required_capability(),
+                1,
+            ) {
+                continue;
+            }
+            let artifact =
+                crate::entity::plugin_artifacts::Entity::find_by_id(deployment.artifact_id)
+                    .one(connection)
+                    .await
+                    .map_err(|_| PluginEventDeliveryRepositoryError::Query)?;
+            let Some(artifact) = artifact else {
+                continue;
+            };
+            if artifact.plugin_id != deployment.plugin_id
+                || artifact.source_kind != "local_process"
+                || !artifact_declares_event_capability(
+                    &artifact.manifest,
+                    PluginEventKind::ChannelHealthChanged.required_capability(),
+                    1,
+                )
+            {
+                continue;
+            }
+            let approved =
+                crate::entity::plugin_artifact_approvals::Entity::find_by_id(artifact.id)
+                    .one(connection)
+                    .await
+                    .map_err(|_| PluginEventDeliveryRepositoryError::Query)?
+                    .is_some();
+            let revoked =
+                crate::entity::plugin_artifact_revocations::Entity::find_by_id(artifact.id)
+                    .one(connection)
+                    .await
+                    .map_err(|_| PluginEventDeliveryRepositoryError::Query)?
+                    .is_some();
+            if !approved || revoked {
+                continue;
+            }
+            let input = PluginEventDeliveryCreate {
+                plugin_id: deployment.plugin_id.clone(),
+                event_key: format!("channel-monitor:{event_id}"),
+                event_kind: PluginEventKind::ChannelHealthChanged,
+                artifact_id: artifact.id,
+                artifact_digest: artifact.digest.clone(),
+                deployment_generation: deployment.generation,
+                capability_id: PluginEventKind::ChannelHealthChanged
+                    .required_capability()
+                    .to_owned(),
+                capability_version: 1,
+                payload: payload.clone(),
+                max_attempts: MAX_EVENT_ATTEMPTS,
+                created_at: observed_at,
+                expires_at,
+            };
+            enqueue_plugin_event_delivery(connection, input).await?;
+        }
+        if !is_full_page {
+            break;
+        }
+        after_plugin_id = deployments
+            .last()
+            .map(|deployment| deployment.plugin_id.clone());
+        if after_plugin_id.is_none() {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ChannelHealthTransition {
+    Down,
+    Recovered,
+}
+
+impl ChannelHealthTransition {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Down => "down",
+            Self::Recovered => "recovered",
         }
     }
 }
@@ -453,7 +591,7 @@ fn sensitive_key(value: &str) -> bool {
     ]
     .iter()
     .any(|needle| normalized.contains(needle))
-        || normalized == "token"
+        || normalized.contains("token")
 }
 
 fn completion_outcome(
@@ -474,6 +612,7 @@ fn record_internal_error(
         PluginEventDeliveryRepositoryError::Timeout => "plugin_event_delivery_timeout",
         PluginEventDeliveryRepositoryError::Invariant => "plugin_event_delivery_invariant",
         PluginEventDeliveryRepositoryError::Conflict => "plugin_event_delivery_conflict",
+        PluginEventDeliveryRepositoryError::InvalidResult => "plugin_event_delivery_invalid_result",
     };
     tracing::error!(target: "af_db::plugin_event_delivery", error_kind, "插件事件队列仓储发生内部错误");
     error
@@ -582,5 +721,207 @@ mod tests {
         assert_eq!(retry_delay(6).unwrap(), 60);
         assert_eq!(retry_delay(12).unwrap(), 300);
         assert!(retry_delay(0).is_err());
+    }
+
+    #[test]
+    fn event_results_require_a_bounded_object_without_sensitive_field_names() {
+        assert!(repository::serialize_event_result(&json!({ "summary": "checked", "checks": [] })).is_ok());
+        assert!(repository::serialize_event_result(&json!({ "summary": "checked", "apiKey": "secret" })).is_err());
+        assert!(repository::serialize_event_result(&json!({ "details": [{ "access_token": "secret" }] })).is_err());
+        assert!(repository::serialize_event_result(&json!({ "sessionToken": "secret" })).is_err());
+        assert!(repository::serialize_event_result(&json!({ "summary": "x".repeat(MAX_EVENT_RESULT_BYTES) })).is_err());
+        assert!(repository::serialize_event_result(&json!(["not-an-object"])).is_err());
+    }
+
+    #[tokio::test]
+    async fn channel_health_producer_is_idempotent_and_skips_disabled_deployments() {
+        use af_domain::UserId;
+        use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
+
+        let pool = crate::connect_and_migrate(
+            &crate::DatabaseOptions::new("sqlite::memory:").unwrap(),
+            crate::MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let group = crate::entity::groups::ActiveModel {
+            name: Set("plugin-event-test".to_owned()),
+            display_name: Set("Plugin event test".to_owned()),
+            flags: Set(json!({})),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await
+        .unwrap();
+        let user = crate::entity::users::ActiveModel {
+            username: Set("plugin-event-operator".to_owned()),
+            role: Set(1),
+            status: Set(1),
+            default_group_id: Set(group.id),
+            aff_code: Set("plugin-event-aff".to_owned()),
+            settings: Set(json!({})),
+            ..Default::default()
+        }
+        .insert(pool.connection())
+        .await
+        .unwrap();
+        let operator = UserId::new(user.id).unwrap();
+        let plugin_id = "org.example.channel-events";
+        let capability_id = PluginEventKind::ChannelHealthChanged.required_capability();
+        let digest = "ab".repeat(32);
+        let repository = crate::PluginCatalogRepository::new(pool.clone());
+        let artifact = repository
+            .register_artifact(crate::PluginArtifactCreate {
+                plugin_id: plugin_id.to_owned(),
+                plugin_version: "1.0.0".to_owned(),
+                digest: digest.clone(),
+                manifest: json!({
+                    "pluginId": plugin_id,
+                    "pluginVersion": "1.0.0",
+                    "configSchema": { "type": "object", "additionalProperties": false },
+                    "contractRange": { "minimum": { "major": 1, "minor": 0 }, "maximum": { "major": 1, "minor": 2 } },
+                    "authenticationModes": ["none"],
+                    "limits": { "maxConcurrency": 1, "requestTimeoutMs": 1000, "maxResponseBytes": 4096, "maxPageSize": 20 },
+                    "capabilities": [{ "id": capability_id, "version": 1, "access": "read", "sideEffect": "none" }]
+                }),
+                source_kind: crate::PluginArtifactSourceKind::LocalProcess,
+                source_reference: "/opt/anyflows/plugins/channel-events".to_owned(),
+                signer_key_id: String::new(),
+                signature: String::new(),
+                created_at: 1_800_000_000,
+            })
+            .await
+            .unwrap();
+        repository
+            .approve_artifact(crate::PluginArtifactApproval {
+                artifact_id: artifact.id,
+                approved_by: operator,
+                approved_at: 1_800_000_001,
+                request_id: "event-approval".to_owned(),
+            })
+            .await
+            .unwrap();
+        let write_deployment =
+            |expected_generation, enabled, request_id: &str| crate::PluginDeploymentWrite {
+                plugin_id: plugin_id.to_owned(),
+                artifact_digest: digest.clone(),
+                expected_generation,
+                enabled,
+                granted_capabilities: vec![crate::PluginCapabilityGrant {
+                    id: capability_id.to_owned(),
+                    version: 1,
+                }],
+                config: json!({}),
+                updated_by: operator,
+                updated_at: 1_800_000_002,
+                request_id: request_id.to_owned(),
+            };
+        repository
+            .deploy(write_deployment(None, true, "event-deploy"))
+            .await
+            .unwrap();
+
+        enqueue_channel_health_changed(
+            pool.connection(),
+            501,
+            8,
+            12,
+            ChannelHealthTransition::Down,
+            1_800_000_010,
+        )
+        .await
+        .unwrap();
+        enqueue_channel_health_changed(
+            pool.connection(),
+            501,
+            8,
+            12,
+            ChannelHealthTransition::Down,
+            1_800_000_010,
+        )
+        .await
+        .unwrap();
+        let deliveries = plugin_event_deliveries::Entity::find()
+            .all(pool.connection())
+            .await
+            .unwrap();
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].event_key, "channel-monitor:501");
+        assert_eq!(deliveries[0].deployment_generation, 1);
+        assert_eq!(deliveries[0].artifact_digest, digest);
+        assert_eq!(
+            serde_json::from_str::<Value>(&deliveries[0].payload_json).unwrap(),
+            json!({ "targetId": 8, "channelId": 12, "status": "down", "observedAt": 1_800_000_010 })
+        );
+
+        let queue = crate::PluginEventDeliveryRepository::new(
+            pool.clone(),
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+        let lease = match queue.claim_next(1_800_000_011).await.unwrap() {
+            crate::PluginEventDeliveryClaimOutcome::Claimed(lease) => lease,
+            crate::PluginEventDeliveryClaimOutcome::Empty => panic!("expected queued event"),
+        };
+        let result = json!({ "summary": "Channel recovered", "checks": [{ "id": "state", "status": "ok" }] });
+        queue
+            .mark_delivered(&lease, 1_800_000_012, &result)
+            .await
+            .unwrap();
+        let result_page = queue
+            .list_results(
+                crate::PluginEventDeliveryResultQuery::new(None, 20).unwrap(),
+                1_800_000_013,
+            )
+            .await
+            .unwrap();
+        assert_eq!(result_page.results.len(), 1);
+        assert_eq!(result_page.results[0].result, result);
+        assert_eq!(result_page.results[0].id, deliveries[0].id);
+        let expired_page = queue
+            .list_results(
+                crate::PluginEventDeliveryResultQuery::new(None, 20).unwrap(),
+                1_800_000_010 + MAX_EVENT_TTL_SECONDS,
+            )
+            .await
+            .unwrap();
+        assert!(expired_page.results.is_empty());
+        assert_eq!(
+            queue
+                .purge_expired(1_800_000_010 + MAX_EVENT_TTL_SECONDS)
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(
+            plugin_event_deliveries::Entity::find()
+                .all(pool.connection())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        repository
+            .deploy(write_deployment(Some(1), false, "event-disable"))
+            .await
+            .unwrap();
+        enqueue_channel_health_changed(
+            pool.connection(),
+            502,
+            8,
+            12,
+            ChannelHealthTransition::Recovered,
+            1_800_000_020,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            plugin_event_deliveries::Entity::find()
+                .count(pool.connection())
+                .await
+                .unwrap(),
+            0
+        );
+        pool.close().await.unwrap();
     }
 }

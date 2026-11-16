@@ -1867,6 +1867,7 @@ mod tests {
                 max_page_size: 1,
             },
             config_schema: json!({ "type": "object" }),
+            ui_contributions: Vec::new(),
         }
     }
 

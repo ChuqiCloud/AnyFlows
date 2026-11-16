@@ -28,6 +28,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Alias::new("capability_version")).integer().not_null())
                     // 32 KiB is below MySQL's smallest TEXT ceiling and is checked before insert.
                     .col(ColumnDef::new(Alias::new("payload_json")).text().not_null())
+                    // Only a bounded, host-validated plugin output is stored after successful delivery.
+                    .col(ColumnDef::new(Alias::new("result_json")).text().null())
                     .col(ColumnDef::new(Alias::new("status")).small_integer().not_null())
                     .col(ColumnDef::new(Alias::new("attempt_count")).small_integer().not_null())
                     .col(ColumnDef::new(Alias::new("max_attempts")).small_integer().not_null())

@@ -607,6 +607,16 @@ impl ActiveChannelMonitorRepository {
                         let event_id =
                             insert_event(&transaction, row.id, "recovered", Some(latency_ms), now)
                                 .await?;
+                        crate::plugin_event_delivery::enqueue_channel_health_changed(
+                            &transaction,
+                            event_id,
+                            row.id,
+                            row.channel_id,
+                            crate::plugin_event_delivery::ChannelHealthTransition::Recovered,
+                            now.unix_timestamp(),
+                        )
+                        .await
+                        .map_err(map_plugin_event_delivery)?;
                         insert_admin_monitor_notifications(
                             &transaction,
                             row.id,
@@ -629,6 +639,16 @@ impl ActiveChannelMonitorRepository {
                         active.alert_active = Set(true);
                         let event_id =
                             insert_event(&transaction, row.id, "down", None, now).await?;
+                        crate::plugin_event_delivery::enqueue_channel_health_changed(
+                            &transaction,
+                            event_id,
+                            row.id,
+                            row.channel_id,
+                            crate::plugin_event_delivery::ChannelHealthTransition::Down,
+                            now.unix_timestamp(),
+                        )
+                        .await
+                        .map_err(map_plugin_event_delivery)?;
                         if !row.muted_until.is_some_and(|until| until > now) {
                             insert_admin_monitor_notifications(
                                 &transaction,
@@ -911,6 +931,23 @@ fn add_seconds(
 }
 fn map_db(_: DbErr) -> ActiveChannelMonitorError {
     ActiveChannelMonitorError::Query
+}
+
+fn map_plugin_event_delivery(
+    error: crate::plugin_event_delivery::PluginEventDeliveryRepositoryError,
+) -> ActiveChannelMonitorError {
+    match error {
+        crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Query => {
+            ActiveChannelMonitorError::Query
+        }
+        crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Timeout => {
+            ActiveChannelMonitorError::Timeout
+        }
+        crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Invariant
+        | crate::plugin_event_delivery::PluginEventDeliveryRepositoryError::Conflict => {
+            ActiveChannelMonitorError::Invariant
+        }
+    }
 }
 
 async fn lock_settings(
