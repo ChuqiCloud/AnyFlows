@@ -12,7 +12,7 @@ from anyflows_plugin import Plugin, PluginError
 
 ROOT = Path(__file__).resolve().parent
 CAPABILITY = "events.merchant-service.changed.consume"
-INPUT_FIELDS = {"serviceId", "revision", "status", "observedAt"}
+INPUT_FIELDS = {"eventKey", "serviceId", "revision", "status", "observedAt"}
 
 
 def is_positive_integer(value: object) -> bool:
@@ -25,17 +25,25 @@ def review_event(
     public_config: dict[str, Any],
     value: object,
 ) -> dict[str, str]:
-    """Summarize the public state without looking up or changing the service."""
+    """Summarize the state and use eventKey to deduplicate retries in future side effects."""
     if capability_id != CAPABILITY or public_config:
         raise PluginError("unsupported")
     if not isinstance(value, dict) or set(value) != INPUT_FIELDS:
         raise PluginError("invalid_event")
 
+    event_key = value["eventKey"]
     service_id = value["serviceId"]
     revision = value["revision"]
     observed_at = value["observedAt"]
     status = value["status"]
     if not all(is_positive_integer(item) for item in (service_id, revision, observed_at)):
+        raise PluginError("invalid_event")
+    if (
+        not isinstance(event_key, str)
+        or not event_key
+        or len(event_key) > 128
+        or any(ord(character) < 0x20 for character in event_key)
+    ):
         raise PluginError("invalid_event")
     if status not in {"active", "paused"}:
         raise PluginError("invalid_event")

@@ -499,9 +499,10 @@ fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
     match path {
         "/api/merchant/plugin-reviewers" => &["merchant_plugins:read"],
         "/api/merchant/services/{id}/plugin-review" => &["merchant_plugins:execute"],
-        "/api/account/external-connectors" | "/api/account/external-accounts/{id}/balances" => {
-            &["external_accounts:read"]
-        }
+        "/api/account/external-connectors"
+        | "/api/account/external-accounts/{id}/balances"
+        | "/api/account/external-accounts/plugin-reviewers"
+        | "/api/account/external-accounts/{id}/plugin-review" => &["external_accounts:read"],
         "/api/account/external-accounts" => {
             if read {
                 &["external_accounts:read"]
@@ -754,6 +755,18 @@ mod tests {
             ["external_accounts:read"]
         );
         assert_eq!(
+            policy("GET", "/api/account/external-accounts/plugin-reviewers")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:read"]
+        );
+        assert_eq!(
+            policy("POST", "/api/account/external-accounts/{id}/plugin-review")
+                .unwrap()
+                .required_scopes,
+            ["external_accounts:read"]
+        );
+        assert_eq!(
             policy("POST", "/api/account/external-accounts")
                 .unwrap()
                 .required_scopes,
@@ -823,10 +836,33 @@ mod tests {
             review.required_scopes,
             ["admin:review_admin_channel_monitor_target_with_plugin:execute"]
         );
+        let propose = policy(
+            "POST",
+            "/api/admin/channel-monitor/targets/{id}/action-proposals",
+        )
+        .unwrap();
+        assert!(propose.admin_only && !propose.session_only);
+        assert_eq!(
+            propose.required_scopes,
+            ["admin:propose_admin_channel_monitor_target_action:execute"]
+        );
+        let confirm = policy(
+            "POST",
+            "/api/admin/channel-monitor/action-proposals/{proposal_key}/confirm",
+        )
+        .unwrap();
+        assert!(confirm.admin_only && !confirm.session_only);
+        assert_eq!(
+            confirm.required_scopes,
+            ["admin:confirm_admin_channel_monitor_action_proposal:execute"]
+        );
         let user_scopes = scope_catalog(SessionRole::User);
         assert!(user_scopes.iter().all(|scope| !scope.admin_only));
         assert!(user_scopes.iter().all(|scope| {
-            scope.scope != list.required_scopes[0] && scope.scope != review.required_scopes[0]
+            scope.scope != list.required_scopes[0]
+                && scope.scope != review.required_scopes[0]
+                && scope.scope != propose.required_scopes[0]
+                && scope.scope != confirm.required_scopes[0]
         }));
     }
 

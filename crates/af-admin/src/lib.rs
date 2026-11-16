@@ -39,6 +39,14 @@ pub use external_account::{
     ExternalAccountFuture, ExternalAccountLinkCommand, SupportedExternalConnector,
     UserExternalAccountService,
 };
+mod external_account_snapshot_plugin_review;
+pub use external_account_snapshot_plugin_review::{
+    DatabaseExternalAccountSnapshotPluginReviewService, ExternalAccountSnapshotPluginReview,
+    ExternalAccountSnapshotPluginReviewCheck, ExternalAccountSnapshotPluginReviewError,
+    ExternalAccountSnapshotPluginReviewFuture, ExternalAccountSnapshotPluginReviewService,
+    ExternalAccountSnapshotPluginReviewStatus, ExternalAccountSnapshotPluginReviewer,
+    ExternalAccountSnapshotPluginReviewerList,
+};
 mod external_account_runtime;
 pub use external_account_runtime::DatabaseUserExternalAccountService;
 mod upstream_usage;

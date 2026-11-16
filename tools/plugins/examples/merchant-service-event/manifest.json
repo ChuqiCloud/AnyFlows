@@ -15,8 +15,9 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["serviceId", "revision", "status", "observedAt"],
+        "required": ["eventKey", "serviceId", "revision", "status", "observedAt"],
         "properties": {
+          "eventKey": { "type": "string", "minLength": 1, "maxLength": 128 },
           "serviceId": { "type": "integer", "minimum": 1 },
           "revision": { "type": "integer", "minimum": 1 },
           "status": { "type": "string", "enum": ["active", "paused"] },

@@ -145,6 +145,7 @@ mod m20261113_000181_create_external_platform_accounts;
 mod m20261114_000182_create_plugin_catalog;
 mod m20261115_000183_create_plugin_distribution;
 mod m20261116_000184_create_plugin_event_deliveries;
+mod m20261116_000185_create_plugin_action_proposals;
 mod schema;
 
 #[cfg(test)]
@@ -563,6 +564,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261114_000182_create_plugin_catalog::Migration),
             Box::new(m20261115_000183_create_plugin_distribution::Migration),
             Box::new(m20261116_000184_create_plugin_event_deliveries::Migration),
+            Box::new(m20261116_000185_create_plugin_action_proposals::Migration),
         ]
     }
 }

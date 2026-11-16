@@ -12,7 +12,7 @@ from anyflows_plugin import Plugin, PluginError
 
 ROOT = Path(__file__).resolve().parent
 CAPABILITY = "events.channel-health.changed.consume"
-INPUT_FIELDS = {"targetId", "channelId", "status", "observedAt"}
+INPUT_FIELDS = {"eventKey", "targetId", "channelId", "status", "observedAt"}
 
 
 def is_positive_integer(value: object) -> bool:
@@ -33,11 +33,19 @@ def review_event(
     if not isinstance(value, dict) or set(value) != INPUT_FIELDS:
         raise PluginError("invalid_configuration")
 
+    event_key = value["eventKey"]
     target_id = value["targetId"]
     channel_id = value["channelId"]
     observed_at = value["observedAt"]
     status = value["status"]
     if not all(is_positive_integer(item) for item in (target_id, channel_id, observed_at)):
+        raise PluginError("invalid_configuration")
+    if (
+        not isinstance(event_key, str)
+        or not event_key
+        or len(event_key) > 128
+        or any(ord(character) < 0x20 for character in event_key)
+    ):
         raise PluginError("invalid_configuration")
     if status not in {"down", "recovered"}:
         raise PluginError("invalid_configuration")

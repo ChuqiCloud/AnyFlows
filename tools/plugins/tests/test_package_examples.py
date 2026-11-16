@@ -87,6 +87,17 @@ class ExamplePackageTests(unittest.TestCase):
                 "channel.model_mapping.review.read",
             )
 
+    def test_account_balance_snapshot_review_example_contains_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "account-balance-snapshot-review.afplugin"
+            package = self.package(output, "account-balance-snapshot-review")
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                package["metadata"]["manifest"]["capabilities"][0]["id"],
+                "account.balance.snapshot.review.read",
+            )
+
     def test_catalog_example_remains_the_default(self):
         with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
             output = Path(temporary) / "catalog.afplugin"

@@ -8,6 +8,7 @@
 
 ```json
 {
+  "eventKey": "channel-monitor:501",
   "targetId": 8,
   "channelId": 12,
   "status": "down",
@@ -15,7 +16,7 @@
 }
 ```
 
-输入由宿主 schema 固定。`status` 只能是 `down` 或 `recovered`；时间是 Unix 秒。输入不含 URL、模型名、凭据、响应正文或用户资料。
+输入由宿主 schema 固定。`status` 只能是 `down` 或 `recovered`；时间是 Unix 秒。`eventKey` 在队列重试时保持不变，供插件对将来的副作用做幂等处理；当前示例只生成报告，可重复运行。输入不含 URL、模型名、凭据、响应正文或用户资料。
 
 插件必须返回 `summary`、`status` 和 `recommendation` 三个字段。宿主会验证输出 schema，限制结果大小，并且只把文本作为报告显示；输出不会被当作通知、命令或渠道配置。
 

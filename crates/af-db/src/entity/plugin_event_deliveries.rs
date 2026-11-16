@@ -42,7 +42,7 @@ impl ActiveModelBehavior for ActiveModel {
         if !insert
             || !matches!(
                 self.event_kind.try_as_ref().map(String::as_str),
-                Some("channel.health.changed" | "merchant.service.changed" | "report.requested")
+                Some("channel.health.changed" | "merchant.service.changed")
             )
             || self
                 .plugin_id

@@ -12,7 +12,14 @@ export type ActiveMonitorTarget = {
 export type ActiveMonitorEvent = { id: number; target_id: number; kind: 'down' | 'recovered'; latency_ms: number | null; occurred_epoch_seconds: number }
 export type ActiveMonitorPluginReviewer = { plugin_id: string; display_name: string; plugin_version: string }
 export type ActiveMonitorPluginReviewCheck = { code: string; title: string; status: 'pass' | 'info' | 'warning' | 'fail'; message: string; recommendation: string | null }
-export type ActiveMonitorPluginReview = { plugin_id: string; display_name: string; plugin_version: string; event_count: number; summary: string; checks: ActiveMonitorPluginReviewCheck[] }
+export type HostActionProposal = { actionId: string; actionVersion: number; input: { enabled: boolean } }
+export type ActiveMonitorPluginReview = { plugin_id: string; display_name: string; plugin_version: string; event_count: number; target_config_version: number; summary: string; checks: ActiveMonitorPluginReviewCheck[]; action_proposal: HostActionProposal | null }
+export type ActiveMonitorActionProposal = {
+  proposal_key: string; plugin_id: string; target_id: number; action_id: string; action_version: number
+  expected_enabled: boolean; requested_enabled: boolean; expected_target_version: number
+  status: 'pending' | 'confirmed' | 'expired' | 'stale' | 'revoked'; expires_at: number; created_at: number
+  confirmed_at: number | null; outcome: Record<string, unknown> | null
+}
 export type ActiveMonitorTargetWrite = Omit<ActiveMonitorTarget, 'id' | 'daily_used' | 'last_attempt_epoch_seconds' | 'last_success_epoch_seconds' | 'failure_since_epoch_seconds' | 'alert_active' | 'is_muted'>
 
 const key = ['active-channel-monitor'] as const
@@ -57,6 +64,34 @@ export function useReviewActiveMonitorEvents() {
       headers: { 'Content-Type': 'application/json' },
       security,
     })).data,
+  })
+}
+
+export function useProposeActiveMonitorAction() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ targetId, pluginId, expectedTargetVersion }: { targetId: number; pluginId: string; expectedTargetVersion: number }) => (await apiClient.post<{ 200: ActiveMonitorActionProposal }, unknown, true>({
+      url: '/api/admin/channel-monitor/targets/{id}/action-proposals',
+      path: { id: targetId },
+      body: { plugin_id: pluginId, expected_target_version: expectedTargetVersion, idempotency_key: crypto.randomUUID() },
+      headers: { 'Content-Type': 'application/json' },
+      security,
+    })).data,
+    onSuccess: () => client.invalidateQueries({ queryKey: key }),
+  })
+}
+
+export function useConfirmActiveMonitorAction() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ proposalKey, confirmationKey }: { proposalKey: string; confirmationKey: string }) => (await apiClient.post<{ 200: ActiveMonitorActionProposal }, unknown, true>({
+      url: '/api/admin/channel-monitor/action-proposals/{proposal_key}/confirm',
+      path: { proposal_key: proposalKey },
+      body: { confirmation_key: confirmationKey },
+      headers: { 'Content-Type': 'application/json' },
+      security,
+    })).data,
+    onSuccess: () => client.invalidateQueries({ queryKey: key }),
   })
 }
 

@@ -33,9 +33,9 @@ New-Item -ItemType Directory -Force dist
 1. 管理员打开 AnyFlows 的“插件管理”，上传生成的 `.afplugin` 包并安装。
 2. 普通上传安装会完成制品登记。对手工登记的制品，先在插件管理中审批该制品。然后在部署的“高级管理”中明确授予 `channel.monitor.events.review.read` v1，再启用部署。插件的 `publicConfig` 必须保留为空对象 `{}`。
 3. 管理员进入“渠道”页面，展开“主动渠道监控”。在目标的已记录事件区域中选择插件并运行检查。
-4. 页面显示摘要和检查项。结果是参考意见，不会替管理员执行探测或更改设置。
+4. 页面显示摘要和检查项。插件本身不执行探测或更改设置。若安装的插件另行声明并获授 channel.monitor.target.action-propose.read@1，它还可以建议暂停或恢复当前监控目标；页面会显示目标和启停变化，管理员必须再次勾选确认后，宿主才会执行。
 
-使用管理员个人访问令牌调用管理接口时，列出插件需要 `admin:list_admin_channel_monitor_plugin_reviewers:execute`，运行检查需要 `admin:review_admin_channel_monitor_target_with_plugin:execute`。这两个权限分别只覆盖“列出检查插件”和“分析指定目标的事件”；会话和 PAT 都必须具有管理员角色。
+使用管理员个人访问令牌调用管理接口时，列出插件需要 admin:list_admin_channel_monitor_plugin_reviewers:execute，运行检查需要 admin:review_admin_channel_monitor_target_with_plugin:execute。若部署同时授予动作建议能力，创建动作提案和确认分别需要 admin:propose_admin_channel_monitor_target_action:execute、admin:confirm_admin_channel_monitor_action_proposal:execute。这些权限只覆盖相应的插件列表、事件分析、固定提案和确认接口；会话和 PAT 都必须具有管理员角色。
 
 ## 输入数据
 
@@ -78,6 +78,12 @@ New-Item -ItemType Directory -Force dist
 ```
 
 `status` 只能是 `pass`、`info`、`warning` 或 `fail`。摘要、标题、消息和建议必须是简短文字；`recommendation` 没有建议时填 `null`。宿主最多接受 64 项检查，结果上限为 16 KiB。
+
+获授动作建议能力的插件还可以返回可选 actionProposal，固定格式为：
+
+    {"actionId":"active-channel-monitor.target.set-enabled","actionVersion":1,"input":{"enabled":false}}
+
+动作只能改变目标启用状态；目标 ID 由宿主从路由绑定，插件不能指定目标或其他字段。动作需要管理员另行确认，不能由插件结果自动执行。
 
 ## 修改检查规则
 

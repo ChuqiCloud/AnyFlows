@@ -796,6 +796,21 @@
         "eventCount": "Analyzed {{count}} events",
         "noChecks": "The plugin returned no analysis items.",
         "recommendation": "Recommendation",
+        "action": {
+          "suggestion": "The plugin suggested a target state change.",
+          "suggestionDetail": "Suggested target state: {{enabled}}. Creating a proposal does not change settings.",
+          "prepare": "Create confirmation proposal",
+          "prepareError": "Could not create the proposal. The target or plugin generation may have changed; run the analysis again.",
+          "confirmTitle": "Confirm target state change",
+          "target": "Target #{{id}}",
+          "change": "Change: {{before}} → {{after}}",
+          "expires": "Proposal expires at {{time}}",
+          "confirmCheck": "I reviewed the target and change and confirm the host should save this setting.",
+          "confirm": "Confirm and apply",
+          "confirmError": "Confirmation did not complete. The host rejects stale targets or revoked plugin grants.",
+          "completed": "The setting was updated. Re-enabling requires a new plugin proposal and administrator confirmation.",
+          "unavailable": "The proposal expired, the target changed, or plugin authorization was revoked. Run the analysis again."
+        },
         "status": { "pass": "Pass", "info": "Info", "warning": "Warning", "fail": "Failed" }
       }
     },
@@ -8163,6 +8178,27 @@
       "showHistory": "View balance history",
       "hideHistory": "Hide history",
       "history": "Balance snapshot history",
+      "pluginReview": {
+        "open": "Plugin analysis",
+        "title": "Analyze stored balance snapshots",
+        "subtitle": "Choose an authorized analysis plugin. It receives only balance amounts, units, status, and observation times.",
+        "consent": "Selecting “Analyze” sends up to 20 stored balance snapshots from this account to the selected plugin. This does not refresh the upstream, decrypt credentials, affect your AnyFlows wallet, or change the account. The result is a plugin suggestion for you to review.",
+        "plugin": "Analysis plugin",
+        "run": "Analyze",
+        "listError": "Authorized analysis plugins could not be loaded.",
+        "none": "No plugin has been granted the balance snapshot analysis capability.",
+        "runError": "Analysis failed. Try again.",
+        "snapshotRange": "{{count}} records · {{from}} to {{to}}",
+        "noChecks": "The plugin returned no checks.",
+        "recommendation": "Recommendation",
+        "close": "Close",
+        "status": {
+          "pass": "Pass",
+          "info": "Info",
+          "warning": "Warning",
+          "fail": "Issue"
+        }
+      },
       "historyError": "Balance history could not be loaded.",
       "noHistory": "No historical snapshots yet.",
       "unlink": "Unlink",

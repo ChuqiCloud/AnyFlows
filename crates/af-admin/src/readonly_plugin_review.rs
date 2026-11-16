@@ -6,7 +6,8 @@ use af_db::{
     PluginArtifactSourceKind, PluginCatalogError, PluginDeploymentQuery, PluginDeploymentRecord,
 };
 use af_plugin_contract::{
-    CapabilityAccess, InvocationMetadata, PluginId, PluginManifest, SideEffectClass,
+    CapabilityAccess, HostActionProposal, InvocationMetadata, PluginId, PluginManifest,
+    SideEffectClass,
 };
 use af_plugin_runtime::CapabilityExecutionContext;
 use serde::{Deserialize, Serialize};
@@ -45,6 +46,7 @@ pub(crate) struct ReadOnlyPluginReviewContract<'a> {
     pub max_output_bytes: u32,
     pub max_checks: usize,
     pub budget: Duration,
+    pub action_proposal_capability: Option<&'a str>,
 }
 
 /// The shared summary/check response schema used by host-owned read-only reviews.
@@ -67,10 +69,24 @@ pub(crate) fn read_only_review_output_schema() -> Value {
                         "message":{"type":"string","minLength":1,"maxLength":2048},
                         "recommendation":{"type":["string","null"],"minLength":1,"maxLength":2048}
                     }
-                }
+            }
             }
         }
     })
+}
+
+pub(crate) fn read_only_review_output_schema_with_action() -> Value {
+    let mut schema = read_only_review_output_schema();
+    schema["properties"]["actionProposal"] = serde_json::json!({
+        "type":"object","additionalProperties":false,
+        "required":["actionId","actionVersion","input"],
+        "properties":{
+            "actionId":{"const":"active-channel-monitor.target.set-enabled"},
+            "actionVersion":{"const":1},
+            "input":{"type":"object","additionalProperties":false,"required":["enabled"],"properties":{"enabled":{"type":"boolean"}}}
+        }
+    });
+    schema
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -92,11 +108,13 @@ pub(crate) struct ReadOnlyPluginReviewCheck {
     pub recommendation: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct ReadOnlyPluginReviewOutput {
     pub summary: String,
     pub checks: Vec<ReadOnlyPluginReviewCheck>,
+    #[serde(rename = "actionProposal", default)]
+    pub action_proposal: Option<HostActionProposal>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -106,11 +124,15 @@ pub(crate) struct ReadOnlyPluginReviewer {
     pub plugin_version: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ReadOnlyPluginReviewResult {
     pub reviewer: ReadOnlyPluginReviewer,
+    pub artifact_id: i64,
+    pub artifact_digest: String,
+    pub deployment_generation: i64,
     pub summary: String,
     pub checks: Vec<ReadOnlyPluginReviewCheck>,
+    pub action_proposal: Option<HostActionProposal>,
 }
 
 /// Enumerate only deployments that satisfy the module's complete fixed contract.
@@ -261,6 +283,13 @@ pub(crate) async fn invoke_read_only_review(
                 return Err(error);
             }
         };
+        if output.action_proposal.is_some()
+            && !contract.action_proposal_capability.is_some_and(|capability_id| {
+                satisfies_action_proposal_grant(&deployment, capability_id)
+            })
+        {
+            return Err(ReadOnlyPluginReviewError::Forbidden);
+        }
         tracing::info!(
             target: "anyflows_plugin",
             plugin_id,
@@ -284,8 +313,12 @@ pub(crate) async fn invoke_read_only_review(
 
         Ok(ReadOnlyPluginReviewResult {
             reviewer: reviewer(&deployment),
+            artifact_id: deployment.artifact.id,
+            artifact_digest: deployment.artifact.digest.clone(),
+            deployment_generation: deployment.generation,
             summary: output.summary,
             checks: output.checks,
+            action_proposal: output.action_proposal,
         })
     })
     .await
@@ -321,6 +354,20 @@ fn satisfies_contract(
                 && capability.input_schema.as_ref() == Some(contract.input_schema)
                 && capability.output_schema.as_ref() == Some(contract.output_schema)
         })
+        && contract
+            .action_proposal_capability
+            .is_none_or(|action_capability| {
+                deployment
+                    .granted_capabilities
+                    .iter()
+                    .any(|grant| grant.id == action_capability && grant.version == 1)
+                    && manifest.capabilities.iter().any(|capability| {
+                        capability.id.as_str() == action_capability
+                            && capability.version == 1
+                            && capability.access == CapabilityAccess::Read
+                            && capability.side_effect == SideEffectClass::None
+                    })
+            })
 }
 
 fn valid_contract(contract: &ReadOnlyPluginReviewContract<'_>) -> bool {
@@ -329,6 +376,9 @@ fn valid_contract(contract: &ReadOnlyPluginReviewContract<'_>) -> bool {
         && contract.capability_version > 0
         && contract.input_schema.is_object()
         && contract.output_schema.is_object()
+        && contract
+            .action_proposal_capability
+            .is_none_or(|capability| !capability.is_empty() && capability.len() <= 128)
         && contract.max_input_bytes > 0
         && contract.max_output_bytes > 0
         && contract
@@ -382,7 +432,40 @@ fn decode_output(
     {
         return Err(ReadOnlyPluginReviewError::Unavailable);
     }
+    if parsed.action_proposal.as_ref().is_some_and(|proposal| {
+        contract.action_proposal_capability.is_none() || !valid_action_proposal(proposal)
+    }) {
+        return Err(ReadOnlyPluginReviewError::Unavailable);
+    }
     Ok(parsed)
+}
+
+fn valid_action_proposal(proposal: &HostActionProposal) -> bool {
+    proposal.action_id.as_str() == "active-channel-monitor.target.set-enabled"
+        && proposal.action_version == 1
+        && proposal.input.as_object().is_some_and(|input| {
+            input.len() == 1 && input.get("enabled").and_then(Value::as_bool).is_some()
+        })
+}
+
+fn satisfies_action_proposal_grant(
+    deployment: &PluginDeploymentRecord,
+    capability_id: &str,
+) -> bool {
+    deployment
+        .granted_capabilities
+        .iter()
+        .any(|grant| grant.id == capability_id && grant.version == 1)
+        && serde_json::from_value::<PluginManifest>(deployment.artifact.manifest.clone()).is_ok_and(
+            |manifest| {
+                manifest.capabilities.iter().any(|capability| {
+                    capability.id.as_str() == capability_id
+                        && capability.version == 1
+                        && capability.access == CapabilityAccess::Read
+                        && capability.side_effect == SideEffectClass::None
+                })
+            },
+        )
 }
 
 fn valid_text(value: &str, max_bytes: usize) -> bool {
@@ -436,6 +519,7 @@ mod tests {
             max_output_bytes: 16 * 1024,
             max_checks: 64,
             budget: Duration::from_secs(5),
+            action_proposal_capability: None,
         }
     }
 

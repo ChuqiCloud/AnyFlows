@@ -114,6 +114,8 @@ impl ActiveChannelMonitorTargetInput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActiveChannelMonitorTarget {
     pub id: i64,
+    /// Monotonic version for administrator changes; probe telemetry does not change it.
+    pub config_version: i64,
     pub channel_id: ChannelId,
     pub credential_id: CredentialId,
     pub model: String,
@@ -275,6 +277,25 @@ impl ActiveChannelMonitorRepository {
         .await
     }
 
+    pub async fn get_target(
+        &self,
+        target_id: i64,
+    ) -> Result<Option<ActiveChannelMonitorTarget>, ActiveChannelMonitorError> {
+        if target_id <= 0 {
+            return Err(ActiveChannelMonitorError::InvalidConfiguration);
+        }
+        self.bounded(async {
+            targets::Entity::find_by_id(target_id)
+                .filter(targets::Column::DeleteAfterLease.eq(false))
+                .one(self.pool.connection())
+                .await
+                .map_err(map_db)?
+                .map(convert_target)
+                .transpose()
+        })
+        .await
+    }
+
     pub async fn upsert_target(
         &self,
         input: ActiveChannelMonitorTargetInput,
@@ -303,19 +324,46 @@ impl ActiveChannelMonitorRepository {
                 .map(from_epoch)
                 .transpose()?;
             let row = if let Some(existing) = existing {
-                let mut active: targets::ActiveModel = existing.into();
-                active.enabled = Set(input.enabled);
-                active.interval_secs = Set(input.interval_secs as i32);
-                active.daily_budget = Set(input.daily_budget as i32);
-                active.timeout_secs = Set(input.timeout_secs as i32);
-                active.alert_after_secs = Set(input.alert_after_secs as i32);
-                active.muted_until = Set(muted_until);
-                active.delete_after_lease = Set(false);
-                active.updated_at = Set(now);
-                active
-                    .update(self.pool.connection())
+                if existing.config_version == i64::MAX {
+                    return Err(ActiveChannelMonitorError::Invariant);
+                }
+                let updated = targets::Entity::update_many()
+                    .col_expr(targets::Column::Enabled, Expr::value(input.enabled))
+                    .col_expr(
+                        targets::Column::ConfigVersion,
+                        Expr::col(targets::Column::ConfigVersion).add(1_i64),
+                    )
+                    .col_expr(
+                        targets::Column::IntervalSecs,
+                        Expr::value(input.interval_secs as i32),
+                    )
+                    .col_expr(
+                        targets::Column::DailyBudget,
+                        Expr::value(input.daily_budget as i32),
+                    )
+                    .col_expr(
+                        targets::Column::TimeoutSecs,
+                        Expr::value(input.timeout_secs as i32),
+                    )
+                    .col_expr(
+                        targets::Column::AlertAfterSecs,
+                        Expr::value(input.alert_after_secs as i32),
+                    )
+                    .col_expr(targets::Column::MutedUntil, Expr::value(muted_until))
+                    .col_expr(targets::Column::DeleteAfterLease, Expr::value(false))
+                    .col_expr(targets::Column::UpdatedAt, Expr::value(now))
+                    .filter(targets::Column::Id.eq(existing.id))
+                    .exec(self.pool.connection())
+                    .await
+                    .map_err(map_db)?;
+                if updated.rows_affected != 1 {
+                    return Err(ActiveChannelMonitorError::Invariant);
+                }
+                targets::Entity::find_by_id(existing.id)
+                    .one(self.pool.connection())
                     .await
                     .map_err(map_db)?
+                    .ok_or(ActiveChannelMonitorError::Invariant)?
             } else {
                 if targets::Entity::find()
                     .count(self.pool.connection())
@@ -330,6 +378,7 @@ impl ActiveChannelMonitorRepository {
                     credential_id: Set(input.credential_id.get()),
                     model: Set(input.model),
                     enabled: Set(input.enabled),
+                    config_version: Set(1),
                     interval_secs: Set(input.interval_secs as i32),
                     daily_budget: Set(input.daily_budget as i32),
                     timeout_secs: Set(input.timeout_secs as i32),
@@ -373,6 +422,10 @@ impl ActiveChannelMonitorRepository {
                 let result = targets::Entity::update_many()
                     .col_expr(targets::Column::Enabled, Expr::value(false))
                     .col_expr(targets::Column::DeleteAfterLease, Expr::value(true))
+                    .col_expr(
+                        targets::Column::ConfigVersion,
+                        Expr::col(targets::Column::ConfigVersion).add(1),
+                    )
                     .col_expr(targets::Column::UpdatedAt, Expr::value(now))
                     .filter(targets::Column::Id.eq(target_id))
                     .exec(&transaction)
@@ -891,6 +944,7 @@ fn convert_target(
 ) -> Result<ActiveChannelMonitorTarget, ActiveChannelMonitorError> {
     Ok(ActiveChannelMonitorTarget {
         id: row.id,
+        config_version: row.config_version,
         channel_id: ChannelId::new(row.channel_id)
             .map_err(|_| ActiveChannelMonitorError::Invariant)?,
         credential_id: CredentialId::new(row.credential_id)

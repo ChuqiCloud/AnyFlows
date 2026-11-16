@@ -22,12 +22,14 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "eventKey",
           "targetId",
           "channelId",
           "status",
           "observedAt"
         ],
         "properties": {
+          "eventKey": { "type": "string", "minLength": 1, "maxLength": 128 },
           "targetId": {
             "type": "integer",
             "minimum": 1

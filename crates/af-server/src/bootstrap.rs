@@ -3050,10 +3050,23 @@ impl Bootstrap<Supervised> {
             )
             .expect("内置平台账户连接器必须有效"),
         );
-        let router = router.merge(af_http::build_user_external_account_router(
-            external_account_service,
-            Arc::clone(&self.stage.infrastructure.session_authenticator),
-        ));
+        let external_account_snapshot_plugin_review_service: Arc<
+            dyn af_admin::ExternalAccountSnapshotPluginReviewService,
+        > = Arc::new(
+            af_admin::DatabaseExternalAccountSnapshotPluginReviewService::new(
+                Arc::clone(&external_account_service),
+                Arc::clone(&plugin_lifecycle_service),
+            ),
+        );
+        let router = router
+            .merge(af_http::build_user_external_account_router(
+                Arc::clone(&external_account_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_user_external_account_plugin_review_router(
+                external_account_snapshot_plugin_review_service,
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ));
         let public_status = af_db::PublicServiceStatusRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
@@ -3081,6 +3094,9 @@ impl Bootstrap<Supervised> {
             af_admin::DatabaseActiveChannelMonitorPluginReviewService::new(
                 Arc::clone(&active_channel_monitor_service),
                 Arc::clone(&plugin_lifecycle_service),
+                af_db::PluginActionProposalRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                ),
             ),
         );
         let channel_model_mapping_plugin_review_service: Arc<

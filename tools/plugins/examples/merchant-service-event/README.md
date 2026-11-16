@@ -2,7 +2,9 @@
 
 This example handles public service publication, revision update, pause, and restore events. AnyFlows delivers these events from the same database transaction that commits the state change.
 
-The plugin receives only `serviceId`, the published `revision`, `status` (`active` or `paused`), and `observedAt`. It does not receive the merchant identity, service description, model list, prices, upstream URL, or credentials. The example produces a short report; it does not modify the service or notify users.
+The plugin receives a stable `eventKey`, `serviceId`, the published `revision`, `status` (`active` or `paused`), and `observedAt`. It does not receive the merchant identity, service description, model list, prices, upstream URL, or credentials. The example produces a short report; it does not modify the service or notify users.
+
+Delivery is at least once: a worker retry reuses the same `eventKey`. Use this value as the idempotency key at any durable destination before adding a side effect. The current read-only handler is safe to run more than once.
 
 ## Package
 
@@ -22,4 +24,4 @@ Only enabled, approved, unrevoked deployments with the exact capability grant re
 
 ## Extend the example
 
-Keep the fixed input and output schemas. Add only logic that can work from the four public fields. Do not add HTTP requests, shell commands, merchant lookups, or writes; new event data requires a host-owned schema and privacy review first.
+Keep the fixed input and output schemas. Add only logic that can work from the five public fields. Do not add HTTP requests, shell commands, merchant lookups, or writes; new event data requires a host-owned schema and privacy review first.

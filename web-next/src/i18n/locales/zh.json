@@ -796,6 +796,21 @@
         "eventCount": "已分析 {{count}} 条事件",
         "noChecks": "插件没有返回分析项。",
         "recommendation": "建议",
+        "action": {
+          "suggestion": "插件提出了一个目标状态建议。",
+          "suggestionDetail": "建议将此目标设为：{{enabled}}。创建提案不会修改设置。",
+          "prepare": "创建待确认提案",
+          "prepareError": "无法创建提案。目标或插件版本可能已变化，请重新分析。",
+          "confirmTitle": "确认目标状态变更",
+          "target": "目标 #{{id}}",
+          "change": "变更：{{before}} → {{after}}",
+          "expires": "提案过期时间：{{time}}",
+          "confirmCheck": "我已核对目标和变更内容，确认由宿主保存此设置。",
+          "confirm": "确认并执行",
+          "confirmError": "确认未完成。若目标或插件授权发生变化，提案会被拒绝。",
+          "completed": "设置已更新。重新启用需由插件重新提交并经管理员确认。",
+          "unavailable": "提案已过期、目标已变化或插件授权已撤销。请重新分析。"
+        },
         "status": { "pass": "通过", "info": "提示", "warning": "警告", "fail": "未通过" }
       }
     },
@@ -8161,6 +8176,27 @@
       "showHistory": "查看余额记录",
       "hideHistory": "收起记录",
       "history": "余额快照历史",
+      "pluginReview": {
+        "open": "插件分析",
+        "title": "分析已保存的余额快照",
+        "subtitle": "选择一个已获授权的分析插件。插件只收到余额数值、币种、状态和记录时间。",
+        "consent": "点击“开始分析”即表示你同意将此账户最多 20 条已保存余额快照发送给所选插件。此操作不会刷新上游、解密凭据、影响 AnyFlows 钱包或修改账户。结果是插件建议，请自行判断。",
+        "plugin": "分析插件",
+        "run": "开始分析",
+        "listError": "无法读取已授权的分析插件。",
+        "none": "没有已获授余额快照分析能力的插件。",
+        "runError": "分析失败，请重试。",
+        "snapshotRange": "{{count}} 条记录 · {{from}} 至 {{to}}",
+        "noChecks": "插件没有返回检查项。",
+        "recommendation": "建议",
+        "close": "关闭",
+        "status": {
+          "pass": "通过",
+          "info": "说明",
+          "warning": "注意",
+          "fail": "异常"
+        }
+      },
       "historyError": "无法读取余额记录。",
       "noHistory": "暂无历史快照。",
       "unlink": "解除关联",

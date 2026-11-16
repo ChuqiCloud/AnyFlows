@@ -682,6 +682,30 @@ impl DatabaseAdminPluginLifecycleService {
         self.sidecar_runtime.clone()
     }
 
+    pub(crate) async fn audit_host_action(
+        &self,
+        principal: SessionPrincipal,
+        request_id: &str,
+        operation: &'static str,
+        proposal_key: &str,
+        outcome: PlatformAuditOutcome,
+        before: Option<Value>,
+        after: Option<Value>,
+    ) -> Result<(), AdminPluginLifecycleError> {
+        let entry = audit_entry(
+            principal,
+            request_id,
+            "/api/admin/channel-monitor/action-proposals",
+            operation,
+            "plugin_action_proposal",
+            Some(proposal_key.to_owned()),
+            outcome,
+            before,
+            after,
+        )?;
+        self.audit.record(entry).await.map_err(map_audit_error)
+    }
+
     pub async fn list_event_results(
         &self,
         principal: SessionPrincipal,
@@ -1071,7 +1095,7 @@ impl DatabaseAdminPluginLifecycleService {
             ) | (
                 "merchant.service.changed",
                 "events.merchant-service.changed.consume"
-            ) | ("report.requested", "events.report.requested.consume")
+            )
         );
         if !event_capability_matches || lease.expires_at() <= plugin_event_now_unix_seconds() {
             return Err(PluginEventFailureKind::Permanent);
@@ -1103,7 +1127,7 @@ impl DatabaseAdminPluginLifecycleService {
         let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
             format!("plugin-event:{}", lease.id()),
             InvocationMetadata {
-                request_id: format!("plugin-event-{}-{}", lease.id(), lease.attempt_count()),
+                request_id: uuid::Uuid::new_v4().to_string(),
                 deadline_unix_ms,
             },
             deployment.config.clone(),

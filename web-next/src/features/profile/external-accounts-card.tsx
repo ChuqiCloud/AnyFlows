@@ -1,7 +1,8 @@
 import { Button, Card, CardBody, CardHeader, Chip, Input, Select, SelectItem, Skeleton } from '@heroui/react'
 import { useState, type FormEvent } from 'react'
-import { Check, CircleAlert, Clock3, Link2, LoaderCircle, RefreshCw, Unlink } from 'lucide-react'
+import { Check, CircleAlert, Clock3, Link2, LoaderCircle, RefreshCw, Sparkles, Unlink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { ExternalAccountSnapshotPluginReview } from './external-account-snapshot-plugin-review'
 
 import { ApiError } from '@/lib/api'
 import {
@@ -78,6 +79,7 @@ function ExternalAccountRow({ account, connectors }: { account: ExternalAccount;
   const refresh = useRefreshExternalAccount()
   const unlink = useUnlinkExternalAccount()
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [snapshotReviewOpen, setSnapshotReviewOpen] = useState(false)
   const [confirmUnlink, setConfirmUnlink] = useState(false)
   const connectorLabel = connectors.find((connector) => connector.id === account.connectorId)?.displayName ?? account.connectorId
   const instance = instanceUrl(account.baseUrl)
@@ -101,10 +103,12 @@ function ExternalAccountRow({ account, connectors }: { account: ExternalAccount;
     </div> : <div className="flex flex-wrap items-center justify-end gap-2">
       <Button size="sm" variant="bordered" isDisabled={refresh.isPending} isLoading={refresh.isPending} onPress={() => refresh.mutate(account.id)}><RefreshCw className="size-3.5" aria-hidden="true" />{t('profile.externalAccounts.refresh')}</Button>
       <Button size="sm" variant="light" aria-expanded={historyOpen} onPress={() => setHistoryOpen((value) => !value)}>{historyOpen ? t('profile.externalAccounts.hideHistory') : t('profile.externalAccounts.showHistory')}</Button>
+      {account.latestBalance ? <Button size="sm" variant="light" onPress={() => setSnapshotReviewOpen(true)}><Sparkles className="size-3.5" aria-hidden="true" />{t('profile.externalAccounts.pluginReview.open')}</Button> : null}
       <Button size="sm" variant="light" color="danger" onPress={() => { unlink.reset(); setConfirmUnlink(true) }}><Unlink className="size-3.5" aria-hidden="true" />{t('profile.externalAccounts.unlink')}</Button>
     </div>}
     {error ? <p role="alert" className="text-xs text-destructive">{t(`profile.externalAccounts.errors.${errorMessageKey(error)}`)}</p> : null}
     <BalanceHistory accountId={account.id} open={historyOpen} />
+    <ExternalAccountSnapshotPluginReview open={snapshotReviewOpen} connectionId={account.id} onClose={() => setSnapshotReviewOpen(false)} />
   </article>
 }
 

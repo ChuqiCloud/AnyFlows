@@ -3,8 +3,14 @@
   "displayName": "Example channel monitor event review",
   "pluginVersion": "1.0.0",
   "contractRange": {
-    "minimum": {"major": 1, "minor": 0},
-    "maximum": {"major": 1, "minor": 0}
+    "minimum": {
+      "major": 1,
+      "minor": 0
+    },
+    "maximum": {
+      "major": 1,
+      "minor": 0
+    }
   },
   "capabilities": [
     {
@@ -15,7 +21,10 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["events"],
+        "required": [
+          "events",
+          "targetEnabled"
+        ],
         "properties": {
           "events": {
             "type": "array",
@@ -23,35 +32,271 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["kind", "latency_ms", "occurred_epoch_seconds"],
+              "required": [
+                "kind",
+                "latency_ms",
+                "occurred_epoch_seconds"
+              ],
               "properties": {
-                "kind": {"type": "string", "enum": ["down", "recovered"]},
-                "latency_ms": {"type": ["integer", "null"], "minimum": 0},
-                "occurred_epoch_seconds": {"type": "integer", "minimum": 0}
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "down",
+                    "recovered"
+                  ]
+                },
+                "latency_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "occurred_epoch_seconds": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
             }
+          },
+          "targetEnabled": {
+            "type": "boolean"
           }
         }
       },
       "outputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["summary", "checks"],
+        "required": [
+          "summary",
+          "checks"
+        ],
         "properties": {
-          "summary": {"type": "string", "minLength": 1, "maxLength": 2048},
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
           "checks": {
             "type": "array",
             "maxItems": 64,
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["code", "title", "status", "message", "recommendation"],
+              "required": [
+                "code",
+                "title",
+                "status",
+                "message",
+                "recommendation"
+              ],
               "properties": {
-                "code": {"type": "string", "minLength": 1, "maxLength": 64},
-                "title": {"type": "string", "minLength": 1, "maxLength": 128},
-                "status": {"type": "string", "enum": ["pass", "info", "warning", "fail"]},
-                "message": {"type": "string", "minLength": 1, "maxLength": 2048},
-                "recommendation": {"type": ["string", "null"], "minLength": 1, "maxLength": 2048}
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "info",
+                    "warning",
+                    "fail"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "recommendation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              }
+            }
+          },
+          "actionProposal": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "actionId",
+              "actionVersion",
+              "input"
+            ],
+            "properties": {
+              "actionId": {
+                "const": "active-channel-monitor.target.set-enabled"
+              },
+              "actionVersion": {
+                "const": 1
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "channel.monitor.target.action-propose.read",
+      "version": 1,
+      "access": "read",
+      "sideEffect": "none",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "events",
+          "targetEnabled"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "latency_ms",
+                "occurred_epoch_seconds"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "down",
+                    "recovered"
+                  ]
+                },
+                "latency_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "occurred_epoch_seconds": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "targetEnabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "summary",
+          "checks"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "checks": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "title",
+                "status",
+                "message",
+                "recommendation"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pass",
+                    "info",
+                    "warning",
+                    "fail"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "recommendation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              }
+            }
+          },
+          "actionProposal": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "actionId",
+              "actionVersion",
+              "input"
+            ],
+            "properties": {
+              "actionId": {
+                "const": "active-channel-monitor.target.set-enabled"
+              },
+              "actionVersion": {
+                "const": 1
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
               }
             }
           }
@@ -59,12 +304,17 @@
       }
     }
   ],
-  "authenticationModes": ["none"],
+  "authenticationModes": [
+    "none"
+  ],
   "limits": {
     "maxConcurrency": 1,
     "requestTimeoutMs": 5000,
     "maxResponseBytes": 65536,
     "maxPageSize": 1
   },
-  "configSchema": {"type": "object", "additionalProperties": false}
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
 }

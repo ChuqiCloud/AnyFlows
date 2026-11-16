@@ -44,8 +44,6 @@ pub enum PluginEventKind {
     ChannelHealthChanged,
     /// A merchant service moved through a public lifecycle state.
     MerchantServiceChanged,
-    /// The host scheduled an explicitly requested, bounded read-only report.
-    ReportRequested,
 }
 
 impl PluginEventKind {
@@ -53,7 +51,6 @@ impl PluginEventKind {
         match self {
             Self::ChannelHealthChanged => "channel.health.changed",
             Self::MerchantServiceChanged => "merchant.service.changed",
-            Self::ReportRequested => "report.requested",
         }
     }
 
@@ -61,7 +58,6 @@ impl PluginEventKind {
         match value {
             "channel.health.changed" => Ok(Self::ChannelHealthChanged),
             "merchant.service.changed" => Ok(Self::MerchantServiceChanged),
-            "report.requested" => Ok(Self::ReportRequested),
             _ => Err(PluginEventDeliveryRepositoryError::Invariant),
         }
     }
@@ -70,7 +66,6 @@ impl PluginEventKind {
         match self {
             Self::ChannelHealthChanged => "events.channel-health.changed.consume",
             Self::MerchantServiceChanged => "events.merchant-service.changed.consume",
-            Self::ReportRequested => "events.report.requested.consume",
         }
     }
 
@@ -84,19 +79,12 @@ impl PluginEventKind {
                 .and_then(Value::as_i64)
                 .is_some_and(|value| value > 0)
         };
-        let bounded_text = |key: &str, maximum: usize| {
-            object
-                .get(key)
-                .and_then(Value::as_str)
-                .is_some_and(|value| {
-                    !value.is_empty()
-                        && value.len() <= maximum
-                        && !value.chars().any(char::is_control)
-                })
-        };
         match self {
             Self::ChannelHealthChanged => {
-                only_keys(object, &["targetId", "channelId", "status", "observedAt"])
+                only_keys(
+                    object,
+                    &["eventKey", "targetId", "channelId", "status", "observedAt"],
+                ) && valid_event_key_field(object)
                     && positive_integer("targetId")
                     && positive_integer("channelId")
                     && positive_integer("observedAt")
@@ -106,7 +94,10 @@ impl PluginEventKind {
                         .is_some_and(|status| matches!(status, "down" | "recovered"))
             }
             Self::MerchantServiceChanged => {
-                only_keys(object, &["serviceId", "revision", "status", "observedAt"])
+                only_keys(
+                    object,
+                    &["eventKey", "serviceId", "revision", "status", "observedAt"],
+                ) && valid_event_key_field(object)
                     && positive_integer("serviceId")
                     && positive_integer("revision")
                     && positive_integer("observedAt")
@@ -115,17 +106,15 @@ impl PluginEventKind {
                         .and_then(Value::as_str)
                         .is_some_and(|status| matches!(status, "active" | "paused"))
             }
-            Self::ReportRequested => {
-                only_keys(object, &["requestId", "reportKind", "requestedAt"])
-                    && bounded_text("requestId", 64)
-                    && positive_integer("requestedAt")
-                    && object
-                        .get("reportKind")
-                        .and_then(Value::as_str)
-                        .is_some_and(|kind| matches!(kind, "channel-health" | "merchant-service"))
-            }
         }
     }
+}
+
+fn valid_event_key_field(object: &serde_json::Map<String, Value>) -> bool {
+    object
+        .get("eventKey")
+        .and_then(Value::as_str)
+        .is_some_and(valid_event_key)
 }
 
 fn only_keys(object: &serde_json::Map<String, Value>, expected: &[&str]) -> bool {
@@ -265,6 +254,7 @@ where
         .checked_add(MAX_EVENT_TTL_SECONDS)
         .ok_or(PluginEventDeliveryRepositoryError::Invariant)?;
     let payload = json!({
+        "eventKey": format!("channel-monitor:{event_id}"),
         "targetId": target_id,
         "channelId": channel_id,
         "status": status.as_str(),
@@ -385,6 +375,7 @@ where
         .checked_add(MAX_EVENT_TTL_SECONDS)
         .ok_or(PluginEventDeliveryRepositoryError::Invariant)?;
     let payload = json!({
+        "eventKey": event_key,
         "serviceId": service_id,
         "revision": revision,
         "status": status,
@@ -608,6 +599,7 @@ impl PluginEventDeliveryCreate {
             || self.capability_version == 0
             || !self.payload.is_object()
             || !self.event_kind.validate_payload(&self.payload)
+            || self.payload.get("eventKey").and_then(Value::as_str) != Some(self.event_key.as_str())
             || contains_sensitive_fields(&self.payload)
             || self.max_attempts <= 0
             || self.max_attempts > MAX_EVENT_ATTEMPTS
@@ -768,12 +760,20 @@ mod tests {
 
     fn delivery(
         kind: PluginEventKind,
-        payload: Value,
+        mut payload: Value,
         capability: &str,
     ) -> PluginEventDeliveryCreate {
+        let event_key = match kind {
+            PluginEventKind::ChannelHealthChanged => "channel:12:revision:4",
+            PluginEventKind::MerchantServiceChanged => "merchant:88:revision:7",
+        };
+        payload
+            .as_object_mut()
+            .expect("event fixture payload is an object")
+            .insert("eventKey".to_owned(), Value::String(event_key.to_owned()));
         PluginEventDeliveryCreate {
             plugin_id: "org.example.events".to_owned(),
-            event_key: "channel:12:revision:4".to_owned(),
+            event_key: event_key.to_owned(),
             event_kind: kind,
             artifact_id: 8,
             artifact_digest: "ab".repeat(32),
@@ -807,12 +807,13 @@ mod tests {
             delivery(
                 PluginEventKind::ChannelHealthChanged,
                 serde_json::json!({"targetId":1,"channelId":12,"status":"down","observedAt":100}),
-                "events.report.requested.consume"
+                "events.merchant-service.changed.consume"
             )
             .validate()
             .is_err()
         );
         assert!(PluginEventKind::parse("*").is_err());
+        assert!(PluginEventKind::parse("report.requested").is_err());
     }
 
     #[test]
@@ -850,17 +851,25 @@ mod tests {
     }
 
     #[test]
-    fn report_requests_reject_unrecognized_fields_and_overlong_retention() {
+    fn event_inputs_reject_unrecognized_fields_and_overlong_retention() {
         let mut input = delivery(
-            PluginEventKind::ReportRequested,
-            serde_json::json!({"requestId":"request-1","reportKind":"channel-health","requestedAt":100}),
-            "events.report.requested.consume",
+            PluginEventKind::MerchantServiceChanged,
+            serde_json::json!({"serviceId":88,"revision":7,"status":"active","observedAt":100}),
+            "events.merchant-service.changed.consume",
         );
         input.expires_at = input.created_at + MAX_EVENT_TTL_SECONDS + 1;
         assert!(input.validate().is_err());
         input.expires_at = 1_000;
         input.payload["principalEmail"] = Value::String("private@example.invalid".to_owned());
         assert!(input.validate().is_err());
+
+        let mut mismatched_key = delivery(
+            PluginEventKind::MerchantServiceChanged,
+            json!({"serviceId":88,"revision":7,"status":"active","observedAt":100}),
+            "events.merchant-service.changed.consume",
+        );
+        mismatched_key.payload["eventKey"] = Value::String("another-event".to_owned());
+        assert!(mismatched_key.validate().is_err());
     }
 
     #[test]
@@ -1029,7 +1038,7 @@ mod tests {
         assert_eq!(deliveries[0].artifact_digest, digest);
         assert_eq!(
             serde_json::from_str::<Value>(&deliveries[0].payload_json).unwrap(),
-            json!({ "targetId": 8, "channelId": 12, "status": "down", "observedAt": 1_800_000_010 })
+            json!({ "eventKey": "channel-monitor:501", "targetId": 8, "channelId": 12, "status": "down", "observedAt": 1_800_000_010 })
         );
 
         let queue = crate::PluginEventDeliveryRepository::new(
@@ -1135,7 +1144,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::from_str::<Value>(&merchant_deliveries[0].payload_json).unwrap(),
-            json!({ "serviceId": 88, "revision": 7, "status": "active", "observedAt": 1_800_000_020 })
+            json!({ "eventKey": "service:88:service_restored:resume:88:1800000020000000000", "serviceId": 88, "revision": 7, "status": "active", "observedAt": 1_800_000_020 })
         );
         pool.close().await.unwrap();
     }

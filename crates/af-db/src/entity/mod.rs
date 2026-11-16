@@ -93,6 +93,7 @@ pub(crate) mod payment_settings;
 pub(crate) mod platform_audit_logs;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
+pub(crate) mod plugin_action_proposals;
 pub(crate) mod plugin_artifact_approvals;
 pub(crate) mod plugin_artifact_revocations;
 pub(crate) mod plugin_artifacts;

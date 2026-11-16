@@ -74,11 +74,12 @@ async fn public_service_lifecycle_events_are_queued_without_watchers() -> Result
     );
     assert_eq!(deliveries[0].event_kind, "merchant.service.changed");
     let publication: serde_json::Value = serde_json::from_str(&deliveries[0].payload_json)?;
+    assert_eq!(publication["eventKey"], deliveries[0].event_key);
     assert_eq!(publication["serviceId"], service.id);
     assert_eq!(publication["revision"], 1);
     assert_eq!(publication["status"], "active");
     assert!(publication["observedAt"].as_i64().is_some());
-    assert_eq!(publication.as_object().unwrap().len(), 4);
+    assert_eq!(publication.as_object().unwrap().len(), 5);
 
     let observed_at = publication["observedAt"].as_i64().unwrap();
     crate::plugin_event_delivery::enqueue_merchant_service_changed(
@@ -121,7 +122,8 @@ async fn public_service_lifecycle_events_are_queued_without_watchers() -> Result
     assert_eq!(payload["serviceId"], service.id);
     assert_eq!(payload["revision"], 1);
     assert_eq!(payload["status"], "paused");
-    assert_eq!(payload.as_object().unwrap().len(), 4);
+    assert_eq!(payload["eventKey"], pause.event_key);
+    assert_eq!(payload.as_object().unwrap().len(), 5);
 
     fixture.pool.close().await?;
     Ok(())

@@ -16,6 +16,7 @@ EXAMPLES = {
     "channel-health-event": "channel-health-event",
     "channel-model-mapping-review": "channel-model-mapping-review",
     "channel-monitor-review": "channel-monitor-review",
+    "account-balance-snapshot-review": "account-balance-snapshot-review",
     "merchant-service-review": "merchant-service-review",
     "merchant-service-event": "merchant-service-event",
 }

@@ -175,8 +175,9 @@ fn event_config_package() -> Result<Vec<u8>, Box<dyn Error>> {
             "inputSchema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["targetId", "channelId", "status", "observedAt"],
+                "required": ["eventKey", "targetId", "channelId", "status", "observedAt"],
                 "properties": {
+                    "eventKey": {"type": "string", "minLength": 1, "maxLength": 128},
                     "targetId": {"type": "integer", "minimum": 1},
                     "channelId": {"type": "integer", "minimum": 1},
                     "status": {"type": "string", "enum": ["down", "recovered"]},
@@ -325,6 +326,7 @@ async fn event_delivery_uses_the_active_deployment_public_configuration()
         capability_id: "events.channel-health.changed.consume".to_owned(),
         capability_version: 1,
         payload: json!({
+            "eventKey": "event-config-regression-1",
             "targetId": 1,
             "channelId": 1,
             "status": "down",

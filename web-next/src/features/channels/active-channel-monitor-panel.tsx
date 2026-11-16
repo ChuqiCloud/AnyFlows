@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Switch } from '@heroui/react'
 import { Bell, ChevronDown, History, RefreshCw, Search, ShieldAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -7,7 +7,7 @@ import { useAdminChannels } from './channel-api'
 import { useAdminChannelCredentials } from '@/features/credentials/credential-api'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { ApiError } from '@/lib/api'
-import { type ActiveMonitorPluginReviewCheck, type ActiveMonitorTarget, type ActiveMonitorTargetWrite, useActiveMonitorEvents, useActiveMonitorMutation, useActiveMonitorPluginReviewers, useActiveMonitorSettings, useActiveMonitorTargets, useReviewActiveMonitorEvents } from './active-channel-monitor-api'
+import { type ActiveMonitorActionProposal, type ActiveMonitorPluginReviewCheck, type ActiveMonitorTarget, type ActiveMonitorTargetWrite, useActiveMonitorEvents, useActiveMonitorMutation, useActiveMonitorPluginReviewers, useActiveMonitorSettings, useActiveMonitorTargets, useConfirmActiveMonitorAction, useProposeActiveMonitorAction, useReviewActiveMonitorEvents } from './active-channel-monitor-api'
 import { PoolError } from '@/features/merchant-pool/merchant-pool-ui'
 
 const lowCostProbeProtocols = new Set<AdminChannel['protocol']>([
@@ -59,17 +59,52 @@ function MonitorEventPluginReview({ targetId, t }: {
 }) {
   const reviewers = useActiveMonitorPluginReviewers(true)
   const review = useReviewActiveMonitorEvents()
+  const proposeAction = useProposeActiveMonitorAction()
+  const confirmAction = useConfirmActiveMonitorAction()
   const [selectedPluginId, setSelectedPluginId] = useState('')
+  const [proposal, setProposal] = useState<ActiveMonitorActionProposal | null>(null)
+  const [confirmChecked, setConfirmChecked] = useState(false)
+  const confirmationKeys = useRef<Record<string, string>>({})
   const plugins = reviewers.data?.plugins ?? []
   const pluginId = plugins.some((plugin) => plugin.plugin_id === selectedPluginId)
     ? selectedPluginId
     : plugins[0]?.plugin_id ?? ''
   const runReview = async () => {
     if (!pluginId) return
+    setProposal(null)
+    setConfirmChecked(false)
     try {
       await review.mutateAsync({ targetId, pluginId })
     } catch {
       // Keep the selection so an administrator can retry the same analysis.
+    }
+  }
+
+  const prepareAction = async () => {
+    if (!pluginId || !review.data?.action_proposal) return
+    try {
+      const created = await proposeAction.mutateAsync({
+        targetId,
+        pluginId,
+        expectedTargetVersion: review.data.target_config_version,
+      })
+      setProposal(created)
+      setConfirmChecked(false)
+    } catch {
+      // Keep the review visible so the administrator can refresh and retry.
+    }
+  }
+
+  const runConfirmation = async () => {
+    if (!proposal || !confirmChecked) return
+    const key = confirmationKeys.current[proposal.proposal_key]
+      ?? (confirmationKeys.current[proposal.proposal_key] = crypto.randomUUID())
+    try {
+      const result = await confirmAction.mutateAsync({ proposalKey: proposal.proposal_key, confirmationKey: key })
+      setProposal(result)
+      setConfirmChecked(false)
+    } catch {
+      // Retain the confirmation key so an uncertain response can be retried idempotently.
     }
   }
 
@@ -111,6 +146,23 @@ function MonitorEventPluginReview({ targetId, t }: {
         <p className="whitespace-pre-wrap break-words text-[11px] leading-4">{check.message}</p>
         {check.recommendation ? <p className="whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground">{t('channels.activeMonitor.pluginReview.recommendation')}: {check.recommendation}</p> : null}
       </li>)}</ul> : <p className="text-[11px] text-muted-foreground">{t('channels.activeMonitor.pluginReview.noChecks')}</p>}
+      {review.data.action_proposal ? <div className="grid gap-2 rounded-md border border-warning/30 bg-warning/5 p-3">
+        <p className="text-xs font-medium">{t('channels.activeMonitor.pluginReview.action.suggestion')}</p>
+        <p className="text-[11px] text-muted-foreground">{t('channels.activeMonitor.pluginReview.action.suggestionDetail', { enabled: review.data.action_proposal.input.enabled ? t('channels.activeMonitor.targetEnabledStatus') : t('channels.activeMonitor.targetDisabledStatus') })}</p>
+        <Button size="sm" variant="bordered" isDisabled={proposeAction.isPending || Boolean(proposal)} isLoading={proposeAction.isPending} onPress={() => void prepareAction()}>{t('channels.activeMonitor.pluginReview.action.prepare')}</Button>
+        {proposeAction.isError ? <p role="alert" className="text-xs text-danger">{t('channels.activeMonitor.pluginReview.action.prepareError')}</p> : null}
+      </div> : null}
+      {proposal ? <div className="grid gap-2 rounded-md border border-primary/25 bg-primary/5 p-3" aria-live="polite">
+        <p className="text-xs font-semibold">{t('channels.activeMonitor.pluginReview.action.confirmTitle')}</p>
+        <p className="text-[11px]">{t('channels.activeMonitor.pluginReview.action.target', { id: proposal.target_id })}</p>
+        <p className="text-[11px] font-medium">{t('channels.activeMonitor.pluginReview.action.change', { before: t(proposal.expected_enabled ? 'channels.activeMonitor.targetEnabledStatus' : 'channels.activeMonitor.targetDisabledStatus'), after: t(proposal.requested_enabled ? 'channels.activeMonitor.targetEnabledStatus' : 'channels.activeMonitor.targetDisabledStatus') })}</p>
+        <p className="text-[10px] text-muted-foreground">{t('channels.activeMonitor.pluginReview.action.expires', { time: new Date(proposal.expires_at * 1000).toLocaleString() })}</p>
+        {proposal.status === 'confirmed' ? <p role="status" className="text-xs text-success">{t('channels.activeMonitor.pluginReview.action.completed')}</p> : proposal.status !== 'pending' ? <p role="alert" className="text-xs text-danger">{t('channels.activeMonitor.pluginReview.action.unavailable')}</p> : <>
+          <label className="flex items-start gap-2 text-[11px]"><input type="checkbox" checked={confirmChecked} onChange={(event) => setConfirmChecked(event.target.checked)} /><span>{t('channels.activeMonitor.pluginReview.action.confirmCheck')}</span></label>
+          <Button size="sm" color="primary" isDisabled={!confirmChecked || confirmAction.isPending} isLoading={confirmAction.isPending} onPress={() => void runConfirmation()}>{t('channels.activeMonitor.pluginReview.action.confirm')}</Button>
+          {confirmAction.isError ? <p role="alert" className="text-xs text-danger">{t('channels.activeMonitor.pluginReview.action.confirmError')}</p> : null}
+        </>}
+      </div> : null}
     </div> : null}
   </section>
 }
