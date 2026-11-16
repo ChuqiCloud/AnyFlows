@@ -253,6 +253,8 @@ mod playground_share;
 #[cfg(test)]
 mod playground_share_tests;
 mod plugin_action_proposals;
+#[cfg(test)]
+mod plugin_action_proposals_integration_tests;
 mod plugin_catalog;
 #[cfg(test)]
 mod plugin_catalog_tests;

@@ -448,6 +448,25 @@ async fn deployment_is_current(
     transaction: &DatabaseTransaction,
     proposal: &plugin_action_proposals::Model,
 ) -> Result<bool, PluginActionProposalRepositoryError> {
+    // Match the catalog revocation lock order: artifact first, then deployment.
+    // Revocation holds the artifact row while disabling its deployment. Taking
+    // these locks in the opposite order here can deadlock with that operation.
+    let Some(artifact) = crate::entity::plugin_artifacts::Entity::find_by_id(proposal.artifact_id)
+        .lock_exclusive()
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db)?
+    else {
+        return Ok(false);
+    };
+    if artifact.plugin_id != proposal.plugin_id
+        || artifact.digest != proposal.artifact_digest
+        || artifact.source_kind != "local_process"
+        || !manifest_declares_action_capability(&artifact.manifest, &proposal.capability_id)
+    {
+        return Ok(false);
+    }
     let Some(deployment) =
         crate::entity::plugin_deployments::Entity::find_by_id(proposal.plugin_id.clone())
             .lock_exclusive()
@@ -467,22 +486,6 @@ async fn deployment_is_current(
             u16::try_from(proposal.capability_version)
                 .map_err(|_| PluginActionProposalRepositoryError::Invariant)?,
         )
-    {
-        return Ok(false);
-    }
-    let Some(artifact) = crate::entity::plugin_artifacts::Entity::find_by_id(proposal.artifact_id)
-        .lock_exclusive()
-        .one(transaction)
-        .with_subscriber(NoSubscriber::default())
-        .await
-        .map_err(map_db)?
-    else {
-        return Ok(false);
-    };
-    if artifact.plugin_id != proposal.plugin_id
-        || artifact.digest != proposal.artifact_digest
-        || artifact.source_kind != "local_process"
-        || !manifest_declares_action_capability(&artifact.manifest, &proposal.capability_id)
     {
         return Ok(false);
     }
