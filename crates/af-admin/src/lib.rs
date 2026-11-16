@@ -68,10 +68,12 @@ pub use merchant_payout::{
 };
 mod merchant_finance;
 pub use af_db::{MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals};
+pub use af_plugin_contract::PluginUiView;
 pub use merchant_finance::{
     DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
     MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
 };
+
 mod active_channel_monitor;
 #[cfg(test)]
 mod active_channel_monitor_tests;

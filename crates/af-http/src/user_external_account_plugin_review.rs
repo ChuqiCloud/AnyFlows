@@ -5,7 +5,8 @@ use std::sync::Arc;
 use af_admin::{
     ExternalAccountSnapshotPluginReview, ExternalAccountSnapshotPluginReviewCheck,
     ExternalAccountSnapshotPluginReviewError, ExternalAccountSnapshotPluginReviewService,
-    ExternalAccountSnapshotPluginReviewStatus, SessionAuthentication, SessionAuthenticator,
+    ExternalAccountSnapshotPluginReviewStatus, PluginUiView, SessionAuthentication,
+    SessionAuthenticator,
 };
 use axum::{
     Extension, Json, Router,
@@ -87,7 +88,7 @@ pub struct ReviewResponse {
     pub summary: String,
     pub checks: Vec<ReviewCheckResponse>,
     #[schema(value_type = Vec<serde_json::Value>, max_items = 8)]
-    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
+    pub ui_views: Vec<PluginUiView>,
 }
 
 impl From<ExternalAccountSnapshotPluginReviewCheck> for ReviewCheckResponse {

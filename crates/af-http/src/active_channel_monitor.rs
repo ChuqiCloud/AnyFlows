@@ -7,7 +7,7 @@ use af_admin::{
     ActiveChannelMonitorPluginReviewService, ActiveChannelMonitorPluginReviewStatus,
     ActiveChannelMonitorService, ActiveChannelMonitorServiceError, ActiveChannelMonitorTarget,
     ActiveChannelMonitorTargetInput, HostActionProposal, PluginActionProposalRecord,
-    PluginActionProposalStatus, SessionAuthentication, SessionAuthenticator,
+    PluginActionProposalStatus, PluginUiView, SessionAuthentication, SessionAuthenticator,
 };
 use af_domain::{ChannelId, CredentialId};
 use axum::{
@@ -284,7 +284,7 @@ pub struct ActiveChannelMonitorPluginReviewResponse {
     #[schema(max_items = 64)]
     pub checks: Vec<ActiveChannelMonitorPluginReviewCheckResponse>,
     #[schema(value_type = Vec<serde_json::Value>, max_items = 8)]
-    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
+    pub ui_views: Vec<PluginUiView>,
     pub action_proposal: Option<ActiveChannelMonitorPluginActionHintResponse>,
 }
 

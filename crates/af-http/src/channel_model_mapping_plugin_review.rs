@@ -5,7 +5,8 @@ use std::sync::Arc;
 use af_admin::{
     ChannelModelMappingPluginReview, ChannelModelMappingPluginReviewCheck,
     ChannelModelMappingPluginReviewError, ChannelModelMappingPluginReviewService,
-    ChannelModelMappingPluginReviewStatus, SessionAuthentication, SessionAuthenticator,
+    ChannelModelMappingPluginReviewStatus, PluginUiView, SessionAuthentication,
+    SessionAuthenticator,
 };
 use axum::{
     Extension, Json, Router,
@@ -91,7 +92,7 @@ pub struct ChannelModelMappingPluginReviewResponse {
     #[schema(max_items = 64)]
     pub checks: Vec<ChannelModelMappingPluginReviewCheckResponse>,
     #[schema(value_type = Vec<serde_json::Value>, max_items = 8)]
-    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
+    pub ui_views: Vec<PluginUiView>,
 }
 
 impl From<ChannelModelMappingPluginReviewCheck> for ChannelModelMappingPluginReviewCheckResponse {
