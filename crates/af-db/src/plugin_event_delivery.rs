@@ -4,18 +4,16 @@
 //! notifications, or decides that a plugin may observe a payload. The host worker must recheck
 //! the active deployment generation and capability grant before invoking a Sidecar.
 
-use std::{fmt, time::Duration};
+use std::fmt;
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, Set,
 };
 use serde_json::Value;
 use thiserror::Error;
-use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{DatabasePool, entity::plugin_event_deliveries};
+use crate::entity::plugin_event_deliveries;
 
 mod repository;
 
