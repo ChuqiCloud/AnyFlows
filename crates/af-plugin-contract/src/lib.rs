@@ -4,6 +4,8 @@
 //! networking, or application services so other languages can implement the
 //! same versioned contract.
 
+#![recursion_limit = "256"]
+
 mod capability;
 mod error;
 mod manifest;

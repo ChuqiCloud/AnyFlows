@@ -32754,6 +32754,112 @@
         ]
       }
     },
+    "/api/admin/plugins/events/results": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "分页读取插件事件处理结果",
+        "description": "只返回已完成事件的插件输出和状态摘要；不包含事件输入、事件键、插件 URL 或凭据。输出由宿主限制为 16 KiB，并拒绝敏感字段名。结果只是只读数据，不会触发操作或通知。",
+        "operationId": "listAdminPluginEventResults",
+        "parameters": [
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按 delivery ID 倒序排列的事件结果页",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginEventResultPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "游标或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "事件存储未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_plugin_event_results:execute"
+        ]
+      }
+    },
     "/api/admin/plugins/{plugin_id}/deployment/history": {
       "get": {
         "tags": [
@@ -52275,6 +52381,84 @@
           }
         },
         "additionalProperties": false
+      },
+      "PluginEventResultPageResponse": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginEventResultResponse"
+            }
+          },
+          "nextBeforeId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "PluginEventResultResponse": {
+        "type": "object",
+        "required": [
+          "deliveryId",
+          "pluginId",
+          "eventKind",
+          "deploymentGeneration",
+          "capabilityId",
+          "capabilityVersion",
+          "attemptCount",
+          "status",
+          "completedAt",
+          "summary",
+          "result"
+        ],
+        "properties": {
+          "deliveryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pluginId": {
+            "type": "string"
+          },
+          "eventKind": {
+            "type": "string"
+          },
+          "deploymentGeneration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "capabilityVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
       },
       "PluginPackageInstallRequest": {
         "type": "object",
