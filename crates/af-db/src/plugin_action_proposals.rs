@@ -671,6 +671,10 @@ fn valid_token(value: &str, maximum: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
+fn map_db(_: sea_orm::DbErr) -> PluginActionProposalRepositoryError {
+    PluginActionProposalRepositoryError::Query
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -733,8 +737,4 @@ mod tests {
             Err(PluginActionProposalRepositoryError::Invariant)
         );
     }
-}
-
-fn map_db(_: sea_orm::DbErr) -> PluginActionProposalRepositoryError {
-    PluginActionProposalRepositoryError::Query
 }
