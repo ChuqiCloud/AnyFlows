@@ -5,8 +5,10 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 
 import type { PluginArtifactResponse, PluginDeploymentResponse } from '@/lib/api/generated/types.gen'
+import { PluginConfigEditor } from './plugin-config-editor'
 import { PluginInstallPanel } from './plugin-install-panel'
 import { PluginRuntimePanel } from './plugin-runtime-panel'
+import { hasRenderablePluginUiViews, PluginUiViewsRenderer } from './plugin-ui-views'
 import {
   useApprovePluginArtifact,
   useDeployPluginArtifact,
@@ -14,6 +16,7 @@ import {
   usePluginArtifacts,
   usePluginDeploymentHistory,
   usePluginDeployments,
+  usePluginEventResults,
   useRegisterPluginArtifact,
   useRevokePluginArtifact,
   useRollbackPluginDeployment,
@@ -65,6 +68,73 @@ function configurationSchema(artifact: PluginArtifactResponse) {
 
 function prettyDate(value: number, locale: string) {
   return new Date(value * 1_000).toLocaleString(locale)
+}
+
+type PluginUiCard = { id: string; title: string; description?: string }
+
+function pluginUiText(value: unknown, locale: string): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const localized = value as Record<string, unknown>
+  if (Object.keys(localized).some((key) => key !== 'en' && key !== 'zh')) return undefined
+  const texts = Object.values(localized)
+  if (texts.length < 1 || texts.length > 2 || texts.some((text) =>
+    typeof text !== 'string'
+      || !text.trim()
+      || text.length > 512
+      || /[\u0000-\u001f\u007f<>]/u.test(text)
+      || /(?:https?:\/\/|javascript:|data:|mailto:|www\.)/iu.test(text),
+  )) return undefined
+  const preferred = locale.toLowerCase().startsWith('zh') ? localized.zh : localized.en
+  const fallback = localized.en ?? localized.zh
+  return typeof preferred === 'string' ? preferred : typeof fallback === 'string' ? fallback : undefined
+}
+
+/** Parse a fixed, text-only contribution format; no plugin-provided code or links are accepted. */
+function pluginUiCards(deployment: PluginDeploymentResponse, locale: string): PluginUiCard[] {
+  if (!deployment.enabled || !deployment.artifact.approval || deployment.artifact.revocation) return []
+  const contributions = deployment.artifact.manifest.uiContributions
+  if (!Array.isArray(contributions) || contributions.length > 16) return []
+  const ids = new Set<string>()
+  return contributions.flatMap((candidate): PluginUiCard[] => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+    const item = candidate as Record<string, unknown>
+    const keys = Object.keys(item)
+    if (keys.some((key) => !['id', 'slot', 'component', 'title', 'description'].includes(key))
+      || typeof item.id !== 'string'
+      || !/^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u.test(item.id)
+      || ids.has(item.id)
+      || item.slot !== 'plugin_management'
+      || item.component !== 'info_card') return []
+    ids.add(item.id)
+    const title = pluginUiText(item.title, locale)
+    const description = item.description === undefined ? undefined : pluginUiText(item.description, locale)
+    if (!title || (item.description !== undefined && !description)) return []
+    return [{ id: item.id, title, ...(description ? { description } : {}) }]
+  })
+}
+
+function PluginEventResultsPanel() {
+  const { t, i18n } = useTranslation()
+  const results = usePluginEventResults()
+  const entries = results.data?.pages.flatMap((page) => page.results) ?? []
+  const locale = i18n.resolvedLanguage?.startsWith('zh') ? 'zh-CN' : 'en-US'
+  return <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
+    <CardHeader className="flex items-start justify-between gap-3 p-5">
+      <div><h2 className="text-base font-semibold">{t('pluginLifecycle.events.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.events.description')}</p></div>
+      <Button size="sm" variant="bordered" isDisabled={results.isFetching} onPress={() => { void results.refetch() }}><RefreshCw size={15} className={results.isFetching ? 'animate-spin' : undefined} />{t('pluginLifecycle.refresh')}</Button>
+    </CardHeader>
+    <CardBody className="space-y-3 p-5 pt-0">
+      {results.isPending ? <Skeleton className="h-20 rounded-lg" /> : null}
+      {results.isError ? <ErrorBox text={t('pluginLifecycle.events.error')} retry={t('pluginLifecycle.refresh')} onRetry={() => { if (results.isFetchNextPageError) void results.fetchNextPage(); else void results.refetch() }} /> : null}
+      {results.isSuccess && entries.length === 0 ? <Empty text={t('pluginLifecycle.events.empty')} /> : null}
+      {entries.map((entry) => <article key={entry.deliveryId} className="rounded-lg border border-[var(--hairline)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="text-sm">{entry.summary}</strong><p className="mt-1 break-all text-xs text-muted-foreground">#{entry.deliveryId} · {entry.pluginId} · {entry.eventKind} · g{entry.deploymentGeneration}</p></div><Chip size="sm" color="success" variant="flat">{t('pluginLifecycle.events.delivered')}</Chip></div>
+        <p className="mt-2 text-xs text-muted-foreground">{t('pluginLifecycle.events.completedAt', { time: new Date(entry.completedAt * 1_000).toLocaleString(locale) })} · {t('pluginLifecycle.events.attempts', { count: entry.attemptCount })}</p>
+        <details className="mt-3 text-xs"><summary className="cursor-pointer font-medium">{t('pluginLifecycle.events.result')}</summary><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded bg-content1/50 p-3 font-mono">{JSON.stringify(entry.result, null, 2)}</pre></details>
+      </article>)}
+      {results.hasNextPage ? <div className="flex justify-center"><Button size="sm" variant="bordered" isDisabled={results.isFetching} onPress={() => void results.fetchNextPage()}>{t(results.isFetchingNextPage ? 'pluginLifecycle.loading' : 'pluginLifecycle.events.more')}</Button></div> : null}
+    </CardBody>
+  </Card>
 }
 
 export function PluginLifecyclePage() {
@@ -179,6 +249,7 @@ export function PluginLifecyclePage() {
     {uninstallNotice !== undefined ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.accepted', { count: uninstallNotice })}</p> : null}
     {cleanupNotice ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.cleaned')}</p> : null}
     <PluginRuntimePanel deployments={deploymentList} />
+    <PluginEventResultsPanel />
 
     <details className="rounded-xl border border-[var(--hairline)] bg-card">
       <summary className="cursor-pointer px-5 py-4 text-sm font-medium">{t('pluginLifecycle.advanced')}</summary>
@@ -236,7 +307,8 @@ export function PluginLifecyclePage() {
           <p className="text-sm text-muted-foreground">{t('pluginLifecycle.grantsHint')}</p>
           {deploymentHistory.isError ? <ErrorBox text={t('pluginLifecycle.errors.loadHistory')} retry={t('pluginLifecycle.refresh')} onRetry={() => void deploymentHistory.refetch()} /> : !generationKnown ? <p role="status" className="text-xs text-muted-foreground">{t('pluginLifecycle.checkingGeneration')}</p> : <div className="flex items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{t('pluginLifecycle.currentGeneration', { generation: currentGeneration ?? '—' })}</p><Button size="sm" variant="light" isDisabled={busy} onPress={() => void deploymentHistory.refetch()}>{t('pluginLifecycle.refresh')}</Button></div>}
           <div className="space-y-2">{grantTarget ? grantableCapabilities(grantTarget).map((item) => <label key={item.id} className="flex items-start gap-2 rounded-lg border border-[var(--hairline)] p-3 text-sm"><input type="checkbox" disabled={busy} checked={grants.includes(item.id)} onChange={(event) => setGrants(event.target.checked ? [...grants, item.id] : grants.filter((id) => id !== item.id))} /><span><strong>{item.id}</strong><small className="ml-2 text-muted-foreground">v{item.version}</small></span></label>) : null}</div>
-          <Textarea label={t('pluginLifecycle.fields.config')} description={t('pluginLifecycle.configHint')} minRows={5} value={config} onValueChange={setConfig} isDisabled={busy} classNames={{ input: 'font-mono text-xs' }} />
+          {grantTarget ? <PluginConfigEditor schema={grantTarget.manifest.configSchema} value={config} onChange={setConfig} locale={i18n.resolvedLanguage ?? 'en'} /> : null}
+          <p className="text-xs text-muted-foreground">{t('pluginLifecycle.configHint')}</p>
           {grantTarget ? <details className="text-xs"><summary className="cursor-pointer font-medium">{t('pluginLifecycle.fields.configSchema')}</summary><pre className="mt-2 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-3 font-mono">{configurationSchema(grantTarget)}</pre></details> : null}
           {deploy.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.action')}</p> : null}
         </ModalBody>
@@ -261,7 +333,11 @@ function DeploymentCard({ deployment, history, historyOpen, historyLoading, hist
   locale: string
   t: TFunction
 }) {
+  const uiCards = pluginUiCards(deployment, locale)
+  const uiViewsEnabled = deployment.enabled && Boolean(deployment.artifact.approval) && !deployment.artifact.revocation
+    && hasRenderablePluginUiViews(deployment.artifact.manifest, 'plugin_management', locale)
   return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip><Chip size="sm" variant="flat">{t('official' in deployment.artifact && deployment.artifact.official === true ? 'pluginLifecycle.status.official' : deployment.artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onUninstall}>{t('pluginLifecycle.removal.uninstall')}</Button><Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
+    {uiCards.length || uiViewsEnabled ? <section aria-label={t('pluginLifecycle.ui.section')} className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><p className="text-xs text-muted-foreground">{t('pluginLifecycle.ui.scope')}</p>{uiCards.map((card) => <div key={`${deployment.pluginId}:${card.id}`} className="rounded-lg border border-[var(--hairline)] bg-content1/40 p-3" data-plugin-ui-card={card.id}><h3 className="text-sm font-medium">{card.title}</h3>{card.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{card.description}</p> : null}</div>)}{uiViewsEnabled ? <PluginUiViewsRenderer manifest={deployment.artifact.manifest} slot="plugin_management" locale={locale} /> : null}</section> : null}
     {historyOpen ? <div className="mt-3 border-t border-[var(--hairline)] pt-3">{historyLoading ? <Skeleton className="h-10 rounded" /> : historyError ? <ErrorBox text={t('pluginLifecycle.errors.loadHistory')} retry={t('pluginLifecycle.refresh')} onRetry={onRetryHistory} /> : <div className="space-y-2">{history.map((entry) => <div key={entry.generation} className="flex flex-wrap items-center justify-between gap-2 text-xs"><span>g{entry.generation} · {entry.artifact.pluginVersion} · {entry.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')} · {prettyDate(entry.updatedAt, locale)}</span>{entry.generation < deployment.generation && entry.enabled ? <Button size="sm" variant="flat" isDisabled={busy} onPress={() => onRollback(entry.generation)}>{t('pluginLifecycle.rollback')}</Button> : null}</div>)}</div>}</div> : null}
   </article>
 }

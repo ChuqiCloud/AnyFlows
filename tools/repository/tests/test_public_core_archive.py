@@ -43,7 +43,7 @@ class ArchiveProcess:
         return self.return_code
 
 
-def archive_bytes(unsupported=False):
+def archive_bytes(unsupported=False, include_private_doc=False):
     result = io.BytesIO()
     with tarfile.open(fileobj=result, mode="w", format=tarfile.USTAR_FORMAT) as archive:
         member = tarfile.TarInfo("Cargo.toml")
@@ -53,6 +53,12 @@ def archive_bytes(unsupported=False):
             archive.addfile(member)
         else:
             content = b"[workspace]\n"
+            member.size = len(content)
+            member.mode = 0o644
+            archive.addfile(member, io.BytesIO(content))
+        if include_private_doc:
+            member = tarfile.TarInfo("docs/plugin-capability-expansion.md")
+            content = b"private design\n"
             member.size = len(content)
             member.mode = 0o644
             archive.addfile(member, io.BytesIO(content))
@@ -92,6 +98,22 @@ class PublicArchiveTests(unittest.TestCase):
                     f"git archive failed (return code {return_code}): {detail}",
                 )
                 self.assertTrue(process.waited)
+
+    def test_export_excludes_private_source_documents(self):
+        process = ArchiveProcess(archive_bytes(include_private_doc=True))
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            EXPORT.subprocess, "Popen", return_value=process
+        ):
+            destination = Path(directory)
+            EXPORT.export_archive(
+                destination,
+                destination,
+                "a" * 40,
+                ["docs/plugin-capability-expansion.md"],
+            )
+            self.assertEqual((destination / "Cargo.toml").read_bytes(), b"[workspace]\n")
+            self.assertFalse((destination / "docs/plugin-capability-expansion.md").exists())
+        self.assertTrue(process.waited)
 
     def test_invalid_entry_preserves_the_original_error_and_reaps_the_producer(self):
         process = ArchiveProcess(archive_bytes(unsupported=True))

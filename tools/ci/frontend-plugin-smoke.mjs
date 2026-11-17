@@ -28,7 +28,51 @@ const now = Math.floor(Date.now() / 1000)
 const digest = 'ab'.repeat(32)
 const artifact = {
   id: 1, pluginId: 'org.example.catalog', pluginVersion: '1.0.0', digest,
-  manifest: { pluginId: 'org.example.catalog', pluginVersion: '1.0.0', displayName: 'CI model directory', capabilities: [{ id: 'catalog.models.read', version: 1, access: 'read', sideEffect: 'none' }], configSchema: { type: 'object' } },
+  manifest: {
+    pluginId: 'org.example.catalog', pluginVersion: '1.0.0', displayName: 'CI model directory',
+    capabilities: [{ id: 'catalog.models.read', version: 1, access: 'read', sideEffect: 'none' }],
+    uiContributions: [
+      {
+        id: 'overview', slot: 'plugin_management', component: 'info_card',
+        title: { en: 'Plugin overview', zh: '插件概览' },
+        description: { en: 'Static information from the plugin.', zh: '插件提供的静态说明。' },
+      },
+      {
+        id: 'script', slot: 'plugin_management', component: 'info_card',
+        title: { en: '<img src=x onerror=alert(1)>', zh: '<img src=x onerror=alert(1)>' },
+      },
+      {
+        id: 'action', slot: 'plugin_management', component: 'info_card',
+        title: { en: 'Unexpected action', zh: '越权操作' }, action: { url: 'javascript:alert(1)' },
+      },
+    ],
+    uiViews: [
+      {
+        id: 'overview-view', schemaVersion: 1, slot: 'plugin_management',
+        blocks: [
+          { type: 'text', text: { en: 'Declarative snapshot view', zh: '声明式快照视图' } },
+          { type: 'badge', label: { en: 'Available', zh: '可用' }, tone: 'success' },
+          { type: 'metric', label: { en: 'Items', zh: '条目' }, value: { en: '3', zh: '3' } },
+          { type: 'table', columns: [{ en: 'Date', zh: '日期' }, { en: 'Amount', zh: '金额' }], rows: [[{ en: 'Today', zh: '今天' }, { en: '12.50 USD', zh: '12.50 USD' }]] },
+          { type: 'info_card', title: { en: 'Details', zh: '详情' }, description: { en: 'Rendered by fixed host components.', zh: '由宿主固定组件渲染。' } },
+        ],
+      },
+      { id: 'unsafe-text', schemaVersion: 1, slot: 'plugin_management', blocks: [{ type: 'text', text: { en: '<img src=x onerror=alert(1)>', zh: '<img src=x onerror=alert(1)>' } }] },
+      { id: 'unknown-component', schemaVersion: 1, slot: 'plugin_management', blocks: [{ type: 'custom_html', html: '<script>alert(1)</script>' }] },
+      { id: 'arbitrary-action', schemaVersion: 1, slot: 'plugin_management', blocks: [{ type: 'info_card', title: { en: 'Unexpected', zh: '越权' }, action: { route: '/admin', method: 'POST', capability: 'wallet.credit' } }] },
+      { id: 'unregistered-slot', schemaVersion: 1, slot: 'custom_route', blocks: [{ type: 'text', text: { en: 'Hidden', zh: '隐藏' } }] },
+      { id: 'unsupported-version', schemaVersion: 2, slot: 'plugin_management', blocks: [{ type: 'text', text: { en: 'Hidden', zh: '隐藏' } }] },
+    ],
+    configSchema: {
+      type: 'object', additionalProperties: false, required: ['displayName'],
+      properties: {
+        displayName: { type: 'string', title: { en: 'Public label', zh: '公开标签' }, maxLength: 40 },
+        layout: { type: 'string', title: { en: 'Layout', zh: '布局' }, enum: ['compact', 'expanded'] },
+        apiKey: { type: 'string', title: { en: 'API key', zh: 'API 密钥' } },
+        password: { type: 'string', title: { en: 'Password', zh: '密码' } },
+      },
+    },
+  },
   sourceKind: 'local_process', signerKeyId: 'ci-official-root', official: true,
   createdAt: now, approval: { approvedBy: 1, approvedAt: now, requestId: 'ci-approved' }, revocation: null,
 }
@@ -37,6 +81,7 @@ let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled
 let source = { pluginId: artifact.pluginId, pluginVersion: '1.0.0', displayName: 'CI model directory', generation: 4, supportsSearch: true }
 const model = { id: 'fixture-text', displayName: 'Fixture text model', provider: 'example', description: 'Plugin reference entry', contextWindow: 32768, inputModalities: ['text'], outputModalities: ['text'], tags: ['fixture'] }
 const catalogCalls = [], installs = [], uninstalls = [], cleanups = [], requests = [], errors = []
+const snapshotReviews = []
 let modelFailure = false, sourceFailure = false, runtimeFailure = false
 let runtimeRequests = 0, deploymentRequests = 0, catalogRequests = 0
 let server, browser, page, serverOutput = ''
@@ -79,12 +124,15 @@ try {
     import './src/index.css'; import './src/i18n';
     import { useSiteTheme } from './src/shared/components/use-site-theme';
     import { PluginLifecyclePage } from './src/features/plugin-lifecycle/plugin-lifecycle-page';
+    import { PluginUiViewsRenderer } from './src/features/plugin-lifecycle/plugin-ui-views';
     import { ModelPage } from './src/features/models/model-page';
+    import { ExternalAccountSnapshotPluginReview } from './src/features/profile/external-account-snapshot-plugin-review';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
     function App() {
       useSiteTheme();
       const [view, setView] = useState('plugins');
-      return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['plugins','models','guest'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'plugins' ? <PluginLifecyclePage /> : <ModelPage key={view} authenticated={view === 'models'} standalone />}</main></QueryClientProvider></HeroUIProvider>;
+      const [reviewOpen, setReviewOpen] = useState(false);
+      return <HeroUIProvider><QueryClientProvider client={client}><main style={{ padding: 16, maxWidth: 1200, margin: 'auto' }}><nav aria-label="CI views">{['plugins','module-ui','models','guest','account-review'].map(value => <button key={value} onClick={() => setView(value)}>{value}</button>)}</nav>{view === 'plugins' ? <PluginLifecyclePage /> : view === 'module-ui' ? <div>{['channel_monitor','channel_model_mapping','merchant_service','external_account'].map(slot => <PluginUiViewsRenderer key={slot} manifest={{ uiViews: [{ id: slot, schemaVersion: 1, slot, blocks: [{ type: 'text', text: { en: slot, zh: slot } }] }] }} slot={slot} locale="zh-CN" />)}</div> : view === 'account-review' ? <><button onClick={() => setReviewOpen(true)}>open-account-review</button><ExternalAccountSnapshotPluginReview open={reviewOpen} connectionId={42} onClose={() => setReviewOpen(false)} /></> : <ModelPage key={view} authenticated={view === 'models'} standalone />}</main></QueryClientProvider></HeroUIProvider>;
     }
     createRoot(document.getElementById('root')).render(<BrowserRouter><App /></BrowserRouter>);
   `)
@@ -114,6 +162,8 @@ try {
     assert.equal(request.headers().authorization, 'Bearer ci-plugin', `${method} ${path} must use the current session`)
     if (path === '/api/admin/plugins/artifacts' && method === 'GET') return respond({ artifacts: [artifact, revoked], nextBeforeId: null })
     if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; return respond({ deployments: [deployment], nextCursor: null }) }
+    if (path === '/api/admin/plugins/events/results' && method === 'GET') return respond({ results: [{ deliveryId: 31, pluginId: 'org.example.events', eventKind: 'channel.health.changed', deploymentGeneration: 4, capabilityId: 'events.channel-health.changed.consume', capabilityVersion: 1, attemptCount: 1, status: 'delivered', completedAt: now, summary: 'Channel 12 recovered.', result: { summary: 'Channel 12 recovered.', status: 'info' } }], nextBeforeId: null })
+    if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
     if (path === '/api/admin/plugins/runtime' && method === 'GET') {
       runtimeRequests += 1
       return runtimeFailure ? respond({ error: { code: 'internal' } }, 500) : respond(runtime())
@@ -151,11 +201,29 @@ try {
       if (url.searchParams.get('cursor')) return respond({ source, models: [{ ...model, id: 'fixture-second', displayName: 'Fixture second page' }], nextCursor: null })
       return respond({ source, models: [model], nextCursor: 'opaque-generation-bound-cursor' })
     }
+    if (path === '/api/account/external-accounts/plugin-reviewers' && method === 'GET') {
+      return respond({ plugins: [{ pluginId: 'org.example.live-review', displayName: 'CI live review', pluginVersion: '1.0.0', supportsExternalReads: true }] })
+    }
+    if (path === '/api/account/external-accounts/42/plugin-review' && method === 'POST') {
+      const body = request.postDataJSON()
+      snapshotReviews.push(body)
+      return respond({
+        pluginId: body.plugin_id,
+        displayName: 'CI live review',
+        pluginVersion: '1.0.0',
+        snapshotCount: 1,
+        firstObservedAt: now,
+        lastObservedAt: now,
+        summary: `Review ${snapshotReviews.length} completed.`,
+        checks: [],
+        uiViews: [],
+      })
+    }
     errors.push(`Unexpected request: ${method} ${path}`)
     return respond({ error: { code: 'not_found' } }, 404)
   })
 
-  await page.goto(`${origin}/.plugin-smoke.html`)
+  await page.goto(`${origin}/.plugin-smoke.html`, { waitUntil: 'domcontentloaded' })
   await page.getByRole('heading', { name: label('pluginLifecycle.title'), exact: true }).waitFor()
   const runtimePanel = page.getByRole('region', { name: label('pluginLifecycle.runtime.title') })
   await runtimePanel.getByText('CI node A', { exact: true }).first().waitFor()
@@ -164,10 +232,43 @@ try {
   await runtimePanel.getByText(label('pluginLifecycle.runtime.stale'), { exact: true }).waitFor()
   await runtimePanel.getByText(`${label('pluginLifecycle.runtime.states.failed')} · ${label('pluginLifecycle.runtime.isolationModes.unknown')} · startup_failed`, { exact: true }).waitFor()
   assert.equal(await runtimePanel.getByText(label('pluginLifecycle.runtime.readyNodes').replace('{{ready}}', '3').replace('{{total}}', '3'), { exact: true }).count(), 0, 'An old generation or failed process cannot count as ready')
+  await page.getByRole('heading', { name: label('pluginLifecycle.events.title'), exact: true }).waitFor()
+  await page.getByText('Channel 12 recovered.', { exact: true }).waitFor()
   const deploymentCard = page.locator('article').filter({ has: page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }) })
   await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
+  const contributionSection = deploymentCard.getByRole('region', { name: label('pluginLifecycle.ui.section'), exact: true })
+  await contributionSection.getByRole('heading', { name: '插件概览', exact: true }).waitFor()
+  await contributionSection.getByText('插件提供的静态说明。', { exact: true }).waitFor()
+  assert.equal(await contributionSection.locator('[data-plugin-ui-card]').count(), 1, 'Only schema-valid host-owned card declarations render')
+  const declarativeView = contributionSection.locator('[data-plugin-ui-views="plugin_management"]')
+  await declarativeView.getByText('声明式快照视图', { exact: true }).waitFor()
+  await declarativeView.getByText('可用', { exact: true }).waitFor()
+  await declarativeView.getByText('12.50 USD', { exact: true }).waitFor()
+  await declarativeView.getByRole('columnheader', { name: '日期', exact: true }).waitFor()
+  await declarativeView.getByText('由宿主固定组件渲染。', { exact: true }).waitFor()
+  assert.equal(await declarativeView.locator('[data-plugin-ui-view]').count(), 1, 'Unsafe text, arbitrary actions, unknown blocks, routes and versions are ignored')
+  assert.equal(await contributionSection.locator('img, script, a').count(), 0, 'Plugin contributions cannot inject markup or links')
+  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'module-ui', exact: true }).click()
+  for (const slot of ['channel_monitor', 'channel_model_mapping', 'merchant_service', 'external_account']) {
+    await page.locator(`[data-plugin-ui-views="${slot}"]`).getByText(slot, { exact: true }).waitFor()
+  }
+  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'plugins', exact: true }).click()
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
+  await advanced.locator('summary').first().click()
+  await page.getByRole('button', { name: label('pluginLifecycle.deploy'), exact: true }).first().click()
+  const configDialog = page.getByRole('dialog')
+  await configDialog.getByRole('textbox', { name: /公开标签/ }).waitFor()
+  const layout = configDialog.getByLabel(/布局/)
+  await layout.selectOption('"compact"')
+  assert.equal(await layout.inputValue(), '"compact"', 'JSON Schema enum values render as safe host-owned options')
+  assert.equal(await configDialog.getByLabel(/API 密钥/).count(), 0, 'Credential-like fields are never rendered as form controls')
+  assert.equal(await configDialog.getByLabel(/密码/).count(), 0, 'Password fields are never rendered as form controls')
+  await configDialog.getByText(label('pluginLifecycle.configEditor.advanced'), { exact: true }).click()
+  await configDialog.getByText(label('pluginLifecycle.configEditor.hint'), { exact: true }).waitFor()
+  await configDialog.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
+  await configDialog.waitFor({ state: 'hidden' })
+  await advanced.locator('summary').first().click()
 
   await page.locator('input[type="file"]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a plugin') })
   await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()
@@ -253,6 +354,28 @@ try {
   await page.getByRole('button', { name: label('pluginCatalog.retry'), exact: true }).click()
   await page.locator('section').filter({ has: page.getByRole('heading', { name: label('pluginCatalog.title'), exact: true }) }).locator('select').selectOption(artifact.pluginId)
   await page.getByRole('heading', { name: 'Fixture text model', exact: true }).waitFor()
+
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'account-review', exact: true }).click()
+  await page.getByRole('button', { name: 'open-account-review', exact: true }).click()
+  const reviewerSelector = page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.plugin'), exact: true })
+  await reviewerSelector.click()
+  await page.getByText('CI live review · 1.0.0', { exact: true }).click()
+  await page.getByRole('listbox').waitFor({ state: 'hidden' })
+  const externalReadConsent = page.getByRole('checkbox', { name: label('profile.externalAccounts.pluginReview.allowExternalReads'), exact: true })
+  assert.equal(await externalReadConsent.isEnabled(), true, 'Selecting a plugin that supports live reads enables explicit consent')
+  await externalReadConsent.check()
+  const firstSnapshotReview = page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/external-accounts/42/plugin-review' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.run'), exact: true }).click()
+  await firstSnapshotReview
+  await page.getByText('Review 1 completed.', { exact: true }).waitFor()
+  assert.equal(snapshotReviews[0]?.allow_external_reads, true, 'The checked consent applies to this request')
+  assert.equal(await externalReadConsent.isChecked(), false, 'Consent resets after the request completes')
+  const secondSnapshotReview = page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/external-accounts/42/plugin-review' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: label('profile.externalAccounts.pluginReview.run'), exact: true }).click()
+  await secondSnapshotReview
+  await page.getByText('Review 2 completed.', { exact: true }).waitFor()
+  assert.equal(snapshotReviews[1]?.allow_external_reads, false, 'A new request cannot reuse prior consent')
 
   assert.deepEqual(errors, [])
   console.log('Plugin lifecycle and user catalog browser regressions passed; all API calls were mocked')

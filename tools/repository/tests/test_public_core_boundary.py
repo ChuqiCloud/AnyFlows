@@ -20,12 +20,12 @@ DOC_BOUNDARY = re.compile(
 
 
 class PublicBoundaryTests(unittest.TestCase):
-    def check(self, root, manifest):
+    def check(self, root, manifest, mode="public"):
         policy = root / "policy.json"
         policy.write_text(json.dumps(manifest), encoding="utf-8")
         return subprocess.run(
             [sys.executable, str(VERIFIER), "--root", str(root),
-             "--manifest", str(policy), "--mode", "public"],
+             "--manifest", str(policy), "--mode", mode],
             check=False, capture_output=True, text=True, encoding="utf-8",
         )
 
@@ -36,6 +36,7 @@ class PublicBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(manifest["publicRepository"], "https://github.com/ChuqiCloud/AnyFlows.git")
         self.assertTrue(manifest["excludedPaths"])
+        self.assertIn("docs/plugin-capability-expansion.md", manifest["export"]["excludedPaths"])
         self.assertIsNone(DOC_BOUNDARY.search(MANIFEST.read_text(encoding="utf-8")))
         self.assertFalse((ROOT / "docs/public-core-extraction.json").exists())
 
@@ -53,6 +54,26 @@ class PublicBoundaryTests(unittest.TestCase):
                 result = self.check(root, {"excludedPaths": [pattern]})
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("restricted/private.rs", result.stderr)
+
+    def test_export_exclusions_apply_only_to_public_trees(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private_document = root / "docs/plugin-capability-expansion.md"
+            private_document.parent.mkdir(parents=True)
+            private_document.write_text("private design\n", encoding="utf-8")
+            policy = {
+                "excludedPaths": [],
+                "export": {"excludedPaths": ["docs/plugin-capability-expansion.md"]},
+            }
+            source = self.check(root, policy, "source")
+            public = subprocess.run(
+                [sys.executable, str(VERIFIER), "--root", str(root), "--manifest",
+                 str(root / "policy.json"), "--mode", "public"],
+                check=False, capture_output=True, text=True, encoding="utf-8",
+            )
+        self.assertEqual(source.returncode, 0, source.stdout + source.stderr)
+        self.assertEqual(public.returncode, 1, public.stdout + public.stderr)
+        self.assertIn("docs/plugin-capability-expansion.md", public.stderr)
 
     def test_repository_policy_rejects_excluded_source_and_frontend_files(self):
         paths = [

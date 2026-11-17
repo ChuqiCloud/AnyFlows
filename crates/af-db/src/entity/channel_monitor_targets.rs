@@ -11,6 +11,8 @@ pub struct Model {
     #[sea_orm(column_type = "String(StringLen::N(255))")]
     pub model: String,
     pub enabled: bool,
+    /// Changes only when an administrator changes monitor configuration; probe telemetry is excluded.
+    pub config_version: i64,
     pub interval_secs: i32,
     pub daily_budget: i32,
     pub timeout_secs: i32,

@@ -80,6 +80,34 @@ export type ActiveChannelMonitorEventResponse = {
     latency_ms?: number | null;
     occurred_epoch_seconds: number;
 };
+export type ActiveChannelMonitorPluginActionConfirmRequest = {
+    confirmation_key: string;
+};
+export type ActiveChannelMonitorPluginActionHintResponse = {
+    actionId: string;
+    actionVersion: number;
+    input: unknown;
+};
+export type ActiveChannelMonitorPluginActionProposalRequest = {
+    plugin_id: string;
+    expected_target_version: number;
+    idempotency_key: string;
+};
+export type ActiveChannelMonitorPluginActionProposalResponse = {
+    proposal_key: string;
+    plugin_id: string;
+    target_id: number;
+    action_id: string;
+    action_version: number;
+    expected_enabled: boolean;
+    requested_enabled: boolean;
+    expected_target_version: number;
+    status: PluginActionProposalStatusResponse;
+    expires_at: number;
+    created_at: number;
+    confirmed_at?: number | null;
+    outcome?: unknown;
+};
 export type ActiveChannelMonitorPluginReviewCheckResponse = {
     code: string;
     title: string;
@@ -95,8 +123,11 @@ export type ActiveChannelMonitorPluginReviewResponse = {
     display_name: string;
     plugin_version: string;
     event_count: number;
+    target_config_version: number;
     summary: string;
     checks: Array<ActiveChannelMonitorPluginReviewCheckResponse>;
+    ui_views: Array<unknown>;
+    action_proposal?: null | ActiveChannelMonitorPluginActionHintResponse;
 };
 export type ActiveChannelMonitorPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type ActiveChannelMonitorPluginReviewerListResponse = {
@@ -1718,6 +1749,7 @@ export type ChannelModelMappingPluginReviewResponse = {
     mapping_count: number;
     summary: string;
     checks: Array<ChannelModelMappingPluginReviewCheckResponse>;
+    ui_views: Array<unknown>;
 };
 export type ChannelModelMappingPluginReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
 export type ChannelModelMappingPluginReviewerListResponse = {
@@ -2194,6 +2226,9 @@ export type MerchantPluginReview = {
     plugin_version: string;
     service_revision: number;
     summary: string;
+    ui_views: Array<{
+        [key: string]: unknown;
+    }>;
 };
 export type MerchantPluginReviewCheck = {
     code: string;
@@ -2749,6 +2784,7 @@ export type PlaygroundShareSession = {
     model: string;
     messages: Array<PlaygroundShareMessage>;
 };
+export type PluginActionProposalStatusResponse = 'pending' | 'confirmed' | 'expired' | 'stale' | 'revoked';
 export type PluginActionResponse = {
     completed: boolean;
     requestId: string;
@@ -2858,6 +2894,25 @@ export type PluginDeploymentResponse = {
 export type PluginDeploymentRollbackRequest = {
     expected_generation: number;
     target_generation: number;
+};
+export type PluginEventResultPageResponse = {
+    results: Array<PluginEventResultResponse>;
+    nextBeforeId?: number | null;
+};
+export type PluginEventResultResponse = {
+    deliveryId: number;
+    pluginId: string;
+    eventKind: string;
+    deploymentGeneration: number;
+    capabilityId: string;
+    capabilityVersion: number;
+    attemptCount: number;
+    status: string;
+    completedAt: number;
+    summary: string;
+    result: {
+        [key: string]: unknown;
+    };
 };
 export type PluginPackageInstallRequest = {
     package: Blob | File;
@@ -3046,6 +3101,38 @@ export type ResponsesCompactUsage = {
     output_tokens: number;
     output_tokens_details: ResponsesCompactOutputUsageDetails;
     total_tokens: number;
+};
+export type ReviewCheckResponse = {
+    code: string;
+    title: string;
+    status: ReviewStatusResponse;
+    message: string;
+    recommendation?: string | null;
+};
+export type ReviewRequest = {
+    plugin_id: string;
+    allow_external_reads?: boolean;
+};
+export type ReviewResponse = {
+    pluginId: string;
+    displayName: string;
+    pluginVersion: string;
+    snapshotCount: number;
+    firstObservedAt: number;
+    lastObservedAt: number;
+    summary: string;
+    checks: Array<ReviewCheckResponse>;
+    uiViews: Array<unknown>;
+};
+export type ReviewStatusResponse = 'pass' | 'info' | 'warning' | 'fail';
+export type ReviewerListResponse = {
+    plugins: Array<ReviewerResponse>;
+};
+export type ReviewerResponse = {
+    pluginId: string;
+    displayName: string;
+    pluginVersion: string;
+    supportsExternalReads: boolean;
 };
 export type RuntimeDependency = {
     kind: string;
@@ -5369,6 +5456,42 @@ export type ListUserExternalAccountBalancesResponses = {
     200: UserExternalAccountBalanceHistoryResponse;
 };
 export type ListUserExternalAccountBalancesResponse = ListUserExternalAccountBalancesResponses[keyof ListUserExternalAccountBalancesResponses];
+export type ListUserExternalAccountSnapshotReviewersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/external-accounts/plugin-reviewers';
+};
+export type ListUserExternalAccountSnapshotReviewersErrors = {
+    401: ManagementError;
+    503: ManagementError;
+};
+export type ListUserExternalAccountSnapshotReviewersError = ListUserExternalAccountSnapshotReviewersErrors[keyof ListUserExternalAccountSnapshotReviewersErrors];
+export type ListUserExternalAccountSnapshotReviewersResponses = {
+    200: ReviewerListResponse;
+};
+export type ListUserExternalAccountSnapshotReviewersResponse = ListUserExternalAccountSnapshotReviewersResponses[keyof ListUserExternalAccountSnapshotReviewersResponses];
+export type ReviewUserExternalAccountBalanceSnapshotsData = {
+    body: ReviewRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/account/external-accounts/{id}/plugin-review';
+};
+export type ReviewUserExternalAccountBalanceSnapshotsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type ReviewUserExternalAccountBalanceSnapshotsError = ReviewUserExternalAccountBalanceSnapshotsErrors[keyof ReviewUserExternalAccountBalanceSnapshotsErrors];
+export type ReviewUserExternalAccountBalanceSnapshotsResponses = {
+    200: ReviewResponse;
+};
+export type ReviewUserExternalAccountBalanceSnapshotsResponse = ReviewUserExternalAccountBalanceSnapshotsResponses[keyof ReviewUserExternalAccountBalanceSnapshotsResponses];
 export type GetUserWalletData = {
     body?: never;
     path?: never;
@@ -7528,6 +7651,30 @@ export type ReviewAdminChannelMonitorTargetWithPluginResponses = {
     200: ActiveChannelMonitorPluginReviewResponse;
 };
 export type ReviewAdminChannelMonitorTargetWithPluginResponse = ReviewAdminChannelMonitorTargetWithPluginResponses[keyof ReviewAdminChannelMonitorTargetWithPluginResponses];
+export type ProposeAdminChannelMonitorTargetActionData = {
+    body: ActiveChannelMonitorPluginActionProposalRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/channel-monitor/targets/{id}/action-proposals';
+};
+export type ProposeAdminChannelMonitorTargetActionResponses = {
+    200: ActiveChannelMonitorPluginActionProposalResponse;
+};
+export type ProposeAdminChannelMonitorTargetActionResponse = ProposeAdminChannelMonitorTargetActionResponses[keyof ProposeAdminChannelMonitorTargetActionResponses];
+export type ConfirmAdminChannelMonitorActionProposalData = {
+    body: ActiveChannelMonitorPluginActionConfirmRequest;
+    path: {
+        proposal_key: string;
+    };
+    query?: never;
+    url: '/api/admin/channel-monitor/action-proposals/{proposal_key}/confirm';
+};
+export type ConfirmAdminChannelMonitorActionProposalResponses = {
+    200: ActiveChannelMonitorPluginActionProposalResponse;
+};
+export type ConfirmAdminChannelMonitorActionProposalResponse = ConfirmAdminChannelMonitorActionProposalResponses[keyof ConfirmAdminChannelMonitorActionProposalResponses];
 export type ListAdminChannelModelMappingPluginReviewersData = {
     body?: never;
     path?: never;
@@ -11667,6 +11814,27 @@ export type ListAdminPluginDeploymentsResponses = {
     200: PluginDeploymentPageResponse;
 };
 export type ListAdminPluginDeploymentsResponse = ListAdminPluginDeploymentsResponses[keyof ListAdminPluginDeploymentsResponses];
+export type ListAdminPluginEventResultsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before_id?: number;
+        limit?: number;
+    };
+    url: '/api/admin/plugins/events/results';
+};
+export type ListAdminPluginEventResultsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type ListAdminPluginEventResultsError = ListAdminPluginEventResultsErrors[keyof ListAdminPluginEventResultsErrors];
+export type ListAdminPluginEventResultsResponses = {
+    200: PluginEventResultPageResponse;
+};
+export type ListAdminPluginEventResultsResponse = ListAdminPluginEventResultsResponses[keyof ListAdminPluginEventResultsResponses];
 export type ListAdminPluginDeploymentHistoryData = {
     body?: never;
     path: {

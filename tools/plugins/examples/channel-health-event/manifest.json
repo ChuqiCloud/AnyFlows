@@ -1,0 +1,112 @@
+{
+  "pluginId": "org.anyflows.example-channel-health-event",
+  "displayName": "Example channel health event reviewer",
+  "pluginVersion": "1.0.0",
+  "contractRange": {
+    "minimum": {
+      "major": 1,
+      "minor": 0
+    },
+    "maximum": {
+      "major": 1,
+      "minor": 2
+    }
+  },
+  "capabilities": [
+    {
+      "id": "events.channel-health.changed.consume",
+      "version": 1,
+      "access": "read",
+      "sideEffect": "none",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventKey",
+          "targetId",
+          "channelId",
+          "status",
+          "observedAt"
+        ],
+        "properties": {
+          "eventKey": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "targetId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "channelId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "down",
+              "recovered"
+            ]
+          },
+          "observedAt": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "summary",
+          "status",
+          "recommendation"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning"
+            ]
+          },
+          "recommendation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      }
+    }
+  ],
+  "authenticationModes": [
+    "none"
+  ],
+  "limits": {
+    "maxConcurrency": 1,
+    "requestTimeoutMs": 5000,
+    "maxResponseBytes": 32768,
+    "maxPageSize": 1
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  },
+  "uiContributions": [
+    {
+      "component": "info_card",
+      "slot": "plugin_management",
+      "id": "event-review",
+      "description": {
+        "zh": "处理宿主投影的故障与恢复事件。",
+        "en": "Consumes host-projected down and recovery events."
+      },
+      "title": {
+        "zh": "渠道健康事件分析",
+        "en": "Channel health event review"
+      }
+    }
+  ]
+}

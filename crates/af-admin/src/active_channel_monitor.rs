@@ -61,6 +61,10 @@ pub trait ActiveChannelMonitorService: Send + Sync {
     fn list_targets(
         &self,
     ) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorTarget>>;
+    fn get_target(
+        &self,
+        id: i64,
+    ) -> ActiveChannelMonitorServiceFuture<'_, Option<ActiveChannelMonitorTarget>>;
     fn upsert_target(
         &self,
         input: ActiveChannelMonitorTargetInput,
@@ -121,6 +125,16 @@ impl DatabaseActiveChannelMonitorService {
             .map_err(map_service_error)
     }
 
+    pub async fn get_target(
+        &self,
+        id: i64,
+    ) -> Result<Option<ActiveChannelMonitorTarget>, ActiveChannelMonitorServiceError> {
+        self.repository
+            .get_target(id)
+            .await
+            .map_err(map_service_error)
+    }
+
     pub async fn upsert_target(
         &self,
         input: ActiveChannelMonitorTargetInput,
@@ -171,6 +185,13 @@ impl ActiveChannelMonitorService for DatabaseActiveChannelMonitorService {
         &self,
     ) -> ActiveChannelMonitorServiceFuture<'_, Vec<ActiveChannelMonitorTarget>> {
         Box::pin(async move { DatabaseActiveChannelMonitorService::list_targets(self).await })
+    }
+
+    fn get_target(
+        &self,
+        id: i64,
+    ) -> ActiveChannelMonitorServiceFuture<'_, Option<ActiveChannelMonitorTarget>> {
+        Box::pin(async move { DatabaseActiveChannelMonitorService::get_target(self, id).await })
     }
 
     fn upsert_target(

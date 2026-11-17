@@ -7,19 +7,31 @@
 | 目标 | 当前支持 | 插件能做什么 |
 | --- | --- | --- |
 | 在模型页提供资料、搜索和分页 | 已支持：catalog.models.read / catalog.models.search v1 | 返回展示用的模型资料，不会新增可调用模型、渠道或价卡 |
-| 检查商户自己的服务资料 | 已支持：merchant.service.review.read v1 | 阅读公开服务说明和模型能力，返回文字建议 |
-| 总结管理员配置的渠道监控事件 | 已支持：channel.monitor.events.review.read v1 | 阅读最多 100 条 down / recovered 事件，返回摘要和建议 |
-| 静态检查管理员配置的渠道模型映射 | 已支持：channel.model_mapping.review.read v1 | 阅读公开模型名称和映射关系，返回摘要与建议，不连接上游或修改渠道 |
-| 给其他模块增加只读查询或计算 | 需要宿主新增入口 | 入口发布后，插件按该入口的固定 Schema 返回数据 |
-| 增加 HTTP API、Webhook、后台任务 | 上传插件不支持 | 修改宿主代码并重新构建、部署 |
-| 增加控制台页面、菜单、翻译或登录表单 | 上传插件不支持 | 使用 ConsoleExtension 并重建前端 |
+| 检查商户自己的服务资料 | 已支持：merchant.service.review.read v1 | 阅读商户服务说明和模型能力，返回文字建议；这些由商户填写的字段会发送给所选插件，安装前应确认信任该插件 |
+| 总结管理员配置的渠道监控历史 | 已支持：channel.monitor.events.review.read v1 | 阅读最多 100 条历史事件，管理员在当前请求中查看摘要和建议 |
+| 提议暂停或恢复监控目标 | 已支持：channel.monitor.target.action-propose.read v1 | 插件只提交固定动作 ID 和启停布尔值；管理员查看目标与变化并再次确认后，宿主才会执行 |
+| 处理公开商户服务状态事件 | 已支持：events.merchant-service.changed.consume v1 | 接收稳定 `eventKey`、服务 ID、已发布版本、active/paused 状态和时间；不包含商户身份、说明、模型、价格或上游地址 |
+| 处理持久渠道健康事件 | 已支持：events.channel-health.changed.consume v1 | 接收稳定 `eventKey` 与 down / recovered 状态变化并返回有界结果；管理员可在插件管理 API 查询结果，插件建议不触发其他操作 |
+| 静态检查管理员配置的渠道模型映射 | 已支持：channel.model_mapping.review.read v1 | 阅读所选渠道的模型名和映射值，返回摘要与建议；这些是管理员填写的数据，会发送给所选插件，不连接上游或修改渠道 |
+| 给其他模块增加只读查询或计算 | 逐模块接入 | 宿主提供固定入口、数据投影、Schema、权限和结果展示 |
+| 增加 HTTP API、Webhook、后台任务 | 渠道健康与商户公开状态事件已接入 | 宿主通过固定事件生产者、持久队列和 Sidecar worker 处理事件；通用 Webhook、插件自建计划任务仍不支持 |
+| 声明插件管理页静态信息卡 | 已支持：`plugin_management` 的 `info_card` | Manifest 最多声明 16 个中英文纯文本卡片，不支持菜单、链接、按钮或动态页面 |
+| 增加其他控制台页面、菜单、翻译或登录表单 | 上传插件不支持 | 源码编译的 ConsoleExtension 随前端构建；上传包不能加载页面代码 |
 | 替换模型协议、渠道适配器、实时路由策略 | 上传插件不支持 | 由 Rust 宿主实现；上传包不能替换实时请求路径 |
 | 修改价格、计费、钱包、结算、权限或数据库结构 | 上传插件不支持 | 由宿主业务代码处理，插件不能绕过权限与账务规则 |
-| 接入外部账号登录、账户资料或余额 | 不通过通用 Sidecar | 使用宿主提供的类型化连接器 |
+| 使用插件分析自己的外部余额快照 | 已支持：account.balance.snapshot.review.read v1 | 用户主动选择已链接账户和插件；宿主只传递本人已保存的金额、单位、状态和时间，不访问上游、不传凭据 |
+| 经用户逐次同意读取当前外部余额 | 已支持：account.balance.snapshot.live-review.read v1 | 仅通过宿主固定的 `account.balance` 端点读取当前绑定账户；宿主内部使用凭据并保存余额快照，插件只得到金额、单位、状态和时间 |
+| 在固定业务页面显示插件补充资料 | 已支持：`uiViews` v1 | 使用宿主的纯文本卡片、徽标、指标或表格；只能显示在插件管理、渠道监控、渠道模型映射、商户服务和外部账户这些固定位置 |
 
-上传安装的 `.afplugin`、编译进服务的 Rust `RuntimeExtensions`、编译进前端的 `ConsoleExtension` 是三种不同机制。`.afplugin` 可从插件管理上传安装；`RuntimeExtensions` 要改 Rust 并重建服务；`ConsoleExtension` 要改 Next 源码并重新构建前端。插件包本身不能注册菜单、接口或后台任务。
+上传安装的 `.afplugin`、编译进服务的 Rust `RuntimeExtensions`、编译进前端的 `ConsoleExtension` 是三种不同机制。`.afplugin` 可从插件管理上传安装；`RuntimeExtensions` 要改 Rust 并重建服务；`ConsoleExtension` 要改 Next 源码并重新构建前端。插件 Manifest 可声明 `uiContributions` 和 `uiViews`，宿主只在注册好的固定位置渲染静态纯文本组件。插件不能注册菜单、路由、接口、按钮动作或后台任务。
 
-通用 Sidecar 目前只执行管理员明确授予的 access=read、sideEffect=none 能力，并要求每项能力都有输入和输出 JSON Schema。插件没有数据库句柄、用户会话、渠道密钥、托管 HTTP 客户端或持久化接口；它只能处理宿主给出的本次输入和公开配置。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
+插件没有通用 HTTP 代理。外部账户分析模块提供两个宿主固定端点：`account.balance` 返回已过滤的余额字段；`account.profile` 返回显示名称，只有插件另行声明并获授 `external.account.profile.read@1` 时才可请求。页面默认不勾选；用户每次运行前单独同意后，宿主才会读取本人当前绑定的上游账户。余额读取会写入一条新的本地余额快照，后续账务仍由 AnyFlows 自己的余额与账本规则处理。凭据、用户 ID、账户 ID、上游 URL 和请求头都不会发给插件。随仓库提供的实时余额示例只声明余额端点，见 `tools/plugins/examples/account-balance-live-review/`。
+
+代理回调要求另外授予 `external.account.balance.read@1`，同时满足 `account.balance.snapshot.live-review.read@1` 的模块入口授权。回调只接受 `GET` 和空查询参数；插件不能选择 URL、路径、请求体或凭据。每次调用最多四次回调，并共享同一 deadline。协议校验和字段见[协议参考](plugin-protocol-reference.md#sidecar-代理回调)。受控操作目前只支持管理员确认启停主动监控目标这一项固定动作，流程和限制见[宿主确认的插件动作](plugin-actions.md)。渠道健康和商户服务事件的投递说明见本指南上文。
+
+通用 Sidecar 只执行管理员明确授予的只读能力，并要求每项能力都有输入和输出 JSON Schema。`sideEffect=external_read` 仅对宿主登记的外部账户读取能力开放，并且还要通过前述单次用户同意；其他能力使用 `sideEffect=none`。插件没有数据库句柄、用户会话、渠道密钥、通用 HTTP 客户端或通用数据库持久化接口；它只能处理宿主给出的本次输入和已配置的 publicConfig。宿主控制实际调用的插件、能力名、版本、用户权限及数据范围。没有“客户端任意选择 capability 并直接调用”的通用接口。
+
+持久事件当前由两个业务事务内的固定生产者创建：渠道健康从 `down` 变为 `recovered` 或相反的转换，以及商户公开服务变为 `active` 或 `paused`。每次插件调用都会在输入中收到稳定 `eventKey`。投递是至少一次语义，队列重试会复用同一 key；插件若增加可重试副作用，应先在目标系统按该 key 做幂等去重。宿主保留源 key 用于队列去重；管理员结果 API 不把它作为投递元数据返回。处理结果保存在宿主队列中，有效期为 30 天；管理员可在“插件管理”的事件结果区域查看，也可调用 `GET /api/admin/plugins/events/results?before_id=<deliveryId>&limit=20` 分页查询。PAT 权限为 `admin:list_admin_plugin_event_results:execute`，普通用户不能读取。插件输出限制为 16 KiB JSON，不作为命令、通知或业务写操作执行。管理员上传的普通插件包会随安装流程完成制品登记；手工登记的制品需要先通过制品审批，再部署并授予精确能力。
 
 ## 从零制作第一个插件
 
@@ -34,9 +46,12 @@
 如果仓库根目录下还没有 `dist` 文件夹，先创建它。Linux/macOS 使用 `mkdir -p dist`；Windows PowerShell 使用 `New-Item -ItemType Directory -Force dist`。
 
     python tools/plugins/package-example.py dist/catalog-example.afplugin
+    python tools/plugins/package-example.py dist/channel-health-event.afplugin --example channel-health-event
+    python tools/plugins/package-example.py dist/merchant-service-event.afplugin --example merchant-service-event
     python tools/plugins/package-example.py dist/merchant-review.afplugin --example merchant-service-review
     python tools/plugins/package-example.py dist/channel-monitor-review.afplugin --example channel-monitor-review
     python tools/plugins/package-example.py dist/channel-model-mapping-review.afplugin --example channel-model-mapping-review
+    python tools/plugins/package-example.py dist/account-balance-live-review.afplugin --example account-balance-live-review
 
 这些命令会从仓库复制示例、自动加入 Python SDK，再生成 .afplugin。输出文件必须尚不存在。
 
@@ -110,7 +125,7 @@ SDK 负责 JSON Lines 握手、健康响应、请求关联、截止时间和错�
 
 协议帧走标准输入和标准输出。不要向标准输出打印日志；调试日志写标准错误。各语言都可以实现插件，但必须与[协议参考](plugin-protocol-reference.md)中的 JSON Lines 协议、字段类型和错误码一致。
 
-## 当前已接入的四个业务入口
+## 当前已接入的五个业务入口
 
 ### 模型资料目录
 
@@ -161,7 +176,7 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 
 这些接口需要登录会话或 models:read 系统 API Token；模型调用 API Key 不能用于管理接口。翻页时把 nextCursor 原样传回，搜索词或插件部署版本改变后从第一页开始。
 
-四个现有入口的单次调用预算最多 5 秒；目录输出最多 256 KiB，商户和监控检查的输入最多 64 KiB、宿主接受的输出最多 16 KiB，模型映射检查最多接收 512 KiB、输出最多 16 KiB。对应 Manifest 的 `maxResponseBytes` 必须足够接收输入，但不能提高宿主的输出限制。商户、监控和模型映射检查要求空 `publicConfig`；模型目录按各插件的 `configSchema` 处理公开配置。
+同步只读入口的单次调用预算最多 5 秒；目录输出最多 256 KiB，商户和监控检查的输入最多 64 KiB、宿主接受的输出最多 16 KiB，模型映射检查最多接收 512 KiB、输出最多 16 KiB，余额快照分析输入和输出最多 16 KiB。异步事件由持久队列处理，单次调用仍有时间和结果大小上限。Manifest 的 maxResponseBytes 必须足够接收输入，但不能提高宿主的输出限制。商户、监控、映射和余额快照分析要求空 publicConfig；模型目录按各插件的 configSchema 处理公开配置。
 
 ### 商户服务资料检查
 
@@ -208,6 +223,23 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 
 该入口最多允许 5 秒调用、512 KiB 输入和 16 KiB 输出。Manifest 的 `maxResponseBytes` 至少要为 512 KiB；插件处理过程仍应快速返回，不应执行外部网络或长时间任务。
 
+### 外部账户余额分析
+
+静态示例 [account-balance-snapshot-review](../tools/plugins/examples/account-balance-snapshot-review/README.md) 只分析已保存的余额记录，不访问上游。固定能力 `account.balance.snapshot.review.read` v1 接收最多 20 条快照，每条只包含 `amount`、`unit`、`status` 和 `observedAt`，不包含 AnyFlows 用户 ID、连接 ID、外部主体、平台 URL 或凭据。
+
+如插件确实需要当前余额，可另外声明 `account.balance.snapshot.live-review.read` v1 和单独的外部读取 capability。可运行实现见 [account-balance-live-review](../tools/plugins/examples/account-balance-live-review/README.md)。用户在个人资料页逐次勾选同意后，宿主才为本次调用提供固定的 `account.balance` 回调；该回调由现有 NewAPI/Sub2API 连接器读取本人当前选中的账户，在 AnyFlows 保存新的余额快照，再只返回金额、单位、状态和时间。若插件还需 `account.profile`，须在 Manifest 中增加 `external.account.profile.read@1` 并由管理员授予；该端点也返回固定字段且要求 GET 和空查询参数。当前示例没有声明资料读取能力。插件不能提供 URL、路径、请求头、请求体或账户 ID，也不能读取钱包、改动账户绑定或消费本地余额。
+
+回调 capability 与分析入口分开授权：分析需要 `account.balance.snapshot.live-review.read@1`，余额回调需要 `external.account.balance.read@1`。管理员必须同时为插件部署授予对应能力；用户 PAT 还必须同时具有 `external_accounts:read` 和独立的 `external_accounts:live_read` scope 才能通过 API 请求实时读取。默认 `account_read` PAT preset 不包含 `external_accounts:live_read`；可在签发时选择“外部账户实时只读”权限。无论会话还是 PAT，每次实时读取都必须在请求中单独同意。
+
+Python handler 可声明第四个 `context` 参数来使用 SDK 回调。旧的三个参数 handler 保持兼容：
+
+    def handle(capability_id, public_config, value, context):
+        current = context.proxy_read("account.balance")
+        # 仅比较当前余额与 value["snapshots"] 中同单位的历史记录。
+        return make_report(value["snapshots"], current)
+
+SDK 一次 handler 最多发起四次回调，回调与原 capability 调用共用同一个 5 秒预算。没有有效授权的部署不会出现在支持实时读取的插件列表中；宿主在回调前后复核当前部署、审批、撤销状态及两项 capability grant。该路径是外部账户模块专用的固定代理，不会给其他插件能力提供通用出网权限。
+
 ## 想给新模块加插件入口
 
 若当前没有合适入口，插件作者不需要先读 Rust 代码。先整理需求，交给 AnyFlows 维护者评估宿主集成：
@@ -240,7 +272,7 @@ id、displayName、provider 必填。宿主最多返回 50 项，并校验字段
 | 商户工作台 | 检查本人服务的公开说明和模型能力 | 服务发布资料、公开模型 ID 与能力声明检查 | 只投影当前商户有权查看的字段；建议由商户确认，不自动提交或改变审核状态 |
 | 渠道管理 | 分析已记录的监控事件；静态检查模型映射 | 静态配置诊断、脱敏健康历史说明 | 不提供 API Key、渠道凭据或上游地址；不执行探测、不参与实时路由、不改健康分 |
 | 管理与运营 | 暂无通用插件入口 | 对人工填写内容或脱敏汇总数据做检查和报告 | 由宿主决定可见数据、管理员权限和审计范围；原始日志需先去除密钥及个人资料 |
-| 账号、钱包和结算 | 不由通用 Sidecar 接入 | 如需第三方平台连接，使用类型化的宿主连接器并单独设计授权 | 插件不得读取用户会话、账户余额或账本，也不得发起扣款、退款、提现或结算 |
+| 账号、钱包和结算 | 仅支持本人外部账户的固定资料/余额投影；不开放 AnyFlows 钱包和账本 | 读取上游资料或余额必须通过类型化宿主连接器，且当前余额读取需要用户逐次同意 | 插件拿不到用户会话和凭据，也不能读取本地钱包账本、扣款、退款、提现或结算 |
 | 定时任务和通知 | 上传插件没有通用后台任务钩子 | 由宿主提供有范围的事件/任务契约，再评估插件处理 | 需要宿主管理触发条件、幂等、重试、撤销和审计；不能靠插件进程常驻或自行访问网络 |
 
 新增只读入口时，宿主先整理本模块允许提供的最小数据快照，插件返回符合 Schema 的摘要或检查建议，宿主再检查资源归属和数据版本。若插件需要修改业务数据，宿主必须提供单独的操作入口，让用户确认并按现有权限执行；分析结果本身不能触发写操作。

@@ -1,0 +1,51 @@
+{
+  "pluginId": "org.anyflows.example-merchant-service-event",
+  "displayName": "Example merchant service event reviewer",
+  "pluginVersion": "1.0.0",
+  "contractRange": {
+    "minimum": { "major": 1, "minor": 0 },
+    "maximum": { "major": 1, "minor": 2 }
+  },
+  "capabilities": [
+    {
+      "id": "events.merchant-service.changed.consume",
+      "version": 1,
+      "access": "read",
+      "sideEffect": "none",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["eventKey", "serviceId", "revision", "status", "observedAt"],
+        "properties": {
+          "eventKey": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "serviceId": { "type": "integer", "minimum": 1 },
+          "revision": { "type": "integer", "minimum": 1 },
+          "status": { "type": "string", "enum": ["active", "paused"] },
+          "observedAt": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "status", "recommendation"],
+        "properties": {
+          "summary": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "status": { "type": "string", "enum": ["info", "warning"] },
+          "recommendation": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        }
+      }
+    }
+  ],
+  "authenticationModes": ["none"],
+  "limits": {
+    "maxConcurrency": 1,
+    "requestTimeoutMs": 5000,
+    "maxResponseBytes": 32768,
+    "maxPageSize": 1
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  },
+  "uiContributions": []
+}

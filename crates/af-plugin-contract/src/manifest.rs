@@ -66,6 +66,164 @@ pub struct PluginManifest {
     pub authentication_modes: Vec<String>,
     pub limits: ConnectorLimits,
     pub config_schema: Value,
+    /// Optional static, host-rendered UI cards. They contain no markup, routes, links, or actions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_contributions: Vec<PluginUiContribution>,
+    /// Optional versioned static views rendered only with host-owned components.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_views: Vec<PluginUiView>,
+}
+
+/// A bounded declarative card rendered with host-owned components and translations.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUiContribution {
+    pub id: String,
+    pub slot: PluginUiSlot,
+    pub component: PluginUiComponent,
+    pub title: PluginUiText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<PluginUiText>,
+}
+
+/// Fixed UI locations supported by the host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginUiSlot {
+    PluginManagement,
+}
+
+/// Fixed host-owned presentation components.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginUiComponent {
+    InfoCard,
+}
+
+/// Plain localized text. No markup, URL, or executable content is interpreted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginUiText {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub en: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zh: Option<String>,
+}
+
+/// A versioned, static view that can be placed only in a host-registered slot.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUiView {
+    pub id: String,
+    pub schema_version: u16,
+    pub slot: PluginUiViewSlot,
+    pub blocks: Vec<PluginUiBlock>,
+}
+
+/// Fixed module locations. A view cannot register a route or choose a URL.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginUiViewSlot {
+    PluginManagement,
+    ChannelMonitor,
+    ChannelModelMapping,
+    MerchantService,
+    ExternalAccount,
+}
+
+/// Finite set of host-rendered presentation blocks. All values are static text.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PluginUiBlock {
+    Text {
+        text: PluginUiText,
+    },
+    Badge {
+        label: PluginUiText,
+        tone: PluginUiTone,
+    },
+    Metric {
+        label: PluginUiText,
+        value: PluginUiText,
+    },
+    Table {
+        columns: Vec<PluginUiText>,
+        rows: Vec<Vec<PluginUiText>>,
+    },
+    InfoCard {
+        title: PluginUiText,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<PluginUiText>,
+    },
+}
+
+/// Host-controlled badge colors; plugins cannot supply classes or styles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginUiTone {
+    Neutral,
+    Success,
+    Warning,
+    Danger,
+}
+
+const MAX_PLUGIN_UI_VIEWS: usize = 8;
+const MAX_PLUGIN_UI_BLOCKS_PER_VIEW: usize = 24;
+const MAX_PLUGIN_UI_TABLE_COLUMNS: usize = 8;
+const MAX_PLUGIN_UI_TABLE_ROWS: usize = 16;
+const MAX_PLUGIN_UI_VIEW_BYTES: usize = 8 * 1024;
+const MAX_PLUGIN_UI_TOTAL_BYTES: usize = 32 * 1024;
+
+impl PluginUiBlock {
+    fn validate(&self) -> bool {
+        match self {
+            Self::Text { text } => text.validate(),
+            Self::Badge { label, .. } => label.validate(),
+            Self::Metric { label, value } => label.validate() && value.validate(),
+            Self::Table { columns, rows } => {
+                !columns.is_empty()
+                    && columns.len() <= MAX_PLUGIN_UI_TABLE_COLUMNS
+                    && rows.len() <= MAX_PLUGIN_UI_TABLE_ROWS
+                    && columns.iter().all(PluginUiText::validate)
+                    && rows.iter().all(|row| {
+                        row.len() == columns.len() && row.iter().all(PluginUiText::validate)
+                    })
+            }
+            Self::InfoCard { title, description } => {
+                title.validate() && description.as_ref().is_none_or(PluginUiText::validate)
+            }
+        }
+    }
+}
+
+impl PluginUiText {
+    fn validate(&self) -> bool {
+        [&self.en, &self.zh]
+            .into_iter()
+            .any(|value| value.as_deref().is_some_and(valid_ui_text))
+            && [&self.en, &self.zh]
+                .into_iter()
+                .all(|value| value.as_deref().is_none_or(valid_ui_text))
+    }
+}
+
+fn valid_ui_text(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    !text.trim().is_empty()
+        && text.len() <= 512
+        && !text.chars().any(char::is_control)
+        && !text.contains('<')
+        && !text.contains('>')
+        && ![
+            "http://",
+            "https://",
+            "javascript:",
+            "data:",
+            "mailto:",
+            "www.",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
 }
 
 impl PluginManifest {
@@ -113,8 +271,83 @@ impl PluginManifest {
                 return Err(ContractValidationError::DuplicateCapability);
             }
         }
+        if self.ui_contributions.len() > 16 {
+            return Err(ContractValidationError::InvalidManifest);
+        }
+        let mut contribution_ids = BTreeSet::new();
+        if self.ui_contributions.iter().any(|contribution| {
+            contribution.id.is_empty()
+                || contribution.id.len() > 64
+                || !contribution
+                    .id
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                || !contribution
+                    .id
+                    .as_bytes()
+                    .last()
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                || !contribution.id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || byte == b'-'
+                        || byte == b'_'
+                })
+                || !contribution_ids.insert(&contribution.id)
+                || !contribution.title.validate()
+                || contribution
+                    .description
+                    .as_ref()
+                    .is_some_and(|description| !description.validate())
+        }) {
+            return Err(ContractValidationError::InvalidManifest);
+        }
+        if self.ui_views.len() > MAX_PLUGIN_UI_VIEWS {
+            return Err(ContractValidationError::InvalidManifest);
+        }
+        let mut total_view_bytes = 0usize;
+        for view in &self.ui_views {
+            if !valid_ui_id(&view.id)
+                || view.schema_version != 1
+                || view.blocks.is_empty()
+                || view.blocks.len() > MAX_PLUGIN_UI_BLOCKS_PER_VIEW
+                || !view.blocks.iter().all(PluginUiBlock::validate)
+            {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+            let view_bytes = serde_json::to_vec(view)
+                .map_err(|_| ContractValidationError::InvalidManifest)?
+                .len();
+            if view_bytes > MAX_PLUGIN_UI_VIEW_BYTES {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+            total_view_bytes = total_view_bytes
+                .checked_add(view_bytes)
+                .filter(|size| *size <= MAX_PLUGIN_UI_TOTAL_BYTES)
+                .ok_or(ContractValidationError::InvalidManifest)?;
+            if !contribution_ids.insert(&view.id) {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+        }
         Ok(())
     }
+}
+
+fn valid_ui_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && value
+            .as_bytes()
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
 }
 
 /// Resource ceilings advertised before the host enables a connector.
@@ -178,6 +411,8 @@ mod tests {
                 max_page_size: 1,
             },
             config_schema,
+            ui_contributions: Vec::new(),
+            ui_views: Vec::new(),
         }
     }
 
@@ -198,5 +433,159 @@ mod tests {
             manifest(serde_json::json!(true)).validate(),
             Err(ContractValidationError::InvalidManifest)
         );
+    }
+
+    #[test]
+    fn manifest_accepts_only_bounded_static_plugin_management_cards() {
+        let mut value = manifest(serde_json::json!({ "type": "object" }));
+        value.ui_contributions.push(PluginUiContribution {
+            id: "service-summary".to_owned(),
+            slot: PluginUiSlot::PluginManagement,
+            component: PluginUiComponent::InfoCard,
+            title: PluginUiText {
+                en: Some("Service summary".to_owned()),
+                zh: Some("服务摘要".to_owned()),
+            },
+            description: Some(PluginUiText {
+                en: Some("Static information rendered by AnyFlows.".to_owned()),
+                zh: None,
+            }),
+        });
+        assert!(value.validate().is_ok());
+
+        let mut duplicate = value.clone();
+        duplicate
+            .ui_contributions
+            .push(duplicate.ui_contributions[0].clone());
+        assert_eq!(
+            duplicate.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut unsafe_text = value;
+        unsafe_text.ui_contributions[0].title.en = Some("<script>alert(1)</script>".to_owned());
+        assert_eq!(
+            unsafe_text.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+    }
+
+    #[test]
+    fn manifest_accepts_bounded_host_rendered_views_and_old_manifests() {
+        let mut value = manifest(serde_json::json!({ "type": "object" }));
+        value.ui_views.push(PluginUiView {
+            id: "account-summary".to_owned(),
+            schema_version: 1,
+            slot: PluginUiViewSlot::ExternalAccount,
+            blocks: vec![
+                PluginUiBlock::Text {
+                    text: PluginUiText {
+                        en: Some("Snapshot report".to_owned()),
+                        zh: Some("快照报告".to_owned()),
+                    },
+                },
+                PluginUiBlock::Badge {
+                    label: PluginUiText {
+                        en: Some("Current".to_owned()),
+                        zh: None,
+                    },
+                    tone: PluginUiTone::Success,
+                },
+                PluginUiBlock::Metric {
+                    label: PluginUiText {
+                        en: Some("Balance".to_owned()),
+                        zh: None,
+                    },
+                    value: PluginUiText {
+                        en: Some("12.50 USD".to_owned()),
+                        zh: None,
+                    },
+                },
+                PluginUiBlock::Table {
+                    columns: vec![PluginUiText {
+                        en: Some("Observed".to_owned()),
+                        zh: None,
+                    }],
+                    rows: vec![vec![PluginUiText {
+                        en: Some("Today".to_owned()),
+                        zh: Some("今天".to_owned()),
+                    }]],
+                },
+                PluginUiBlock::InfoCard {
+                    title: PluginUiText {
+                        en: Some("Account".to_owned()),
+                        zh: None,
+                    },
+                    description: None,
+                },
+            ],
+        });
+        assert!(value.validate().is_ok());
+
+        let mut unsupported_version = value.clone();
+        unsupported_version.ui_views[0].schema_version = 2;
+        assert_eq!(
+            unsupported_version.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut unsafe_text = value.clone();
+        unsafe_text.ui_views[0].blocks[0] = PluginUiBlock::Text {
+            text: PluginUiText {
+                en: Some("<img src=x>".to_owned()),
+                zh: None,
+            },
+        };
+        assert_eq!(
+            unsafe_text.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut too_many_blocks = value.clone();
+        too_many_blocks.ui_views[0].blocks.resize(
+            MAX_PLUGIN_UI_BLOCKS_PER_VIEW + 1,
+            PluginUiBlock::Text {
+                text: PluginUiText {
+                    en: Some("bounded".to_owned()),
+                    zh: None,
+                },
+            },
+        );
+        assert_eq!(
+            too_many_blocks.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut mismatched_table = value.clone();
+        mismatched_table.ui_views[0].blocks[3] = PluginUiBlock::Table {
+            columns: vec![PluginUiText {
+                en: Some("A".to_owned()),
+                zh: None,
+            }],
+            rows: vec![vec![], vec![]],
+        };
+        assert_eq!(
+            mismatched_table.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut old_manifest = serde_json::to_value(manifest(serde_json::json!({
+            "type": "object"
+        })))
+        .unwrap();
+        old_manifest.as_object_mut().unwrap().remove("uiViews");
+        assert_eq!(
+            serde_json::from_value::<PluginManifest>(old_manifest)
+                .unwrap()
+                .ui_views,
+            Vec::new()
+        );
+
+        let mut unknown_block = serde_json::to_value(value).unwrap();
+        unknown_block["uiViews"][0]["blocks"][0] = serde_json::json!({
+            "type": "custom_html",
+            "html": "<script>bad()</script>"
+        });
+        assert!(serde_json::from_value::<PluginManifest>(unknown_block).is_err());
     }
 }
