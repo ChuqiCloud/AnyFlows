@@ -50,7 +50,7 @@ python tools/plugins/package-example.py dist/merchant-service-review.afplugin --
 3. 等插件节点状态显示就绪。
 4. 用商户账号进入“我的服务”，在服务行中点“插件检查”，选择 `Example merchant service review`，再点“运行检查”。
 
-此能力的部署 `publicConfig` 必须是空对象 `{}`。插件使用本次调用传入的商户服务资料；不需要在管理页面填写额外配置。只有已启用、已批准且明确授予上述能力的插件才会列在商户可选清单中。
+此能力的部署 `publicConfig` 必须是空对象 `{}`。插件使用本次调用传入的商户服务资料；不需要在管理页面填写额外配置。普通上传安装会完成制品登记，手工登记的制品须先审批。只有已启用且明确授予上述能力的插件才会列在商户可选清单中。
 
 若用系统 API Token 调用：获取可选插件清单使用 `merchant_plugins:read`；执行检查使用 `merchant_plugins:execute`。模型调用 API Key 不具备这两项系统 API 权限。
 

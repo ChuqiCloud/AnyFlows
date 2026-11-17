@@ -62,6 +62,7 @@ mod subscriptions;
 mod tokens;
 mod upstream_usage;
 mod usage_logs;
+mod user_external_account_plugin_review;
 mod user_external_accounts;
 mod user_notifications;
 mod user_profile;
@@ -118,6 +119,7 @@ pub(crate) fn raw_openapi_document() -> OpenApi {
     document.merge(password_reset::document());
     document.merge(user_profile::document());
     document.merge(user_external_accounts::document());
+    document.merge(user_external_account_plugin_review::document());
     document.merge(user_wallet::document());
     document.merge(user_notifications::document());
     document.merge(user_topups::document());

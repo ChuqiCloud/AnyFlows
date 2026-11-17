@@ -15,13 +15,28 @@ use af_db::{
 };
 use af_plugin_contract::{CapabilityId, CapabilityResult, PluginId, PluginManifest, PluginVersion};
 use af_plugin_runtime::{
-    CapabilityExecutionContext, PluginArtifactDescriptor, SidecarError, SidecarIsolationPolicy,
-    SidecarLimits, SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
+    CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError,
+    SidecarIsolationPolicy, SidecarLimits, SidecarSupervisor, TrustedPluginKey,
+    VerifiedPluginArtifact,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
 
 use crate::AdminPluginLifecycleError;
+
+/// All inputs for a single host-authorized Sidecar capability invocation.
+/// Keeping the proxy dispatcher on the request makes its lifetime explicitly
+/// per invocation rather than part of the plugin deployment or runtime state.
+pub(crate) struct PluginCapabilityInvocation<'a> {
+    pub(crate) repository: &'a PluginCatalogRepository,
+    pub(crate) plugin_id: &'a str,
+    pub(crate) generation: i64,
+    pub(crate) invocation: &'a CapabilityExecutionContext,
+    pub(crate) capability_id: &'a str,
+    pub(crate) capability_version: u16,
+    pub(crate) input: serde_json::Value,
+    pub(crate) proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+}
 
 /// Runtime owner for administrator-installed local-process plugins.
 ///
@@ -418,35 +433,48 @@ impl AdminPluginSidecarRuntime {
         capability_version: u16,
         input: serde_json::Value,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
-        let remaining = invocation
+        self.invoke_capability_with_proxy(PluginCapabilityInvocation {
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            proxy_dispatcher: None,
+        })
+        .await
+    }
+
+    /// Invoke a host capability with a request-scoped external read dispatcher.
+    /// The dispatcher is never stored in the deployment or sent to the sidecar.
+    pub(crate) async fn invoke_capability_with_proxy(
+        &self,
+        request: PluginCapabilityInvocation<'_>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let remaining = request
+            .invocation
             .remaining_timeout()
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-        tokio::time::timeout(
-            remaining,
-            self.invoke_capability_inner(
-                repository,
-                plugin_id,
-                generation,
-                invocation,
-                capability_id,
-                capability_version,
-                input,
-            ),
-        )
-        .await
-        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+        tokio::time::timeout(remaining, self.invoke_capability_inner(request))
+            .await
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
     }
 
     async fn invoke_capability_inner(
         &self,
-        repository: &PluginCatalogRepository,
-        plugin_id: &str,
-        generation: i64,
-        invocation: &CapabilityExecutionContext,
-        capability_id: &str,
-        capability_version: u16,
-        input: serde_json::Value,
+        request: PluginCapabilityInvocation<'_>,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let PluginCapabilityInvocation {
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            proxy_dispatcher,
+        } = request;
         let plugin_id = PluginId::new(plugin_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let generation =
@@ -512,12 +540,13 @@ impl AdminPluginSidecarRuntime {
             .with_public_config(deployment.config)
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
-            .invoke_host_capability(
+            .invoke_host_capability_with_proxy(
                 generation,
                 &invocation,
                 &capability_id,
                 capability_version,
                 input,
+                proxy_dispatcher,
             )
             .await
             .map_err(map_sidecar_error)

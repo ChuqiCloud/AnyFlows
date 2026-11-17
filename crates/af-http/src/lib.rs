@@ -148,9 +148,14 @@ mod speech_service;
 mod streaming;
 mod subscriptions;
 mod turnstile;
+mod user_external_account_plugin_review;
 mod user_external_accounts;
 mod user_notifications;
 mod user_profile;
+pub use user_external_account_plugin_review::{
+    build_user_external_account_plugin_review_router,
+    user_external_account_plugin_review_openapi_document,
+};
 pub use user_external_accounts::build_user_external_account_router;
 mod user_routes;
 pub use merchant_routes::build_merchant_route_router;

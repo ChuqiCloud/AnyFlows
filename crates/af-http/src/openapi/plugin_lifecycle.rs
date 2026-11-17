@@ -13,9 +13,9 @@ use crate::{
         PluginCatalogModelPageResponse, PluginCatalogModelResponse,
         PluginCatalogSourcePageResponse, PluginCatalogSourceResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
-        PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginPackageInstallRequest,
-        PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse, PluginRuntimeStateResponse,
-        PluginUninstallResponse,
+        PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginEventResultPageResponse,
+        PluginEventResultResponse, PluginPackageInstallRequest, PluginRuntimeNodeResponse,
+        PluginRuntimeOverviewResponse, PluginRuntimeStateResponse, PluginUninstallResponse,
     },
 };
 
@@ -75,6 +75,26 @@ fn list_admin_plugin_artifacts() {}
     security(("bearerAuth" = []))
 )]
 fn list_admin_plugin_deployments() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/plugins/events/results",
+    operation_id = "listAdminPluginEventResults",
+    tag = "插件生命周期",
+    summary = "分页读取插件事件处理结果",
+    description = "只返回已完成事件的插件输出和状态摘要；不包含事件输入、事件键、插件 URL 或凭据。输出由宿主限制为 16 KiB，并拒绝敏感字段名。结果只是只读数据，不会触发操作或通知。",
+    params(("before_id" = Option<i64>, Query, minimum = 1), ("limit" = Option<u32>, Query, minimum = 1, maximum = 100)),
+    responses(
+        (status = 200, description = "按 delivery ID 倒序排列的事件结果页", body = PluginEventResultPageResponse),
+        (status = 400, description = "游标或分页参数无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody),
+        (status = 503, description = "事件存储未配置", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_admin_plugin_event_results() {}
 
 #[utoipa::path(
     get,
@@ -323,6 +343,7 @@ fn list_plugin_catalog_models() {}
         install_admin_plugin_package,
         list_admin_plugin_artifacts,
         list_admin_plugin_deployments,
+        list_admin_plugin_event_results,
         list_admin_plugin_deployment_history,
         register_admin_plugin_artifact,
         approve_admin_plugin_artifact,
@@ -352,6 +373,8 @@ fn list_plugin_catalog_models() {}
         PluginDeploymentRequest,
         PluginDeploymentResponse,
         PluginDeploymentRollbackRequest,
+        PluginEventResultResponse,
+        PluginEventResultPageResponse,
         PluginRuntimeOverviewResponse,
         PluginRuntimeNodeResponse,
         PluginRuntimeStateResponse,

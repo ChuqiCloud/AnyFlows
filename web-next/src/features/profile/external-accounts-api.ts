@@ -35,6 +35,33 @@ export type ExternalAccountLink = {
   credential: string
 }
 
+export type ExternalAccountSnapshotReviewer = {
+  pluginId: string
+  displayName: string
+  pluginVersion: string
+  supportsExternalReads: boolean
+}
+
+export type ExternalAccountSnapshotReviewCheck = {
+  code: string
+  title: string
+  status: 'pass' | 'info' | 'warning' | 'fail'
+  message: string
+  recommendation: string | null
+}
+
+export type ExternalAccountSnapshotReview = {
+  pluginId: string
+  displayName: string
+  pluginVersion: string
+  snapshotCount: number
+  firstObservedAt: number
+  lastObservedAt: number
+  summary: string
+  checks: ExternalAccountSnapshotReviewCheck[]
+  uiViews: unknown[]
+}
+
 const externalAccountKey = ['user-external-accounts'] as const
 const connectorKey = ['user-external-connectors'] as const
 
@@ -95,5 +122,32 @@ export function useExternalBalanceHistory(id: number | undefined, enabled: boole
     queryFn: ({ signal }) => get<{ connectionId: number; items: ExternalBalance[] }>(
       `/api/account/external-accounts/${id}/balances`, signal, { limit: 10 },
     ),
+  })
+}
+
+export function useExternalAccountSnapshotReviewers(enabled = true) {
+  return useQuery({
+    queryKey: [...connectorKey, 'snapshot-reviewers'],
+    enabled,
+    queryFn: ({ signal }) => get<{ plugins: ExternalAccountSnapshotReviewer[] }>(
+      '/api/account/external-accounts/plugin-reviewers', signal,
+    ),
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+
+export function useReviewExternalAccountSnapshots() {
+  return useMutation({
+    mutationFn: async ({ connectionId, pluginId, allowExternalReads }: { connectionId: number; pluginId: string; allowExternalReads: boolean }) => (await apiClient.post<
+      { 200: ExternalAccountSnapshotReview }, unknown, true
+    >({
+      url: `/api/account/external-accounts/${connectionId}/plugin-review`,
+      body: { plugin_id: pluginId, allow_external_reads: allowExternalReads },
+      security,
+      headers,
+      throwOnError: true,
+    })).data,
+    gcTime: 0,
   })
 }

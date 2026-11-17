@@ -1,0 +1,72 @@
+{
+  "pluginId": "org.anyflows.example-account-balance-review",
+  "displayName": "Example balance snapshot review",
+  "pluginVersion": "1.0.0",
+  "contractRange": {
+    "minimum": { "major": 1, "minor": 0 },
+    "maximum": { "major": 1, "minor": 0 }
+  },
+  "capabilities": [
+    {
+      "id": "account.balance.snapshot.review.read",
+      "version": 1,
+      "access": "read",
+      "sideEffect": "none",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["snapshots"],
+        "properties": {
+          "snapshots": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["amount", "unit", "status", "observedAt"],
+              "properties": {
+                "amount": { "type": ["string", "null"], "maxLength": 128 },
+                "unit": { "type": ["string", "null"], "maxLength": 64 },
+                "status": { "type": "string", "enum": ["available", "unavailable", "authentication_required"] },
+                "observedAt": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "checks"],
+        "properties": {
+          "summary": { "type": "string", "minLength": 1, "maxLength": 2048 },
+          "checks": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "title", "status", "message", "recommendation"],
+              "properties": {
+                "code": { "type": "string", "minLength": 1, "maxLength": 64 },
+                "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "status": { "type": "string", "enum": ["pass", "info", "warning", "fail"] },
+                "message": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                "recommendation": { "type": ["string", "null"], "minLength": 1, "maxLength": 2048 }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "authenticationModes": ["none"],
+  "limits": {
+    "maxConcurrency": 1,
+    "requestTimeoutMs": 5000,
+    "maxResponseBytes": 16384,
+    "maxPageSize": 1
+  },
+  "configSchema": { "type": "object", "additionalProperties": false }
+}

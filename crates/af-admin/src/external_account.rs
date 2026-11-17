@@ -5,6 +5,8 @@ use std::{fmt, future::Future, pin::Pin};
 use serde::Serialize;
 use zeroize::Zeroizing;
 
+use af_plugin_contract::{HostHttpMethod, PluginProxyRequest, PluginProxyResult};
+
 use crate::SessionPrincipal;
 
 pub type ExternalAccountFuture<'a, T> =
@@ -189,6 +191,49 @@ pub trait UserExternalAccountService: Send + Sync {
         connection_id: i64,
         limit: u32,
     ) -> ExternalAccountFuture<'_, ExternalAccountBalancePage>;
+
+    /// Read one host-registered, credentialed connector projection for an owned account.
+    /// Implementations must recheck ownership and must never return raw upstream responses.
+    fn proxy_read(
+        &self,
+        _principal: SessionPrincipal,
+        _connection_id: i64,
+        _request: PluginProxyRequest,
+    ) -> ExternalAccountFuture<'_, PluginProxyResult> {
+        Box::pin(async {
+            Ok(PluginProxyResult::Error(
+                af_plugin_contract::PluginProxyError {
+                    code: af_plugin_contract::PluginProxyErrorCode::Unsupported,
+                },
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ExternalAccountProxyEndpoint {
+    Profile,
+    Balance,
+}
+
+pub(crate) fn external_account_proxy_endpoint(
+    request: &PluginProxyRequest,
+) -> Option<ExternalAccountProxyEndpoint> {
+    if request.request.method != HostHttpMethod::Get || !request.request.query.is_empty() {
+        return None;
+    }
+    match (
+        request.capability_id.as_str(),
+        request.request.endpoint_id.as_str(),
+    ) {
+        ("external.account.profile.read", "account.profile") => {
+            Some(ExternalAccountProxyEndpoint::Profile)
+        }
+        ("external.account.balance.read", "account.balance") => {
+            Some(ExternalAccountProxyEndpoint::Balance)
+        }
+        _ => None,
+    }
 }
 
 fn valid_connector_id(value: &str) -> bool {

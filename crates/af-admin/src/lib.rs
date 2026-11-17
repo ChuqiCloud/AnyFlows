@@ -1,5 +1,8 @@
 //! 登录用户与管理域应用服务。
 
+pub use af_db::{PluginActionProposalRecord, PluginActionProposalStatus};
+pub use af_plugin_contract::HostActionProposal;
+
 mod alipay_verification;
 mod verification_access;
 pub use verification_access::{
@@ -39,8 +42,18 @@ pub use external_account::{
     ExternalAccountFuture, ExternalAccountLinkCommand, SupportedExternalConnector,
     UserExternalAccountService,
 };
+mod external_account_snapshot_plugin_review;
+pub use external_account_snapshot_plugin_review::{
+    DatabaseExternalAccountSnapshotPluginReviewService, ExternalAccountSnapshotPluginReview,
+    ExternalAccountSnapshotPluginReviewCheck, ExternalAccountSnapshotPluginReviewError,
+    ExternalAccountSnapshotPluginReviewFuture, ExternalAccountSnapshotPluginReviewService,
+    ExternalAccountSnapshotPluginReviewStatus, ExternalAccountSnapshotPluginReviewer,
+    ExternalAccountSnapshotPluginReviewerList,
+};
 mod external_account_runtime;
 pub use external_account_runtime::DatabaseUserExternalAccountService;
+mod external_account_plugin_proxy;
+pub use external_account_plugin_proxy::UserExternalAccountProxyDispatcher;
 mod upstream_usage;
 pub use credential_models::{
     CredentialModelError, CredentialModelFuture, CredentialModelItem, CredentialModelService,
@@ -55,10 +68,12 @@ pub use merchant_payout::{
 };
 mod merchant_finance;
 pub use af_db::{MerchantFinanceReport, MerchantFinanceReportRow, MerchantFinanceReportTotals};
+pub use af_plugin_contract::PluginUiView;
 pub use merchant_finance::{
     DatabaseMerchantFinanceService, MerchantFinanceBalance, MerchantFinanceEntry,
     MerchantFinanceError, MerchantFinancePage, MerchantFinanceService, MerchantWithdrawal,
 };
+
 mod active_channel_monitor;
 #[cfg(test)]
 mod active_channel_monitor_tests;
@@ -428,9 +443,11 @@ pub use plugin_catalog_extension::{
 pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
-    AdminPluginDeploymentPage, AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    AdminPluginDeploymentPage, AdminPluginEventResult, AdminPluginEventResultPage,
+    AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
-    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginPackageUpload,
+    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginEventDeliveryWorker,
+    PluginPackageUpload,
 };
 pub use plugin_operations::{
     AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,

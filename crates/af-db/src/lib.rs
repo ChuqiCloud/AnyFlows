@@ -252,12 +252,31 @@ mod playground_conversation_tests;
 mod playground_share;
 #[cfg(test)]
 mod playground_share_tests;
+mod plugin_action_proposals;
+#[cfg(test)]
+mod plugin_action_proposals_integration_tests;
 mod plugin_catalog;
 #[cfg(test)]
 mod plugin_catalog_tests;
 mod plugin_distribution;
 #[cfg(test)]
 mod plugin_distribution_tests;
+mod plugin_event_delivery;
+#[cfg(test)]
+mod plugin_event_delivery_tests;
+pub use plugin_action_proposals::{
+    PluginActionProposalCreate, PluginActionProposalRecord, PluginActionProposalRepository,
+    PluginActionProposalRepositoryError, PluginActionProposalStatus,
+};
+pub use plugin_event_delivery::{
+    MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE, PluginEventDeliveryClaimOutcome,
+    PluginEventDeliveryCompletionOutcome, PluginEventDeliveryCreate,
+    PluginEventDeliveryEnqueueOutcome, PluginEventDeliveryInputError, PluginEventDeliveryLease,
+    PluginEventDeliveryRepository, PluginEventDeliveryRepositoryConfigError,
+    PluginEventDeliveryRepositoryError, PluginEventDeliveryResultPage,
+    PluginEventDeliveryResultQuery, PluginEventDeliveryResultRecord, PluginEventFailureKind,
+    PluginEventKind, enqueue_plugin_event_delivery,
+};
 mod quota;
 #[cfg(test)]
 mod quota_group_window_tests;

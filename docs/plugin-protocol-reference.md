@@ -63,6 +63,10 @@ example.afplugin
 | `authenticationModes` | 认证方式声明；当前无凭据的进程插件填写 `["none"]`。填写其他名称不会取得用户会话、密钥或外部认证入口 |
 | `configSchema` | 管理员公开配置的 JSON Schema；配置会保存并传给插件，不用于秘密数据 |
 | `limits` | 插件能接受的上限；宿主和具体模块可以进一步收紧，不能用它提高宿主限制 |
+| `uiContributions` | 可选的插件管理信息卡；最多 16 张，只支持宿主绘制的固定纯文本组件 |
+| `uiViews` | 可选的版本化静态视图；最多 8 项，只能放入已注册的宿主槽位并使用有限的纯文本组件 |
+
+`uiViews` 的 `schemaVersion` 当前必须是 `1`。固定槽位为 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`；固定组件为 `text`、`badge`、`metric`、`table` 和 `info_card`。视图不能包含 HTML、链接、样式、脚本或动作。宿主按所属业务入口渲染已获批、启用且具备该入口 capability 的插件视图。Manifest 声明视图不会创建新页面或 API。
 
 `limits` 四项均为必填正整数：
 
@@ -147,11 +151,19 @@ Manifest 的紧凑 UTF-8 JSON
 
 启动时先交换 Manifest，再执行健康检查；插件身份、版本、摘要、清单必须一致，且健康状态须为 `healthy`。每个进程串行处理请求，排队也计入 deadline。宿主不会自动重放失败调用。
 
+### Sidecar 代理回调
+
+正常处理一次 `invoke_capability` 时，插件可以在返回最终 `PluginHostResponse` 前，把 `PluginProxyRequest` 写入标准输出。宿主校验关联字段、制品摘要、部署代次、调用 ID 和单独授权的 capability，然后将对应 `PluginProxyResponse` 写回标准输入。Python SDK 把该响应交给当前 handler；这是一段同一进程协议里的宿主回调，不是插件发起的网络连接，也不是公开 HTTP 代理。
+
+插件回调只能给出宿主注册的 endpoint ID、方法和有限查询。AnyFlows 当前仅支持外部账户的 `account.profile` 与 `account.balance`，都要求 `GET` 和空查询参数。账户归属由宿主按当前会话用户重新检查；凭据由宿主内部解密并交给既有 NewAPI/Sub2API 连接器，插件只收到允许字段。`account.balance` 会把结果保存为新的余额快照。用户必须在外部账户页面对本次分析单独勾选授权；部署还需分别授予分析 capability 与 `external.account.balance.read@1`。它们不会开放任意 URL、请求头、路径、请求体或余额账本写入。
+
+单次 capability 调用最多接受四个回调，回调与最终响应共享原请求 deadline 和完整帧上限。宿主在每次回调前后重新核对部署代次、审批/撤销状态和准确 capability 授权；若回调后的复核已观察到变更，宿主会丢弃返回投影。该状态复核与跨节点数据交付尚未由原子撤销栅栏保护，因此不承诺对已经在途的回调做到线性化撤销。身份、关联 ID 或协议帧校验失败时，宿主终止 Sidecar 进程。其他 `external_read` 能力不会因为 Manifest 声明而自动获得可用 endpoint。
+
 完整帧默认上限为 **1 MiB**。`maxResponseBytes` 另外限制能力输入、输出值的紧凑 JSON 大小，不限制 Manifest 或健康响应；最终还受宿主调用方的上限约束。执行时间取宿主、清单与请求 deadline 的最小值。
 
 现有模型目录入口每个宿主服务最多同时处理 8 个查询；每用户允许连续 8 次请求，之后每 500 毫秒补充一次额度，额度不足时等待。等待和插件调用合计受 5 秒预算限制。这些是目录模块限制，自定义模块应自行设置调用预算和限额。
 
-通用能力调用要求 `access = "read"`、`sideEffect = "none"`、输入输出 Schema 均存在，且能力已获部署授权。身份、凭据、数据库和钱包权限不会随协议传入。声明写能力不代表当前通用 Sidecar 可以执行它。
+通用分析能力调用要求 `access = "read"`、`sideEffect = "none"`、输入输出 Schema 均存在，且能力已获部署授权。当前外部账户余额分析还可使用前述严格受限的 `external_read` 回调。身份、凭据、数据库和钱包权限不会随普通能力调用传入。Manifest 类型还保留了 `write` 与外部副作用恢复语义，用于宿主专用的类型化工作流；这不表示当前 Sidecar 可调用业务写能力。实际接入的业务入口见[插件开发指南](plugin-development.md)，固定动作流程见[宿主确认的插件动作](plugin-actions.md)。
 
 握手、健康响应、身份或输出校验失败，以及超时、取消或协议异常时，宿主终止进程；普通能力业务错误不会自动退出进程。仍启用的部署由后续协调恢复。
 

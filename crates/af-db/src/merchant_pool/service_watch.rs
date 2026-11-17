@@ -269,6 +269,28 @@ pub(super) async fn record_service_event(
     if source_key.len() > 128 {
         return Err(MerchantPoolError::InvalidInput);
     }
+    if matches!(
+        event_kind,
+        "service_updated" | "service_published" | "service_suspended" | "service_restored"
+    ) {
+        let status = match service.status.as_str() {
+            "published" if !service.platform_suspended => Some("active"),
+            "paused" | "suspended" => Some("paused"),
+            _ => None,
+        };
+        if let (Some(revision), Some(status)) = (service.published_revision_id, status) {
+            crate::plugin_event_delivery::enqueue_merchant_service_changed(
+                txn,
+                service.id,
+                revision,
+                &source_key,
+                status,
+                occurred_at.unix_timestamp(),
+            )
+            .await
+            .map_err(internal)?;
+        }
+    }
     let followers = watches::Entity::find()
         .filter(watches::Column::ServiceId.eq(service.id))
         .filter(watches::Column::Active.eq(true))

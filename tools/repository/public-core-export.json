@@ -80,6 +80,9 @@
   ],
   "export": {
     "metadataPath": "docs/public-core-source.json",
+    "excludedPaths": [
+      "docs/plugin-capability-expansion.md"
+    ],
     "preservePaths": [
       "LICENSE"
     ],

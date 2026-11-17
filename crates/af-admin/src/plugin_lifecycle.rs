@@ -7,7 +7,7 @@
 use std::{
     fmt,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Instant, SystemTime},
 };
 
 use af_db::{
@@ -15,14 +15,18 @@ use af_db::{
     PluginArtifactCreate, PluginArtifactQuery, PluginArtifactRecord, PluginArtifactRevocation,
     PluginArtifactSourceKind, PluginCapabilityGrant, PluginCatalogError, PluginCatalogRepository,
     PluginDeploymentQuery, PluginDeploymentRecord, PluginDeploymentWrite,
+    PluginEventDeliveryClaimOutcome, PluginEventDeliveryCompletionOutcome,
+    PluginEventDeliveryLease, PluginEventDeliveryRepository, PluginEventDeliveryResultQuery,
+    PluginEventFailureKind,
 };
 use af_domain::PlatformPermission;
-use af_plugin_contract::PluginManifest;
+use af_plugin_contract::{InvocationMetadata, PluginManifest};
 use af_plugin_runtime::{VerifiedPluginArtifact, validate_public_plugin_configuration};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use serde_json::{Value, json};
 use thiserror::Error;
+use tokio::time::Duration;
 
 use crate::{
     AdminPluginSidecarRuntime, PlatformAuditEntry, PlatformAuditError, PlatformAuditService,
@@ -33,8 +37,36 @@ pub const DEFAULT_PLUGIN_CATALOG_PAGE_SIZE: u32 = 50;
 const PLUGIN_PERMISSION: PlatformPermission = PlatformPermission::PluginsManage;
 const SIMPLE_INSTALL_DEFAULT_CAPABILITIES: &[&str] =
     &["catalog.models.read", "catalog.models.search"];
+const PLUGIN_EVENT_CALL_BUDGET: Duration = Duration::from_secs(5);
+const PLUGIN_EVENT_MAX_BYTES: u32 = 32 * 1024;
+const PLUGIN_EVENT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const PLUGIN_EVENT_BATCH_SIZE: usize = 8;
+const MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES: usize = 256;
 pub const MAX_PLUGIN_PACKAGE_UPLOAD_BYTES: usize = 128 * 1024 * 1024;
 const STALE_PLUGIN_UPLOAD_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginEventResult {
+    pub delivery_id: i64,
+    pub plugin_id: String,
+    pub event_kind: String,
+    pub deployment_generation: i64,
+    pub capability_id: String,
+    pub capability_version: u16,
+    pub attempt_count: u16,
+    pub status: String,
+    pub completed_at: i64,
+    pub summary: String,
+    pub result: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginEventResultPage {
+    pub results: Vec<AdminPluginEventResult>,
+    pub next_before_id: Option<i64>,
+}
 
 /// A bounded upload in host-owned storage. Dropping it removes unfinished data.
 pub struct PluginPackageUpload {
@@ -589,6 +621,7 @@ pub struct DatabaseAdminPluginLifecycleService {
     repository: PluginCatalogRepository,
     audit: Arc<dyn PlatformAuditService>,
     sidecar_runtime: Option<Arc<AdminPluginSidecarRuntime>>,
+    event_delivery_repository: Option<PluginEventDeliveryRepository>,
     pub(crate) catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission,
 }
 
@@ -622,6 +655,7 @@ impl DatabaseAdminPluginLifecycleService {
             repository,
             audit,
             sidecar_runtime: None,
+            event_delivery_repository: None,
             catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission::default(),
         }
     }
@@ -632,11 +666,102 @@ impl DatabaseAdminPluginLifecycleService {
         self
     }
 
+    #[must_use]
+    pub fn with_event_delivery_repository(
+        mut self,
+        repository: Option<PluginEventDeliveryRepository>,
+    ) -> Self {
+        self.event_delivery_repository = repository;
+        self
+    }
+
     /// Return the narrowly scoped host capability port for trusted business
     /// extensions. It does not authorize callers or expose platform secrets.
     #[must_use]
     pub fn capability_runtime(&self) -> Option<Arc<AdminPluginSidecarRuntime>> {
         self.sidecar_runtime.clone()
+    }
+
+    pub(crate) async fn audit_host_action(
+        &self,
+        principal: SessionPrincipal,
+        request_id: &str,
+        operation: &'static str,
+        proposal_key: &str,
+        outcome: PlatformAuditOutcome,
+        before: Option<Value>,
+        after: Option<Value>,
+    ) -> Result<(), AdminPluginLifecycleError> {
+        let entry = audit_entry(
+            principal,
+            request_id,
+            "/api/admin/channel-monitor/action-proposals",
+            operation,
+            "plugin_action_proposal",
+            Some(proposal_key.to_owned()),
+            outcome,
+            before,
+            after,
+        )?;
+        self.audit.record(entry).await.map_err(map_audit_error)
+    }
+
+    pub async fn list_event_results(
+        &self,
+        principal: SessionPrincipal,
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Result<AdminPluginEventResultPage, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        let repository = self
+            .event_delivery_repository
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let query = PluginEventDeliveryResultQuery::new(before_id, limit)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let page = repository
+            .list_results(query, plugin_event_now_unix_seconds())
+            .await
+            .map_err(|error| match error {
+                af_db::PluginEventDeliveryRepositoryError::Invariant
+                | af_db::PluginEventDeliveryRepositoryError::InvalidResult => {
+                    AdminPluginLifecycleError::InvalidInput
+                }
+                af_db::PluginEventDeliveryRepositoryError::Query
+                | af_db::PluginEventDeliveryRepositoryError::Timeout
+                | af_db::PluginEventDeliveryRepositoryError::Conflict => {
+                    AdminPluginLifecycleError::Internal
+                }
+            })?;
+        Ok(AdminPluginEventResultPage {
+            results: page
+                .results
+                .into_iter()
+                .map(|record| {
+                    let summary = record
+                        .result
+                        .get("summary")
+                        .and_then(Value::as_str)
+                        .filter(|value| safe_event_result_summary(value))
+                        .unwrap_or("插件已处理此事件")
+                        .to_owned();
+                    AdminPluginEventResult {
+                        delivery_id: record.id,
+                        plugin_id: record.plugin_id,
+                        event_kind: record.event_kind,
+                        deployment_generation: record.deployment_generation,
+                        capability_id: record.capability_id,
+                        capability_version: record.capability_version,
+                        attempt_count: record.attempt_count,
+                        status: "delivered".to_owned(),
+                        completed_at: record.completed_at,
+                        summary,
+                        result: record.result,
+                    }
+                })
+                .collect(),
+            next_before_id: page.next_before_id,
+        })
     }
 
     /// Authorize before accepting package bytes, and reserve a bounded upload slot.
@@ -956,6 +1081,145 @@ impl DatabaseAdminPluginLifecycleService {
                     .await;
             }
         }
+    }
+
+    async fn invoke_event_delivery(
+        &self,
+        lease: &PluginEventDeliveryLease,
+    ) -> Result<Value, PluginEventFailureKind> {
+        let event_capability_matches = matches!(
+            (lease.event_kind(), lease.capability_id()),
+            (
+                "channel.health.changed",
+                "events.channel-health.changed.consume"
+            ) | (
+                "merchant.service.changed",
+                "events.merchant-service.changed.consume"
+            )
+        );
+        if !event_capability_matches || lease.expires_at() <= plugin_event_now_unix_seconds() {
+            return Err(PluginEventFailureKind::Permanent);
+        }
+
+        let deployment = self
+            .repository
+            .get_deployment(lease.plugin_id())
+            .await
+            .map_err(|_| PluginEventFailureKind::Transient)?;
+        let Some(deployment) = deployment else {
+            return Err(PluginEventFailureKind::Permanent);
+        };
+        if !event_deployment_matches(&deployment, lease) {
+            return Err(PluginEventFailureKind::Permanent);
+        }
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(PluginEventFailureKind::Transient)?;
+
+        let now_millis = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let call_budget_ms = u64::try_from(PLUGIN_EVENT_CALL_BUDGET.as_millis())
+            .map_err(|_| PluginEventFailureKind::Transient)?;
+        let deadline_unix_ms = u64::try_from(now_millis)
+            .ok()
+            .and_then(|now| now.checked_add(call_budget_ms))
+            .ok_or(PluginEventFailureKind::Transient)?;
+        let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
+            format!("plugin-event:{}", lease.id()),
+            InvocationMetadata {
+                request_id: uuid::Uuid::new_v4().to_string(),
+                deadline_unix_ms,
+            },
+            deployment.config.clone(),
+            PLUGIN_EVENT_MAX_BYTES,
+        )
+        .map_err(|_| PluginEventFailureKind::Permanent)?;
+        let started_at = Instant::now();
+        let invoked = runtime
+            .invoke_capability(
+                &self.repository,
+                lease.plugin_id(),
+                lease.deployment_generation(),
+                &invocation,
+                lease.capability_id(),
+                lease.capability_version(),
+                lease.payload().clone(),
+            )
+            .await;
+        let result = match invoked {
+            Ok(result) => result,
+            Err(
+                AdminPluginLifecycleError::Forbidden
+                | AdminPluginLifecycleError::InvalidInput
+                | AdminPluginLifecycleError::CapabilityReviewRequired
+                | AdminPluginLifecycleError::PayloadTooLarge
+                | AdminPluginLifecycleError::NotFound
+                | AdminPluginLifecycleError::Conflict,
+            ) => {
+                tracing::warn!(
+                    target: "anyflows_plugin",
+                    event_id = lease.id(),
+                    event_kind = lease.event_kind(),
+                    plugin_id = lease.plugin_id(),
+                    capability_id = lease.capability_id(),
+                    capability_version = lease.capability_version(),
+                    deployment_generation = lease.deployment_generation(),
+                    attempt = lease.attempt_count(),
+                    outcome = "failed",
+                    failure_kind = "permanent",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    "plugin event capability invocation failed"
+                );
+                return Err(PluginEventFailureKind::Permanent);
+            }
+            Err(
+                AdminPluginLifecycleError::RuntimeUnavailable | AdminPluginLifecycleError::Internal,
+            ) => {
+                tracing::warn!(
+                    target: "anyflows_plugin",
+                    event_id = lease.id(),
+                    event_kind = lease.event_kind(),
+                    plugin_id = lease.plugin_id(),
+                    capability_id = lease.capability_id(),
+                    capability_version = lease.capability_version(),
+                    deployment_generation = lease.deployment_generation(),
+                    attempt = lease.attempt_count(),
+                    outcome = "failed",
+                    failure_kind = "transient",
+                    elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                    "plugin event capability invocation failed"
+                );
+                return Err(PluginEventFailureKind::Transient);
+            }
+        };
+        tracing::info!(
+            target: "anyflows_plugin",
+            event_id = lease.id(),
+            event_kind = lease.event_kind(),
+            plugin_id = lease.plugin_id(),
+            capability_id = lease.capability_id(),
+            capability_version = lease.capability_version(),
+            deployment_generation = lease.deployment_generation(),
+            attempt = lease.attempt_count(),
+            outcome = "success",
+            elapsed_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "plugin event capability invocation completed"
+        );
+
+        // A disable, upgrade, grant change, or revocation during execution makes this
+        // delivery stale. Do not report it as delivered to the currently active deployment.
+        let latest = self
+            .repository
+            .get_deployment(lease.plugin_id())
+            .await
+            .map_err(|_| PluginEventFailureKind::Transient)?;
+        if latest
+            .as_ref()
+            .is_none_or(|deployment| !event_deployment_matches(deployment, lease))
+        {
+            return Err(PluginEventFailureKind::Permanent);
+        }
+        Ok(result.output)
     }
 
     async fn apply_runtime(
@@ -1767,6 +2031,164 @@ impl DatabaseAdminPluginLifecycleService {
             );
         }
         result
+    }
+}
+
+/// A single-process poller for host-projected plugin events. Leases and retries
+/// live in the shared database, so multiple AnyFlows nodes may run this worker.
+#[derive(Clone)]
+pub struct PluginEventDeliveryWorker {
+    repository: PluginEventDeliveryRepository,
+    lifecycle: Arc<DatabaseAdminPluginLifecycleService>,
+}
+
+impl PluginEventDeliveryWorker {
+    #[must_use]
+    pub fn new(
+        repository: PluginEventDeliveryRepository,
+        lifecycle: Arc<DatabaseAdminPluginLifecycleService>,
+    ) -> Self {
+        Self {
+            repository,
+            lifecycle,
+        }
+    }
+
+    /// Poll and deliver bounded batches until the supervisor requests shutdown.
+    /// An in-flight Sidecar call is allowed to finish within its five-second budget;
+    /// shutdown never interrupts it after the event has been claimed.
+    pub async fn run_until<F>(&self, shutdown: F)
+    where
+        F: std::future::Future<Output = ()> + Send,
+    {
+        tokio::pin!(shutdown);
+        loop {
+            tokio::select! {
+                biased;
+                () = &mut shutdown => return,
+                () = tokio::time::sleep(PLUGIN_EVENT_POLL_INTERVAL) => {}
+            }
+
+            for _ in 0..PLUGIN_EVENT_BATCH_SIZE {
+                let now = plugin_event_now_unix_seconds();
+                let claim = tokio::select! {
+                    biased;
+                    () = &mut shutdown => return,
+                    result = self.repository.claim_next(now) => result,
+                };
+                let lease = match claim {
+                    Ok(PluginEventDeliveryClaimOutcome::Claimed(lease)) => lease,
+                    Ok(PluginEventDeliveryClaimOutcome::Empty) => break,
+                    Err(error) => {
+                        tracing::warn!(error_kind = ?error, "plugin event queue claim failed");
+                        break;
+                    }
+                };
+
+                let outcome = self.lifecycle.invoke_event_delivery(&lease).await;
+                let completion = match outcome {
+                    Ok(result) => match self
+                        .repository
+                        .mark_delivered(&lease, plugin_event_now_unix_seconds(), &result)
+                        .await
+                    {
+                        Err(af_db::PluginEventDeliveryRepositoryError::InvalidResult) => {
+                            self.repository
+                                .record_failure(
+                                    &lease,
+                                    plugin_event_now_unix_seconds(),
+                                    PluginEventFailureKind::Permanent,
+                                )
+                                .await
+                        }
+                        other => other,
+                    },
+                    Err(kind) => {
+                        self.repository
+                            .record_failure(&lease, plugin_event_now_unix_seconds(), kind)
+                            .await
+                    }
+                };
+                match completion {
+                    Ok(PluginEventDeliveryCompletionOutcome::Completed) => {}
+                    Ok(PluginEventDeliveryCompletionOutcome::Stale) => {
+                        tracing::debug!(
+                            delivery_id = lease.id(),
+                            "plugin event lease was superseded"
+                        );
+                    }
+                    Ok(PluginEventDeliveryCompletionOutcome::Expired) => {
+                        tracing::debug!(delivery_id = lease.id(), "plugin event delivery expired");
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            delivery_id = lease.id(),
+                            error_kind = ?error,
+                            "plugin event queue completion failed"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn event_deployment_matches(
+    deployment: &PluginDeploymentRecord,
+    lease: &PluginEventDeliveryLease,
+) -> bool {
+    deployment.enabled
+        && deployment.plugin_id == lease.plugin_id()
+        && deployment.generation == lease.deployment_generation()
+        && deployment.artifact.id == lease.artifact_id()
+        && deployment.artifact.digest == lease.artifact_digest()
+        && deployment.artifact.approval.is_some()
+        && deployment.artifact.revocation.is_none()
+        && deployment.artifact.source_kind == PluginArtifactSourceKind::LocalProcess
+        && deployment.granted_capabilities.iter().any(|grant| {
+            grant.id == lease.capability_id() && grant.version == lease.capability_version()
+        })
+}
+
+fn plugin_event_now_unix_seconds() -> i64 {
+    time::OffsetDateTime::now_utc().unix_timestamp().max(1)
+}
+
+fn safe_event_result_summary(value: &str) -> bool {
+    if value.trim().is_empty()
+        || value.len() > MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES
+        || value.chars().any(char::is_control)
+    {
+        return false;
+    }
+    let normalized = value.to_ascii_lowercase();
+    ![
+        "http://",
+        "https://",
+        "javascript:",
+        "data:",
+        "mailto:",
+        "://",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
+}
+
+#[cfg(test)]
+mod event_result_tests {
+    use super::{MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES, safe_event_result_summary};
+
+    #[test]
+    fn result_summaries_are_bounded_plain_text_without_urls_or_controls() {
+        assert!(safe_event_result_summary("Channel recovered"));
+        assert!(!safe_event_result_summary(" "));
+        assert!(!safe_event_result_summary("http://example.invalid"));
+        assert!(!safe_event_result_summary("See https://example.invalid"));
+        assert!(!safe_event_result_summary("javascript:alert(1)"));
+        assert!(!safe_event_result_summary("line\nbreak"));
+        assert!(!safe_event_result_summary(
+            &"x".repeat(MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES + 1)
+        ));
     }
 }
 
