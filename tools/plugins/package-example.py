@@ -39,7 +39,7 @@ def main() -> int:
         shutil.copytree(
             root / "examples" / EXAMPLES[args.example],
             distribution,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "fixtures"),
         )
         shutil.copyfile(root / "sdk" / "python" / "anyflows_plugin.py", distribution / "anyflows_plugin.py")
         return subprocess.run([

@@ -45,3 +45,12 @@ def review_live_balance(capability_id, public_config, value, context):
 ## 修改示例
 
 需要新增提供商字段时，先由宿主增加固定投影和 Schema。不要向插件请求中增加 URL、自由路由参数或凭据。新的远程读取必须拥有独立 endpoint、独立 capability、逐次同意、账户归属检查、输出上限和回归测试。
+## 本地测试
+
+输入样例在 `fixtures/input.json`。实时余额插件还需要模拟宿主回调：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/account-balance-live-review --manifest tools/plugins/examples/account-balance-live-review/manifest.json --capability account.balance.snapshot.live-review.read --input tools/plugins/examples/account-balance-live-review/fixtures/input.json --proxy-response tools/plugins/examples/account-balance-live-review/fixtures/proxy-account-balance.json
+```
+
+`--proxy-response` 是宿主返回的固定余额投影，不是上游接口地址或凭据。测试工具会验证插件发出的 continuation 请求和最终输出。

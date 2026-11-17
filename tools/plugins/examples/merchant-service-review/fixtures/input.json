@@ -1,0 +1,1 @@
+{"service":{"name":"Example relay","description":"A service description for testing.","protocol":"openai_chat","models":[{"model":"example-text","context_window":32768,"max_output_tokens":4096,"supports_streaming":true,"supports_tools":false,"supports_vision":false}]}}

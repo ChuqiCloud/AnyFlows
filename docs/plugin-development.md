@@ -23,7 +23,152 @@
 
 插件不能创建模型、渠道、价卡、菜单、路由、HTTP API、Webhook、计划任务或自定义页面。涉及新模块时，必须先由宿主增加固定入口、输入输出 Schema、权限和页面接线。
 
-## 2. 最快开始：打包现有示例
+## 2. 宿主实际发送和接收的数据
+
+开发插件时，先看示例目录中的 `manifest.json`。其中每个 capability 的 `inputSchema` 定义宿主会传入的 `input`，`outputSchema` 定义插件必须返回的 `output`。Schema 不能自动生成正确的业务数据，所以每个示例都提供了可直接使用的 `fixtures/input.json`。
+
+### 请求外层
+
+每次调用都是一行 JSON。下面是固定的请求外层；`pluginId`、`pluginVersion`、`capabilityId` 和版本号来自清单，不能自行改名：
+
+```json
+{
+  "protocolVersion": 1,
+  "pluginId": "org.anyflows.example-catalog",
+  "pluginVersion": "1.0.0",
+  "artifactSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deploymentGeneration": 1,
+  "requestId": "local-plugin-test",
+  "deadlineUnixMs": 1890000000000,
+  "operation": {
+    "operation": "invoke_capability",
+    "connectionId": "local-test",
+    "publicConfig": {},
+    "capabilityId": "catalog.models.search",
+    "capabilityVersion": 1,
+    "input": {
+      "query": "vision",
+      "cursor": null,
+      "limit": 20
+    }
+  }
+}
+```
+
+握手阶段还会收到两种请求：
+
+```json
+{"operation":"manifest"}
+{"operation":"health"}
+```
+
+实际请求仍包含上一段列出的外层关联字段。插件必须先正确响应 `manifest` 和 `health`，宿主才会发送能力调用。
+
+### 响应外层
+
+插件响应必须回显 `protocolVersion`、`pluginId`、`pluginVersion`、`artifactSha256`、`deploymentGeneration` 和 `requestId`，然后在 `result` 中返回结果。
+
+Manifest 响应：
+
+下面为了便于阅读省略了完整的 `manifest` 内容和部分回显字段。实际响应必须回显上一段列出的关联字段，`result.value` 必须是完整的 Manifest。
+
+```json
+{
+  "protocolVersion": 1,
+  "pluginId": "org.anyflows.example-catalog",
+  "pluginVersion": "1.0.0",
+  "artifactSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deploymentGeneration": 1,
+  "requestId": "local-plugin-test-manifest",
+  "result": {"kind": "manifest", "value": {"pluginId": "org.anyflows.example-catalog"}}
+}
+```
+
+健康响应的 `result.kind` 是 `health`，能力成功响应的格式是：
+
+```json
+{
+  "result": {
+    "kind": "capability",
+    "value": {
+      "output": {
+        "summary": "检查完成",
+        "checks": []
+      }
+    }
+  }
+}
+```
+
+能力失败时不会返回 Python 异常堆栈，而是返回固定错误码：
+
+```json
+{"result":{"kind":"error","value":{"code":"invalid_response","outcome":"not_applied"}}}
+```
+
+常见错误码包括 `invalid_configuration`、`unsupported`、`forbidden`、`rate_limited`、`temporarily_unavailable`、`upstream_failure` 和 `invalid_response`。
+
+### 每个示例的输入和输出
+
+| 示例 | 测试输入 | capability | 输出格式 |
+| --- | --- | --- | --- |
+| 模型目录 | `examples/catalog/fixtures/input.json` | `catalog.models.read` 或 `catalog.models.search` | `{ "models": [...], "nextCursor": string/null }` |
+| 商户服务检查 | `examples/merchant-service-review/fixtures/input.json` | `merchant.service.review.read` | `{ "summary": string, "checks": [...] }` |
+| 渠道监控检查 | `examples/channel-monitor-review/fixtures/input.json` | `channel.monitor.events.review.read` | `{ "summary": string, "checks": [...], "actionProposal": ... }` |
+| 模型映射检查 | `examples/channel-model-mapping-review/fixtures/input.json` | `channel.model_mapping.review.read` | `{ "summary": string, "checks": [...] }` |
+| 渠道健康事件 | `examples/channel-health-event/fixtures/input.json` | `events.channel-health.changed.consume` | `{ "summary": string, "status": "info"/"warning", "recommendation": string }` |
+| 商户服务事件 | `examples/merchant-service-event/fixtures/input.json` | `events.merchant-service.changed.consume` | `{ "summary": string, "status": "info"/"warning", "recommendation": string }` |
+| 余额快照分析 | `examples/account-balance-snapshot-review/fixtures/input.json` | `account.balance.snapshot.review.read` | `{ "summary": string, "checks": [...] }` |
+| 实时余额分析 | `examples/account-balance-live-review/fixtures/input.json` | `account.balance.snapshot.live-review.read` | `{ "summary": string, "checks": [...] }` |
+
+检查类输出中的每个 `checks` 项都必须包含 `code`、`title`、`status`、`message` 和 `recommendation`。`status` 只能使用 `pass`、`info`、`warning`、`fail`。宿主会再次检查字段、长度、数量和总大小；通过 Manifest 不能放宽宿主限制。
+
+## 3. 本地测试
+
+不需要启动完整 AnyFlows。仓库提供的测试工具会启动插件进程，依次发送 `manifest`、`health` 和 `invoke_capability` 三个请求，并检查响应类型、关联字段、退出码和可选的期望输出。
+
+先在仓库根目录生成示例包，或直接测试示例源码目录。直接测试模型目录示例：
+
+```bash
+python tools/plugins/test-plugin.py \
+  --root tools/plugins/examples/catalog \
+  --manifest tools/plugins/examples/catalog/manifest.json \
+  --capability catalog.models.search \
+  --input tools/plugins/examples/catalog/fixtures/input.json
+```
+
+测试商户服务示例：
+
+```bash
+python tools/plugins/test-plugin.py \
+  --root tools/plugins/examples/merchant-service-review \
+  --manifest tools/plugins/examples/merchant-service-review/manifest.json \
+  --capability merchant.service.review.read \
+  --input tools/plugins/examples/merchant-service-review/fixtures/input.json
+```
+
+测试实时余额示例时，还要模拟宿主的余额回调：
+
+```bash
+python tools/plugins/test-plugin.py \
+  --root tools/plugins/examples/account-balance-live-review \
+  --manifest tools/plugins/examples/account-balance-live-review/manifest.json \
+  --capability account.balance.snapshot.live-review.read \
+  --input tools/plugins/examples/account-balance-live-review/fixtures/input.json \
+  --proxy-response tools/plugins/examples/account-balance-live-review/fixtures/proxy-account-balance.json
+```
+
+成功时会输出类似 `{"manifest":"ok","health":"ok","result":"capability"}` 并返回退出码 0。插件返回错误、协议帧格式错误、没有及时退出或回调关联失败时，命令返回非 0。`--expect expected.json` 可以把 `result.value.output` 与期望 JSON 做完全比较；测试拒绝分支时可加 `--allow-error`。
+
+运行 SDK 和示例工具的回归测试：
+
+```bash
+python -m unittest discover -s tools/plugins/tests -p "test_*.py"
+```
+
+自定义插件还可以直接导入业务函数做单元测试，再用 `test-plugin.py` 做一次协议测试。前者检查业务规则，后者检查清单、握手、JSON Lines、输出格式和进程退出行为。实时余额测试必须模拟 `account.balance` continuation 响应，不能让插件直接访问上游。
+
+## 4. 最快开始：打包现有示例
 
 准备 Python 3.10 或更新版本。进入仓库根目录，运行：
 
@@ -50,9 +195,9 @@ python tools/plugins/package-example.py dist/catalog-example.afplugin --example 
 - `account-balance-snapshot-review`
 - `account-balance-live-review`
 
-示例打包器会复制示例和 Python SDK，生成 `.afplugin` 文件。它不会安装服务器依赖，也不会启动插件。
+示例打包器会复制示例和 Python SDK，生成 `.afplugin` 文件；示例目录中的 `fixtures/` 测试文件不会放进安装包。它不会安装服务器依赖，也不会启动插件。
 
-## 3. 制作自己的插件
+## 5. 制作自己的插件
 
 复制一个最接近需求的示例目录，例如：
 
@@ -90,7 +235,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 参数依次是：分发目录、清单文件、相对分发目录的入口文件、尚不存在的输出包。
 
-## 4. 安装和运行
+## 6. 安装和运行
 
 管理员在“插件管理”中上传 `.afplugin`：
 
@@ -103,7 +248,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 手工登记的制品需要先审批。普通自有插件可以不签名；签名只用于显示发布者或官方来源，不会自动增加权限。安装和多节点处理见[插件安装与运维](plugin-sidecars.md)。
 
-## 5. Manifest 清单
+## 7. Manifest 清单
 
 最小清单示例：
 
@@ -156,7 +301,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 `uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。
 
-## 6. Python 处理函数
+## 8. Python 处理函数
 
 SDK 负责启动握手、健康检查、JSON Lines 协议、超时和结果校验。业务代码只需要实现处理函数。
 
@@ -183,7 +328,7 @@ def review_live_balance(capability_id, public_config, value, context):
 
 标准输出只允许写协议 JSON。调试信息写标准错误，不要输出用户资料、凭据或完整异常堆栈。
 
-## 7. 各入口的关键约束
+## 9. 各入口的关键约束
 
 ### 模型资料目录
 
@@ -205,7 +350,7 @@ def review_live_balance(capability_id, public_config, value, context):
 
 快照分析只读取 AnyFlows 已保存的数据。实时读取必须同时满足：用户本次勾选同意、插件拥有分析 capability、部署拥有 `external.account.balance.read@1`。余额读取会保存新的快照，但不会充值、扣款或修改 AnyFlows 钱包。
 
-## 8. 调试和排错
+## 10. 调试和排错
 
 | 现象 | 检查方法 |
 | --- | --- |
