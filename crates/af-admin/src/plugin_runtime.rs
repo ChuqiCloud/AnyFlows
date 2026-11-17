@@ -591,7 +591,7 @@ impl AdminPluginSidecarRuntime {
                     .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
             )
             .await?;
-        let output = serde_json::from_value(result.output)
+        let output = serde_json::from_value::<ProviderRequestTransformOutput>(result.output)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         output
             .validate_against(&request)
@@ -623,7 +623,7 @@ impl AdminPluginSidecarRuntime {
                     .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
             )
             .await?;
-        let output = serde_json::from_value(result.output)
+        let output = serde_json::from_value::<RequestProcessingOutput>(result.output)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         output
             .validate_for(stage)
