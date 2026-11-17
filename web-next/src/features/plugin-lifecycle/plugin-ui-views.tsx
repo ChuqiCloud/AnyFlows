@@ -1,7 +1,7 @@
 import { Chip } from '@heroui/react'
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger'
-type ViewBlock =
+export type RenderablePluginUiBlock =
   | { type: 'text'; text: string }
   | { type: 'badge'; label: string; tone: Tone }
   | { type: 'metric'; label: string; value: string }
@@ -10,7 +10,7 @@ type ViewBlock =
   | { type: 'notice'; title: string; description?: string; tone: Tone }
   | { type: 'progress'; label: string; percent: number }
   | { type: 'info_card'; title: string; description?: string }
-type View = { id: string; blocks: ViewBlock[] }
+type View = { id: string; blocks: RenderablePluginUiBlock[] }
 
 const SLOTS = new Set(['plugin_management', 'channel_monitor', 'channel_model_mapping', 'merchant_service', 'external_account'])
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u
@@ -25,7 +25,7 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: string[]) {
   return Object.keys(value).every((key) => keys.includes(key))
 }
 
-function localizedText(value: unknown, locale: string): string | undefined {
+export function localizedPluginUiText(value: unknown, locale: string): string | undefined {
   if (!isRecord(value) || !hasOnlyKeys(value, ['en', 'zh'])) return undefined
   const texts = Object.values(value)
   if (texts.length < 1 || texts.length > 2 || texts.some((text) =>
@@ -40,29 +40,29 @@ function localizedText(value: unknown, locale: string): string | undefined {
   return typeof preferred === 'string' ? preferred : typeof fallback === 'string' ? fallback : undefined
 }
 
-function parseBlock(value: unknown, locale: string): ViewBlock | undefined {
+function parseBlock(value: unknown, locale: string): RenderablePluginUiBlock | undefined {
   if (!isRecord(value) || typeof value.type !== 'string') return undefined
   if (value.type === 'text' && hasOnlyKeys(value, ['type', 'text'])) {
-    const text = localizedText(value.text, locale)
+    const text = localizedPluginUiText(value.text, locale)
     return text ? { type: 'text', text } : undefined
   }
   if (value.type === 'badge' && hasOnlyKeys(value, ['type', 'label', 'tone'])) {
-    const label = localizedText(value.label, locale)
+    const label = localizedPluginUiText(value.label, locale)
     return label && ['neutral', 'success', 'warning', 'danger'].includes(String(value.tone))
       ? { type: 'badge', label, tone: value.tone as Tone }
       : undefined
   }
   if (value.type === 'metric' && hasOnlyKeys(value, ['type', 'label', 'value'])) {
-    const label = localizedText(value.label, locale)
-    const metric = localizedText(value.value, locale)
+    const label = localizedPluginUiText(value.label, locale)
+    const metric = localizedPluginUiText(value.value, locale)
     return label && metric ? { type: 'metric', label, value: metric } : undefined
   }
   if (value.type === 'table' && hasOnlyKeys(value, ['type', 'columns', 'rows'])) {
     if (!Array.isArray(value.columns) || !Array.isArray(value.rows)
       || value.columns.length < 1 || value.columns.length > 8 || value.rows.length > 16) return undefined
-    const columns = value.columns.map((column) => localizedText(column, locale))
+    const columns = value.columns.map((column) => localizedPluginUiText(column, locale))
     const rows = value.rows.map((row) => Array.isArray(row)
-      ? row.map((cell) => localizedText(cell, locale))
+      ? row.map((cell) => localizedPluginUiText(cell, locale))
       : null)
     if (columns.some((column) => !column)
       || rows.some((row) => !row || row.length !== columns.length || row.some((cell) => !cell))) return undefined
@@ -74,13 +74,13 @@ function parseBlock(value: unknown, locale: string): ViewBlock | undefined {
   }
   if (value.type === 'list' && hasOnlyKeys(value, ['type', 'items'])) {
     if (!Array.isArray(value.items) || value.items.length < 1 || value.items.length > 16) return undefined
-    const items = value.items.map((item) => localizedText(item, locale))
+    const items = value.items.map((item) => localizedPluginUiText(item, locale))
     if (items.some((item) => !item)) return undefined
     return { type: 'list', items: items as string[] }
   }
   if (value.type === 'notice' && hasOnlyKeys(value, ['type', 'title', 'description', 'tone'])) {
-    const title = localizedText(value.title, locale)
-    const description = value.description === undefined ? undefined : localizedText(value.description, locale)
+    const title = localizedPluginUiText(value.title, locale)
+    const description = value.description === undefined ? undefined : localizedPluginUiText(value.description, locale)
     return title
       && (value.description === undefined || description)
       && ['neutral', 'success', 'warning', 'danger'].includes(String(value.tone))
@@ -88,15 +88,15 @@ function parseBlock(value: unknown, locale: string): ViewBlock | undefined {
       : undefined
   }
   if (value.type === 'progress' && hasOnlyKeys(value, ['type', 'label', 'percent'])) {
-    const label = localizedText(value.label, locale)
+    const label = localizedPluginUiText(value.label, locale)
     return label && typeof value.percent === 'number' && Number.isInteger(value.percent)
       && value.percent >= 0 && value.percent <= 100
       ? { type: 'progress', label, percent: value.percent }
       : undefined
   }
   if (value.type === 'info_card' && hasOnlyKeys(value, ['type', 'title', 'description'])) {
-    const title = localizedText(value.title, locale)
-    const description = value.description === undefined ? undefined : localizedText(value.description, locale)
+    const title = localizedPluginUiText(value.title, locale)
+    const description = value.description === undefined ? undefined : localizedPluginUiText(value.description, locale)
     return title && (value.description === undefined || description)
       ? { type: 'info_card', title, ...(description ? { description } : {}) }
       : undefined
@@ -132,16 +132,26 @@ function parseViews(manifest: unknown, slot: string, locale: string): View[] {
     const blocks = candidate.blocks.map((block) => parseBlock(block, locale))
     if (blocks.some((block) => !block)) continue
     ids.add(candidate.id)
-    views.push({ id: candidate.id, blocks: blocks as ViewBlock[] })
+    views.push({ id: candidate.id, blocks: blocks as RenderablePluginUiBlock[] })
   }
   return views
+}
+
+/** Parse a capability result as bounded host-rendered blocks; arbitrary markup is never accepted. */
+export function parsePluginUiBlocks(value: unknown, locale: string): RenderablePluginUiBlock[] | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['blocks']) || !Array.isArray(value.blocks)
+    || value.blocks.length < 1 || value.blocks.length > 24) return undefined
+  const encoded = JSON.stringify(value.blocks)
+  if (!encoded || new TextEncoder().encode(encoded).length > 8 * 1024) return undefined
+  const blocks = value.blocks.map((block) => parseBlock(block, locale))
+  return blocks.every(Boolean) ? blocks as RenderablePluginUiBlock[] : undefined
 }
 
 export function hasRenderablePluginUiViews(manifest: unknown, slot: string, locale: string) {
   return parseViews(manifest, slot, locale).length > 0
 }
 
-function RenderBlock({ block }: { block: ViewBlock }) {
+function RenderBlock({ block }: { block: RenderablePluginUiBlock }) {
   if (block.type === 'text') return <p className="whitespace-pre-wrap text-sm text-muted-foreground">{block.text}</p>
   if (block.type === 'badge') {
     const color: 'default' | 'success' | 'warning' | 'danger' = block.tone === 'neutral' ? 'default' : block.tone
@@ -161,6 +171,10 @@ function RenderBlock({ block }: { block: ViewBlock }) {
   }
   if (block.type === 'progress') return <div className="space-y-1"><div className="flex justify-between gap-2 text-xs"><span className="text-muted-foreground">{block.label}</span><span>{block.percent}%</span></div><progress className="h-2 w-full accent-primary" max={100} value={block.percent} aria-label={block.label} /></div>
   return <div className="rounded-lg border border-[var(--hairline)] bg-content1/40 p-3"><h3 className="text-sm font-medium">{block.title}</h3>{block.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{block.description}</p> : null}</div>
+}
+
+export function PluginUiBlocksRenderer({ blocks }: { blocks: RenderablePluginUiBlock[] }) {
+  return <div className="space-y-3" data-plugin-ui-blocks>{blocks.map((block, index) => <RenderBlock key={index} block={block} />)}</div>
 }
 
 /** Render static manifest views with host-owned components and text-only values. */

@@ -153,7 +153,18 @@
     },
     "ui": {
       "section": "Plugin information",
-      "scope": "Static text rendered by AnyFlows; this area does not run plugin code or actions."
+      "scope": "AnyFlows renders these pages with safe components and only invokes granted read capabilities."
+    },
+    "pages": {
+      "title": "Plugin pages",
+      "back": "Back to plugin management",
+      "refresh": "Load data",
+      "running": "Loading…",
+      "empty": "Select “Load data” to call the plugin's read-only capability.",
+      "invalidInput": "Enter valid JSON.",
+      "invokeError": "The plugin request failed. Check its grant, input, and runtime status.",
+      "outputTooLarge": "The result exceeds the page display limit. Narrow the query and try again.",
+      "unavailable": "This page is unavailable because the plugin is disabled, its grant was revoked, or its page configuration is invalid."
     },
     "capabilityConsole": {
       "title": "Invoke custom capability",

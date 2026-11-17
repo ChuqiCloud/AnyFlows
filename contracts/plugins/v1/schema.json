@@ -922,6 +922,13 @@
           "maxItems": 16,
           "type": "array"
         },
+        "uiPages": {
+          "items": {
+            "$ref": "#/$defs/PluginUiPage"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "uiViews": {
           "items": {
             "$ref": "#/$defs/PluginUiView"
@@ -1506,6 +1513,45 @@
       ],
       "type": "object"
     },
+    "PluginUiPage": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "input": {},
+        "schemaVersion": {
+          "const": 1
+        },
+        "title": {
+          "$ref": "#/$defs/PluginUiText"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "title",
+        "capabilityId",
+        "capabilityVersion"
+      ],
+      "type": "object"
+    },
     "PluginUiText": {
       "additionalProperties": false,
       "maxProperties": 2,
@@ -1983,6 +2029,9 @@
     },
     {
       "$ref": "#/$defs/PluginUiView"
+    },
+    {
+      "$ref": "#/$defs/PluginUiPage"
     },
     {
       "$ref": "#/$defs/PluginUiBlock"

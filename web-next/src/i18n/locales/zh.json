@@ -153,7 +153,18 @@
     },
     "ui": {
       "section": "插件信息",
-      "scope": "由 AnyFlows 展示的静态文本；此处不会运行插件代码或操作。"
+      "scope": "页面由 AnyFlows 安全组件展示；仅调用已授权的只读能力。"
+    },
+    "pages": {
+      "title": "插件页面",
+      "back": "返回插件管理",
+      "refresh": "读取数据",
+      "running": "读取中…",
+      "empty": "点击“读取数据”调用插件的只读能力。",
+      "invalidInput": "请输入有效的 JSON。",
+      "invokeError": "插件读取失败，请检查授权、输入和插件运行状态。",
+      "outputTooLarge": "结果超过页面显示上限，请调整查询条件后重试。",
+      "unavailable": "页面不可用：插件已停用、授权已撤销，或页面配置无效。"
     },
     "capabilityConsole": {
       "title": "调用自定义能力",

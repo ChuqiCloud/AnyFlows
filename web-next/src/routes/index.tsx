@@ -35,6 +35,7 @@ const lazyUserPage = lazyRoute(() => import('@/features/users/user-page'), 'User
 const lazyWalletPage = lazyRoute(() => import('@/features/wallet/wallet-page'), 'WalletPage')
 const lazyPlaygroundPage = lazyRoute(() => import('@/features/playground/playground-page'), 'PlaygroundPage')
 const lazyVideoTaskPage = lazyRoute(() => import('@/features/video-tasks/video-task-page'), 'VideoTaskPage')
+const lazyPluginExtensionPage = lazyRoute(() => import('@/features/plugin-lifecycle/plugin-page'), 'PluginPage')
 const lazyTokenPage = lazyRoute(() => import('@/features/tokens/token-page'), 'TokenPage')
 const AccountVerificationPage = lazyComponent(() => import('@/features/account-verification/account-verification-page'), 'AccountVerificationPage')
 const VerificationSettingsPanel = lazyRoute(() => import('@/features/account-verification/verification-settings-panel'), 'VerificationSettingsPanel')
@@ -115,6 +116,7 @@ const consoleRoutes: ConsoleRouteDefinition[] = [
   { path: 'wallet', element: lazyWalletPage },
   { path: 'playground', element: lazyPlaygroundPage },
   { path: 'video-tasks', element: lazyVideoTaskPage },
+  { path: 'plugin-pages/:pluginId/:pageId', element: lazyPluginExtensionPage },
   { path: 'account-verification-reviews', element: createElement(AccountVerificationPage, { admin: true }) },
   { path: 'system-settings/invitations', element: createElement(lazyAuthenticationSettingsPage, { rewardsOnly: true }) },
   { path: 'account-verification', element: createElement(AccountVerificationPage) },

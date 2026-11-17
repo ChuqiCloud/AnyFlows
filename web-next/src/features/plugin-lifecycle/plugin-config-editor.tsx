@@ -50,6 +50,12 @@ function fieldType(schema: FieldSchema): 'string' | 'number' | 'integer' | 'bool
   if (schema.type === 'string' || schema.type === 'number' || schema.type === 'integer' || schema.type === 'boolean') {
     return schema.type
   }
+  if (Array.isArray(schema.type) && schema.type.includes('null')) {
+    const valueTypes = schema.type.filter((item) => item !== 'null')
+    if (valueTypes.length === 1 && (valueTypes[0] === 'string' || valueTypes[0] === 'number' || valueTypes[0] === 'integer')) {
+      return valueTypes[0]
+    }
+  }
   return undefined
 }
 

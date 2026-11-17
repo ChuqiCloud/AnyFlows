@@ -16,20 +16,19 @@ use af_db::{
     PluginDeploymentRecord,
 };
 use af_domain::Protocol;
+use af_http::{ChatService, ChatServiceFuture};
 use af_plugin_contract::{
     REQUEST_PROCESSING_CAPABILITY, RequestProcessingInput, RequestProcessingOutput,
     RequestProcessingStage,
 };
 use af_protocol::CanonicalRequestEnvelope;
-use af_relay::{ChatResponse, RelayDiagnosticInput};
+use af_relay::RelayDiagnosticInput;
 use futures_util::future::join_all;
 use serde_json::{Value, json};
 use tokio::{
     sync::{Mutex, Semaphore},
     time::Instant,
 };
-
-use crate::{ChatService, ChatServiceFuture};
 
 const OBSERVER_CAPABILITY_VERSION: u16 = 1;
 const OBSERVER_CACHE_TTL: Duration = Duration::from_secs(30);
@@ -358,6 +357,7 @@ mod tests {
     use af_domain::{ConcurrencyLimit, GroupId, Operation, Role, TokenId, UserId};
     use af_httpclient::HeaderMap;
     use af_protocol::{CanonicalRequest, ContentBlock, Message};
+    use af_relay::ChatResponse;
     use serde_json::json;
 
     use super::*;

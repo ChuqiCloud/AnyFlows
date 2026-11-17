@@ -2196,6 +2196,7 @@ mod tests {
             config_schema: json!({ "type": "object" }),
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
+            ui_pages: Vec::new(),
         }
     }
 

@@ -28,7 +28,8 @@ pub use event::{
 };
 pub use manifest::{
     ConnectorLimits, PluginId, PluginManifest, PluginUiBlock, PluginUiComponent,
-    PluginUiContribution, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView, PluginUiViewSlot,
+    PluginUiContribution, PluginUiPage, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView,
+    PluginUiViewSlot,
 };
 pub use proposal::HostActionProposal;
 pub use request_processing::{

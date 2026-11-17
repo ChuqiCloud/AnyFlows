@@ -28,6 +28,7 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/PluginHostResponse" },
             { "$ref": "#/$defs/PluginHostProtocol" },
             { "$ref": "#/$defs/PluginUiView" },
+            { "$ref": "#/$defs/PluginUiPage" },
             { "$ref": "#/$defs/PluginUiBlock" }
         ],
         "$defs": {
@@ -107,7 +108,8 @@ pub fn schema_document() -> Value {
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
                     "configSchema": { "type": "object" },
                     "uiContributions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiContribution" } },
-                    "uiViews": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiView" } }
+                    "uiViews": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiView" } },
+                    "uiPages": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/PluginUiPage" } }
                 }
             },
             "PluginEventSubscription": {
@@ -179,6 +181,20 @@ pub fn schema_document() -> Value {
                     "schemaVersion": { "const": 1 },
                     "slot": { "$ref": "#/$defs/PluginUiViewSlot" },
                     "blocks": { "type": "array", "minItems": 1, "maxItems": 24, "items": { "$ref": "#/$defs/PluginUiBlock" } }
+                }
+            },
+            "PluginUiPage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "schemaVersion", "title", "capabilityId", "capabilityVersion"],
+                "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$", "minLength": 1, "maxLength": 64 },
+                    "schemaVersion": { "const": 1 },
+                    "title": { "$ref": "#/$defs/PluginUiText" },
+                    "description": { "$ref": "#/$defs/PluginUiText" },
+                    "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "input": {}
                 }
             },
             "PluginUiBlock": {
@@ -837,6 +853,7 @@ mod tests {
                     },
                 }],
             }],
+            ui_pages: Vec::new(),
         };
         let account = ExternalAccountProfile {
             subject: "opaque-123".to_owned(),

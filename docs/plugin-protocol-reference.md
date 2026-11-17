@@ -65,6 +65,7 @@ example.afplugin
 | `limits` | 插件自身的并发、超时、输出和分页上限。宿主可以进一步收紧。 |
 | `uiContributions` | 插件管理页静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
+| `uiPages` | 管理员扩展页，最多 32 项；每页绑定已声明的只读、无副作用能力。 |
 
 视图使用宿主组件渲染，支持 `text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。`list` 最多 16 项，`progress.percent` 必须在 0 到 100 之间；插件不能注入 HTML、CSS、脚本、链接或按钮。复杂内容应组合多个视图，保持数据和展示分离。
 
