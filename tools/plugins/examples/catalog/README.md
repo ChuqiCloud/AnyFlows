@@ -83,3 +83,13 @@ catalog/
 常见修改顺序：先添加一条带有 `id`、`displayName` 和 `provider` 的模型资料；再用搜索词确认它能被找到；最后多次翻页确认 `nextCursor` 能继续前进并在末页变成 `null`。如果需要新的展示字段，先确认输出 Schema 已支持该字段，再同时修改 Manifest、代码和数据。
 
 完整字段约束、对外 API 和游标规则见[模型资料目录契约](../../../../docs/plugin-development.md#模型资料目录)。要接入其他业务模块，先让宿主提供该模块的输入输出 Schema、权限和调用入口。
+
+## 本地测试
+
+宿主输入样例在 `fixtures/input.json`。在仓库根目录运行：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/catalog --manifest tools/plugins/examples/catalog/manifest.json --capability catalog.models.search --input tools/plugins/examples/catalog/fixtures/input.json
+```
+
+成功输出包含 `manifest: ok`、`health: ok` 和 `result: capability`。插件输出是 `models` 数组和 `nextCursor`。

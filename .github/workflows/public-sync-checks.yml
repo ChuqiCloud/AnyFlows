@@ -11,6 +11,7 @@ on:
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
       - tools/ci/verify-public-core-boundary.py
+      - tools/plugins/**
       - docs/**
       - '*.md'
       - web/src/i18n/locales/*.json
@@ -25,6 +26,7 @@ on:
       - tools/repository/**
       - tools/ci/test-public-core-export.sh
       - tools/ci/verify-public-core-boundary.py
+      - tools/plugins/**
       - docs/**
       - '*.md'
       - web/src/i18n/locales/*.json
@@ -71,6 +73,9 @@ jobs:
 
       - name: Check export and synchronization regressions
         run: bash tools/ci/test-public-core-export.sh
+
+      - name: Check plugin SDK, examples and local protocol runner
+        run: python3 -m unittest discover -s tools/plugins/tests -p 'test_*.py'
 
       - name: Check proposed export against public main
         shell: bash
