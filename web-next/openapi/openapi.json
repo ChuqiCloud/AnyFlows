@@ -5933,6 +5933,173 @@
         ]
       }
     },
+    "/api/account/external-accounts/plugin-reviewers": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "列出可用于余额快照分析的插件",
+        "operationId": "listUserExternalAccountSnapshotReviewers",
+        "responses": {
+          "200": {
+            "description": "当前启用并明确获授只读分析能力的插件",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewerListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件目录暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:read"
+        ]
+      }
+    },
+    "/api/account/external-accounts/{id}/plugin-review": {
+      "post": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "使用所选插件分析已存余额快照",
+        "operationId": "reviewUserExternalAccountBalanceSnapshots",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "当前用户外部账户连接 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件提供的只读分析建议",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "插件未获授该分析能力",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "账户或余额快照不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "账户或插件部署在分析期间发生变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件分析暂不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "external_accounts:read"
+        ]
+      }
+    },
     "/api/account/wallet": {
       "get": {
         "tags": [
@@ -13946,6 +14113,110 @@
         ],
         "x-anyflows-pat-scopes": [
           "admin:review_admin_channel_monitor_target_with_plugin:execute"
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/targets/{id}/action-proposals": {
+      "post": {
+        "tags": [],
+        "summary": "为监控目标创建插件动作提案",
+        "operationId": "proposeAdminChannelMonitorTargetAction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveChannelMonitorPluginActionProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorPluginActionProposalResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:propose_admin_channel_monitor_target_action:execute"
+        ]
+      }
+    },
+    "/api/admin/channel-monitor/action-proposals/{proposal_key}/confirm": {
+      "post": {
+        "tags": [],
+        "summary": "确认并执行渠道监控目标插件动作",
+        "operationId": "confirmAdminChannelMonitorActionProposal",
+        "parameters": [
+          {
+            "name": "proposal_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveChannelMonitorPluginActionConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveChannelMonitorPluginActionProposalResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:confirm_admin_channel_monitor_action_proposal:execute"
         ]
       }
     },
@@ -32754,6 +33025,112 @@
         ]
       }
     },
+    "/api/admin/plugins/events/results": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "分页读取插件事件处理结果",
+        "description": "只返回已完成事件的插件输出和状态摘要；不包含事件输入、事件键、插件 URL 或凭据。输出由宿主限制为 16 KiB，并拒绝敏感字段名。结果只是只读数据，不会触发操作或通知。",
+        "operationId": "listAdminPluginEventResults",
+        "parameters": [
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按 delivery ID 倒序排列的事件结果页",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginEventResultPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "游标或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "事件存储未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_plugin_event_results:execute"
+        ]
+      }
+    },
     "/api/admin/plugins/{plugin_id}/deployment/history": {
       "get": {
         "tags": [
@@ -35998,6 +36375,136 @@
           }
         }
       },
+      "ActiveChannelMonitorPluginActionConfirmRequest": {
+        "type": "object",
+        "required": [
+          "confirmation_key"
+        ],
+        "properties": {
+          "confirmation_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginActionHintResponse": {
+        "type": "object",
+        "required": [
+          "actionId",
+          "actionVersion",
+          "input"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string"
+          },
+          "actionVersion": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "input": {}
+        }
+      },
+      "ActiveChannelMonitorPluginActionProposalRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "expected_target_version",
+          "idempotency_key"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "expected_target_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ActiveChannelMonitorPluginActionProposalResponse": {
+        "type": "object",
+        "required": [
+          "proposal_key",
+          "plugin_id",
+          "target_id",
+          "action_id",
+          "action_version",
+          "expected_enabled",
+          "requested_enabled",
+          "expected_target_version",
+          "status",
+          "expires_at",
+          "created_at"
+        ],
+        "properties": {
+          "proposal_key": {
+            "type": "string",
+            "maxLength": 36,
+            "minLength": 1
+          },
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "target_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "action_id": {
+            "type": "string",
+            "maxLength": 96,
+            "minLength": 1
+          },
+          "action_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "expected_enabled": {
+            "type": "boolean"
+          },
+          "requested_enabled": {
+            "type": "boolean"
+          },
+          "expected_target_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PluginActionProposalStatusResponse"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confirmed_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "outcome": {}
+        }
+      },
       "ActiveChannelMonitorPluginReviewCheckResponse": {
         "type": "object",
         "required": [
@@ -36057,8 +36564,10 @@
           "display_name",
           "plugin_version",
           "event_count",
+          "target_config_version",
           "summary",
-          "checks"
+          "checks",
+          "ui_views"
         ],
         "properties": {
           "plugin_id": {
@@ -36081,6 +36590,10 @@
             "format": "int32",
             "minimum": 0
           },
+          "target_config_version": {
+            "type": "integer",
+            "format": "int64"
+          },
           "summary": {
             "type": "string",
             "maxLength": 2048,
@@ -36092,6 +36605,21 @@
               "$ref": "#/components/schemas/ActiveChannelMonitorPluginReviewCheckResponse"
             },
             "maxItems": 64
+          },
+          "ui_views": {
+            "type": "array",
+            "items": {},
+            "maxItems": 8
+          },
+          "action_proposal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ActiveChannelMonitorPluginActionHintResponse"
+              }
+            ]
           }
         }
       },
@@ -46049,7 +46577,8 @@
           "model_count",
           "mapping_count",
           "summary",
-          "checks"
+          "checks",
+          "ui_views"
         ],
         "properties": {
           "plugin_id": {
@@ -46088,6 +46617,11 @@
               "$ref": "#/components/schemas/ChannelModelMappingPluginReviewCheckResponse"
             },
             "maxItems": 64
+          },
+          "ui_views": {
+            "type": "array",
+            "items": {},
+            "maxItems": 8
           }
         }
       },
@@ -48650,7 +49184,8 @@
           "plugin_version",
           "service_revision",
           "summary",
-          "checks"
+          "checks",
+          "ui_views"
         ],
         "properties": {
           "checks": {
@@ -48684,6 +49219,13 @@
             "type": "string",
             "maxLength": 2048,
             "minLength": 1
+          },
+          "ui_views": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 8
           }
         },
         "additionalProperties": false
@@ -51735,6 +52277,16 @@
         },
         "additionalProperties": false
       },
+      "PluginActionProposalStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "confirmed",
+          "expired",
+          "stale",
+          "revoked"
+        ]
+      },
       "PluginActionResponse": {
         "type": "object",
         "required": [
@@ -52275,6 +52827,86 @@
           }
         },
         "additionalProperties": false
+      },
+      "PluginEventResultPageResponse": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginEventResultResponse"
+            }
+          },
+          "nextBeforeId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "PluginEventResultResponse": {
+        "type": "object",
+        "required": [
+          "deliveryId",
+          "pluginId",
+          "eventKind",
+          "deploymentGeneration",
+          "capabilityId",
+          "capabilityVersion",
+          "attemptCount",
+          "status",
+          "completedAt",
+          "summary",
+          "result"
+        ],
+        "properties": {
+          "deliveryId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pluginId": {
+            "type": "string"
+          },
+          "eventKind": {
+            "type": "string"
+          },
+          "deploymentGeneration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "capabilityVersion": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "attemptCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
       },
       "PluginPackageInstallRequest": {
         "type": "object",
@@ -53270,6 +53902,151 @@
           }
         },
         "additionalProperties": false
+      },
+      "ReviewCheckResponse": {
+        "type": "object",
+        "required": [
+          "code",
+          "title",
+          "status",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReviewStatusResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "recommendation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReviewRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "allow_external_reads": {
+            "type": "boolean",
+            "description": "Explicit, per-request permission for this plugin to read the linked\nupstream account through the host's fixed, read-only connector endpoints.\nPAT requests also need the separate `external_accounts:live_read` scope."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReviewResponse": {
+        "type": "object",
+        "required": [
+          "pluginId",
+          "displayName",
+          "pluginVersion",
+          "snapshotCount",
+          "firstObservedAt",
+          "lastObservedAt",
+          "summary",
+          "checks",
+          "uiViews"
+        ],
+        "properties": {
+          "pluginId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "pluginVersion": {
+            "type": "string"
+          },
+          "snapshotCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "firstObservedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastObservedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewCheckResponse"
+            }
+          },
+          "uiViews": {
+            "type": "array",
+            "items": {},
+            "maxItems": 8
+          }
+        }
+      },
+      "ReviewStatusResponse": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "info",
+          "warning",
+          "fail"
+        ]
+      },
+      "ReviewerListResponse": {
+        "type": "object",
+        "required": [
+          "plugins"
+        ],
+        "properties": {
+          "plugins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewerResponse"
+            }
+          }
+        }
+      },
+      "ReviewerResponse": {
+        "type": "object",
+        "required": [
+          "pluginId",
+          "displayName",
+          "pluginVersion",
+          "supportsExternalReads"
+        ],
+        "properties": {
+          "pluginId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "pluginVersion": {
+            "type": "string"
+          },
+          "supportsExternalReads": {
+            "type": "boolean"
+          }
+        }
       },
       "RuntimeDependency": {
         "type": "object",

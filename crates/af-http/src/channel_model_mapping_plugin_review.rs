@@ -5,7 +5,8 @@ use std::sync::Arc;
 use af_admin::{
     ChannelModelMappingPluginReview, ChannelModelMappingPluginReviewCheck,
     ChannelModelMappingPluginReviewError, ChannelModelMappingPluginReviewService,
-    ChannelModelMappingPluginReviewStatus, SessionAuthentication, SessionAuthenticator,
+    ChannelModelMappingPluginReviewStatus, PluginUiView, SessionAuthentication,
+    SessionAuthenticator,
 };
 use axum::{
     Extension, Json, Router,
@@ -90,6 +91,8 @@ pub struct ChannelModelMappingPluginReviewResponse {
     pub summary: String,
     #[schema(max_items = 64)]
     pub checks: Vec<ChannelModelMappingPluginReviewCheckResponse>,
+    #[schema(value_type = Vec<serde_json::Value>, max_items = 8)]
+    pub ui_views: Vec<PluginUiView>,
 }
 
 impl From<ChannelModelMappingPluginReviewCheck> for ChannelModelMappingPluginReviewCheckResponse {
@@ -127,6 +130,7 @@ impl From<ChannelModelMappingPluginReview> for ChannelModelMappingPluginReviewRe
             mapping_count: value.mapping_count,
             summary: value.summary,
             checks: value.checks.into_iter().map(Into::into).collect(),
+            ui_views: value.ui_views,
         }
     }
 }
@@ -263,6 +267,11 @@ mod tests {
         assert_eq!(
             review["requestBody"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ChannelModelMappingPluginReviewRequest"
+        );
+        assert_eq!(
+            document["components"]["schemas"]["ChannelModelMappingPluginReviewResponse"]["properties"]
+                ["ui_views"]["maxItems"],
+            8
         );
     }
 }

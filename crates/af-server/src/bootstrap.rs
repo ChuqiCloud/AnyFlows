@@ -2801,6 +2801,11 @@ impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
     pub fn build_router(mut self) -> Bootstrap<RouterReady> {
+        let event_delivery_repository = af_db::PluginEventDeliveryRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(2),
+        )
+        .expect("plugin event repository requires a non-zero operation timeout");
         let plugin_lifecycle_service = Arc::new(
             af_admin::DatabaseAdminPluginLifecycleService::new(
                 af_db::PluginCatalogRepository::new(
@@ -2808,7 +2813,8 @@ impl Bootstrap<Supervised> {
                 ),
                 Arc::clone(&self.stage.infrastructure.platform_audit_service),
             )
-            .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone()),
+            .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone())
+            .with_event_delivery_repository(Some(event_delivery_repository.clone())),
         );
         if plugin_lifecycle_service.capability_runtime().is_some() {
             let service = Arc::clone(&plugin_lifecycle_service);
@@ -2828,7 +2834,49 @@ impl Bootstrap<Supervised> {
                         }
                     }
                 });
+
+            let worker = af_admin::PluginEventDeliveryWorker::new(
+                event_delivery_repository.clone(),
+                Arc::clone(&plugin_lifecycle_service),
+            );
+            self.stage
+                .supervisor
+                .spawn("plugin-event-delivery", move |task_shutdown| {
+                    let worker = worker.clone();
+                    async move {
+                        worker.run_until(task_shutdown.cancelled()).await;
+                    }
+                });
         }
+        self.stage
+            .supervisor
+            .spawn("plugin-event-retention", {
+                let repository = event_delivery_repository.clone();
+                move |task_shutdown| {
+                    let repository = repository.clone();
+                    async move {
+                        let mut interval = tokio::time::interval(Duration::from_secs(60));
+                        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                        loop {
+                            tokio::select! {
+                                () = task_shutdown.cancelled() => return,
+                                _ = interval.tick() => {}
+                            }
+                            let Ok(elapsed) = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                            else {
+                                continue;
+                            };
+                            let Ok(now) = i64::try_from(elapsed.as_secs()) else {
+                                continue;
+                            };
+                            if let Err(error) = repository.purge_expired(now.max(1)).await {
+                                tracing::warn!(error_kind = ?error, "plugin event retention sweep failed");
+                            }
+                        }
+                    }
+                }
+            });
         let probe =
             DatabaseReadinessProbe::new(self.stage.infrastructure.infrastructure.database.clone());
         let readiness = ReadinessHandle::new(probe);
@@ -3002,10 +3050,23 @@ impl Bootstrap<Supervised> {
             )
             .expect("内置平台账户连接器必须有效"),
         );
-        let router = router.merge(af_http::build_user_external_account_router(
-            external_account_service,
-            Arc::clone(&self.stage.infrastructure.session_authenticator),
-        ));
+        let external_account_snapshot_plugin_review_service: Arc<
+            dyn af_admin::ExternalAccountSnapshotPluginReviewService,
+        > = Arc::new(
+            af_admin::DatabaseExternalAccountSnapshotPluginReviewService::new(
+                Arc::clone(&external_account_service),
+                Arc::clone(&plugin_lifecycle_service),
+            ),
+        );
+        let router = router
+            .merge(af_http::build_user_external_account_router(
+                Arc::clone(&external_account_service),
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ))
+            .merge(af_http::build_user_external_account_plugin_review_router(
+                external_account_snapshot_plugin_review_service,
+                Arc::clone(&self.stage.infrastructure.session_authenticator),
+            ));
         let public_status = af_db::PublicServiceStatusRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
@@ -3033,6 +3094,9 @@ impl Bootstrap<Supervised> {
             af_admin::DatabaseActiveChannelMonitorPluginReviewService::new(
                 Arc::clone(&active_channel_monitor_service),
                 Arc::clone(&plugin_lifecycle_service),
+                af_db::PluginActionProposalRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                ),
             ),
         );
         let channel_model_mapping_plugin_review_service: Arc<

@@ -530,6 +530,19 @@ impl MerchantPoolRepository {
             active.updated_at = Set(now);
             let result =
                 service_snapshot(&txn, active.update(&txn).await.map_err(internal)?).await?;
+            let service = services::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .map_err(internal)?
+                .ok_or(MerchantPoolError::NotFound)?;
+            super::service_watch::record_service_event(
+                &txn,
+                &service,
+                "service_restored",
+                &format!("resume:{}:{}", id, now.unix_timestamp_nanos()),
+                now,
+            )
+            .await?;
             audit_control(
                 &txn,
                 actor,

@@ -9,12 +9,15 @@ use af_db::{
 };
 use af_domain::UserId;
 use af_httpclient::HttpClientProvider;
-use af_plugin_contract::{CapabilityId, CapabilityRequirement, ContractVersion};
+use af_plugin_contract::{
+    CapabilityId, CapabilityRequirement, ContractVersion, HostHttpResponseProjection,
+    PluginProxyError, PluginProxyErrorCode, PluginProxyRequest, PluginProxyResult,
+};
 use af_plugin_runtime::{
     ConnectorInvocation, ConnectorOperationError, ConnectorRegistry, ConnectorRegistryError,
     ExternalPlatformCredential,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 use time::OffsetDateTime;
 
 use crate::{
@@ -22,6 +25,7 @@ use crate::{
     ExternalAccountBalanceStatus, ExternalAccountCredential, ExternalAccountError,
     ExternalAccountFuture, ExternalAccountLinkCommand, SessionPrincipal,
     SupportedExternalConnector, UserExternalAccountService,
+    external_account::{ExternalAccountProxyEndpoint, external_account_proxy_endpoint},
 };
 
 const EXTERNAL_PROFILE_CAPABILITY: &str = "external.account.profile.read";
@@ -268,6 +272,70 @@ impl DatabaseUserExternalAccountService {
         let latest_balance = Some(self.record_balance(user_id, connection.id, balance).await?);
         Ok(connection_dto(connection, latest_balance))
     }
+
+    async fn proxy_read_record(
+        &self,
+        user_id: UserId,
+        connection_id: i64,
+        request: PluginProxyRequest,
+    ) -> Result<PluginProxyResult, ExternalAccountError> {
+        let endpoint =
+            external_account_proxy_endpoint(&request).ok_or(ExternalAccountError::Unsupported)?;
+        let connection = self
+            .repository
+            .get(user_id, connection_id)
+            .await
+            .map_err(map_repository_error)?;
+        let secret_record = self
+            .repository
+            .secret(user_id, connection_id)
+            .await
+            .map_err(map_repository_error)?;
+        let credential = self.decrypt_secret(&secret_record)?;
+        let (negotiated, invocation, credential) = self.connector_context(
+            &connection.id.to_string(),
+            &connection.connector_id,
+            &connection.base_url,
+            credential,
+        )?;
+
+        let payload = match endpoint {
+            ExternalAccountProxyEndpoint::Profile => {
+                let profile = self
+                    .connectors
+                    .read_external_account_profile(
+                        &negotiated,
+                        &invocation,
+                        &connection.external_subject,
+                        &credential,
+                    )
+                    .await
+                    .map_err(map_connector_error)?;
+                profile_projection(&profile.display_name)
+            }
+            ExternalAccountProxyEndpoint::Balance => {
+                let balance = self
+                    .connectors
+                    .read_external_balance(
+                        &negotiated,
+                        &invocation,
+                        &connection.external_subject,
+                        &credential,
+                    )
+                    .await;
+                let snapshot = self.record_balance(user_id, connection.id, balance).await?;
+                balance_projection(&snapshot)
+            }
+        };
+        let projection = HostHttpResponseProjection {
+            status_code: 200,
+            payload,
+        };
+        projection
+            .validate(16 * 1024)
+            .map_err(|_| ExternalAccountError::Internal)?;
+        Ok(PluginProxyResult::Response(projection))
+    }
 }
 
 impl UserExternalAccountService for DatabaseUserExternalAccountService {
@@ -412,6 +480,65 @@ impl UserExternalAccountService for DatabaseUserExternalAccountService {
                 items,
             })
         })
+    }
+
+    fn proxy_read(
+        &self,
+        principal: SessionPrincipal,
+        connection_id: i64,
+        request: PluginProxyRequest,
+    ) -> ExternalAccountFuture<'_, PluginProxyResult> {
+        Box::pin(async move {
+            if connection_id <= 0 || request.validate().is_err() {
+                return Ok(proxy_error(PluginProxyErrorCode::Unsupported));
+            }
+            match self
+                .proxy_read_record(principal.user_id(), connection_id, request)
+                .await
+            {
+                Ok(result) => Ok(result),
+                Err(error) => Ok(proxy_error(map_proxy_error(error))),
+            }
+        })
+    }
+}
+
+fn balance_projection(snapshot: &ExternalAccountBalanceSnapshot) -> Value {
+    let status = match snapshot.status {
+        ExternalAccountBalanceStatus::Available => "available",
+        ExternalAccountBalanceStatus::Unavailable => "unavailable",
+        ExternalAccountBalanceStatus::AuthenticationRequired => "authentication_required",
+    };
+    json!({
+        "amount": snapshot.amount.as_deref(),
+        "unit": snapshot.unit.as_deref(),
+        "status": status,
+        "observedAt": snapshot.observed_at,
+    })
+}
+
+fn profile_projection(display_name: &Option<String>) -> Value {
+    json!({ "displayName": display_name })
+}
+
+fn proxy_error(code: PluginProxyErrorCode) -> PluginProxyResult {
+    PluginProxyResult::Error(PluginProxyError { code })
+}
+
+fn map_proxy_error(error: ExternalAccountError) -> PluginProxyErrorCode {
+    match error {
+        ExternalAccountError::InvalidInput | ExternalAccountError::NotFound => {
+            PluginProxyErrorCode::Forbidden
+        }
+        ExternalAccountError::Unsupported => PluginProxyErrorCode::Unsupported,
+        ExternalAccountError::AuthenticationRequired => {
+            PluginProxyErrorCode::AuthenticationRequired
+        }
+        ExternalAccountError::RateLimited => PluginProxyErrorCode::RateLimited,
+        ExternalAccountError::Conflict
+        | ExternalAccountError::Unavailable
+        | ExternalAccountError::LimitReached
+        | ExternalAccountError::Internal => PluginProxyErrorCode::TemporarilyUnavailable,
     }
 }
 
@@ -590,4 +717,51 @@ fn now_unix_seconds() -> i64 {
 
 fn now_unix_millis() -> u64 {
     u64::try_from(OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000).unwrap_or(1)
+}
+
+#[cfg(test)]
+mod proxy_projection_tests {
+    use super::*;
+
+    #[test]
+    fn proxy_projections_include_only_allowlisted_public_fields() {
+        let profile = profile_projection(&Some("Alice".to_owned()));
+        assert_eq!(profile, json!({ "displayName": "Alice" }));
+
+        let balance = balance_projection(&ExternalAccountBalanceSnapshot {
+            amount: Some("12.3400".to_owned()),
+            unit: Some("USD".to_owned()),
+            status: ExternalAccountBalanceStatus::Available,
+            observed_at: 1_700_000_000,
+        });
+        assert_eq!(
+            balance,
+            json!({
+                "amount":"12.3400",
+                "unit":"USD",
+                "status":"available",
+                "observedAt":1_700_000_000_i64
+            })
+        );
+        let encoded = serde_json::to_string(&balance).unwrap();
+        for forbidden in ["subject", "token", "credential", "url", "headers", "email"] {
+            assert!(!encoded.contains(forbidden));
+        }
+    }
+
+    #[test]
+    fn proxy_failures_are_reduced_to_fixed_public_codes() {
+        assert_eq!(
+            map_proxy_error(ExternalAccountError::NotFound),
+            PluginProxyErrorCode::Forbidden
+        );
+        assert_eq!(
+            map_proxy_error(ExternalAccountError::AuthenticationRequired),
+            PluginProxyErrorCode::AuthenticationRequired
+        );
+        assert_eq!(
+            map_proxy_error(ExternalAccountError::Internal),
+            PluginProxyErrorCode::TemporarilyUnavailable
+        );
+    }
 }
