@@ -491,7 +491,7 @@ fn artifact_subscribes_to_event(manifest: &Value, event_kind: &str, payload: &Va
         };
         return artifact_declares_event_capability(manifest, capability_id, capability_version);
     };
-    let Ok(subscriptions) = subscriptions.as_array() else {
+    let Some(subscriptions) = subscriptions.as_array() else {
         return false;
     };
     subscriptions.iter().any(|subscription| {
