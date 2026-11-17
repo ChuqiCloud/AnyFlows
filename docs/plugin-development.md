@@ -365,3 +365,17 @@ def review_live_balance(capability_id, public_config, value, context):
 修改 `manifest.json`、`plugin.py` 或资源后，递增 `pluginVersion` 并生成新包。不要覆盖已经登记的制品。
 
 协议字段见[插件协议参考](plugin-protocol-reference.md)，安装、升级和节点问题见[插件安装与运维](plugin-sidecars.md)。
+
+## 新增数据面契约
+
+### Provider 请求转换
+
+`provider.request.transform` 为渠道适配提供受限转换入口。插件只能处理宿主过滤后的协议、方法、路径、模型、普通请求头和 JSON 请求体，返回继续或拒绝，以及受限的路径、请求体和普通请求头变更。认证头、Cookie、渠道密钥、上游主机、模型计费字段、钱包和结算事实始终由宿主控制。本契约不授予插件任意 HTTP 客户端。
+
+### 异步任务适配
+
+`invoke_task` 支持 `submit`、`status` 和 `result` 三种任务操作。插件负责把宿主投影的 Provider 响应转换为统一任务状态；宿主负责公开任务 ID、凭据、发送请求、轮询、持久化、重试和结算。插件不得返回价格、配额、钱包或扣费事实。
+
+### 请求处理
+
+`request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。

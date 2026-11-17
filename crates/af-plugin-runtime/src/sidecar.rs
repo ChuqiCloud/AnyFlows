@@ -22,7 +22,7 @@ use af_plugin_contract::{
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
     InvocationMetadata, PluginHostOperation, PluginHostRequest, PluginHostResponse,
     PluginHostResult, PluginId, PluginManifest, PluginProxyRequest, PluginProxyResult,
-    PluginVersion, SideEffectClass,
+    PluginTaskOperation, PluginTaskResult, PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -1502,6 +1502,100 @@ impl SidecarSession {
         )
         .map_err(|_| SidecarError::FrameTooLarge)?;
         Ok(result)
+    }
+
+    /// Invoke the task adapter while retaining task identity, credentials and
+    /// settlement state in the host.
+    pub async fn invoke_host_task(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        task: PluginTaskOperation,
+    ) -> Result<PluginTaskResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        task.validate()
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        let submit = matches!(&task, PluginTaskOperation::Submit { .. });
+        if (submit
+            && (declaration.access != CapabilityAccess::Write
+                || declaration.side_effect != SideEffectClass::ExternalWrite
+                || declaration.write_semantics.is_none()))
+            || declaration.version != capability_version
+        {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let task_value =
+            serde_json::to_value(&task).map_err(|_| SidecarError::InvalidConfiguration)?;
+        if contains_sensitive_fields(&self.public_config) || contains_sensitive_fields(&task_value)
+        {
+            return Err(SidecarError::SensitivePayload);
+        }
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            CompiledJsonSchema::compile(schema)
+                .map_err(|_| SidecarError::InvalidHandshake)?
+                .validate(&task_value)
+                .map_err(|_| SidecarError::InvalidConfiguration)?;
+        }
+        crate::ensure_json_payload_within_limit(
+            &task_value,
+            self.manifest.limits.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        match self
+            .exchange(
+                PluginHostOperation::InvokeTask {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    task,
+                },
+                self.limits.request_timeout,
+                Some(invocation.metadata()),
+                None,
+            )
+            .await?
+        {
+            PluginHostResult::Task(result) => {
+                result
+                    .validate()
+                    .map_err(|_| SidecarError::ProtocolViolation)?;
+                let value =
+                    serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
+                crate::ensure_json_payload_within_limit(
+                    &value,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
+                if contains_sensitive_fields(&value) {
+                    self.stop().await;
+                    return Err(SidecarError::SensitivePayload);
+                }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&value)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
     }
 
     /// Invoke an external-read capability through a host-owned, per-invocation

@@ -15,6 +15,12 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/ConnectorError" },
             { "$ref": "#/$defs/CapabilityInvocation" },
             { "$ref": "#/$defs/CapabilityResult" },
+            { "$ref": "#/$defs/PluginTaskOperation" },
+            { "$ref": "#/$defs/PluginTaskResult" },
+            { "$ref": "#/$defs/ProviderRequestTransformInput" },
+            { "$ref": "#/$defs/ProviderRequestTransformOutput" },
+            { "$ref": "#/$defs/RequestProcessingInput" },
+            { "$ref": "#/$defs/RequestProcessingOutput" },
             { "$ref": "#/$defs/PluginProxyRequest" },
             { "$ref": "#/$defs/PluginProxyResponse" },
             { "$ref": "#/$defs/PluginHostRequest" },
@@ -228,6 +234,132 @@ pub fn schema_document() -> Value {
                 "required": ["output"],
                 "properties": { "output": {} }
             },
+            "ProviderRequestTransformInput": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["protocol", "method", "path", "model", "headers", "body"],
+                "properties": {
+                    "protocol": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9_]+$" },
+                    "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+                    "path": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^/[^?#\\\\]*$" },
+                    "model": { "type": "string", "minLength": 1, "maxLength": 256 },
+                    "upstreamModel": { "type": "string", "minLength": 1, "maxLength": 256 },
+                    "headers": { "type": "object", "maxProperties": 64, "additionalProperties": { "type": "string", "maxLength": 4096 } },
+                    "body": {}
+                }
+            },
+            "ProviderHeaderPatch": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["set", "remove"],
+                "properties": {
+                    "set": { "type": "object", "maxProperties": 32, "additionalProperties": { "type": "string", "maxLength": 4096 } },
+                    "remove": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 128 } }
+                }
+            },
+            "ProviderTransformRejection": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["code", "message"],
+                "properties": {
+                    "code": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "message": { "type": "string", "minLength": 1, "maxLength": 512 }
+                }
+            },
+            "ProviderRequestTransformOutput": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["action", "headers"],
+                "properties": {
+                    "action": { "enum": ["continue", "reject"] },
+                    "path": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^/[^?#\\\\]*$" },
+                    "body": {},
+                    "headers": { "$ref": "#/$defs/ProviderHeaderPatch" },
+                    "rejection": { "$ref": "#/$defs/ProviderTransformRejection" }
+                }
+            },
+            "PluginTaskOperation": {
+                "oneOf": [
+                    {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["kind", "model", "request"],
+                        "properties": {
+                            "kind": { "const": "submit" },
+                            "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+                            "request": {},
+                            "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 256 }
+                        }
+                    },
+                    {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["kind", "task_id"],
+                        "properties": {
+                            "kind": { "const": "status" },
+                            "task_id": { "type": "string", "minLength": 1, "maxLength": 512 }
+                        }
+                    },
+                    {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["kind", "task_id", "response"],
+                        "properties": {
+                            "kind": { "const": "result" },
+                            "task_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+                            "response": {}
+                        }
+                    }
+                ]
+            },
+            "PluginTaskResult": {
+                "oneOf": [
+                    {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["kind", "value"],
+                        "properties": {
+                            "kind": { "const": "submitted" },
+                            "value": {
+                                "type": "object", "additionalProperties": false,
+                                "required": ["task_id", "state"],
+                                "properties": {
+                                    "task_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+                                    "state": { "enum": ["submitted", "queued", "running"] },
+                                    "progress_basis_points": { "type": "integer", "minimum": 0, "maximum": 10000 }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["kind", "value"],
+                        "properties": {
+                            "kind": { "const": "status" },
+                            "value": {
+                                "type": "object", "additionalProperties": false,
+                                "required": ["state"],
+                                "properties": {
+                                    "state": { "enum": ["submitted", "queued", "running", "succeeded", "failed"] },
+                                    "progress_basis_points": { "type": "integer", "minimum": 0, "maximum": 10000 },
+                                    "failure_code": { "type": "string", "minLength": 1, "maxLength": 128 }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["kind", "value"],
+                        "properties": {
+                            "kind": { "const": "result" },
+                            "value": {
+                                "type": "object", "additionalProperties": false,
+                                "required": ["task_id", "output"],
+                                "properties": {
+                                    "task_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+                                    "output": {}
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
             "PluginHostOperation": {
                 "oneOf": [
                     { "type": "object", "additionalProperties": false, "required": ["operation"], "properties": { "operation": { "const": "manifest" } } },
@@ -243,6 +375,19 @@ pub fn schema_document() -> Value {
                             "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "minLength": 1, "maxLength": 128 },
                             "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
                             "input": {}
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "task"],
+                        "properties": {
+                            "operation": { "const": "invoke_task" },
+                            "connectionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                            "publicConfig": { "type": "object" },
+                            "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "minLength": 1, "maxLength": 128 },
+                            "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                            "task": { "$ref": "#/$defs/PluginTaskOperation" }
                         }
                     }
                 ]
@@ -267,6 +412,7 @@ pub fn schema_document() -> Value {
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "manifest" }, "value": { "$ref": "#/$defs/PluginManifest" } } },
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "health" }, "value": { "$ref": "#/$defs/ConnectorHealth" } } },
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "capability" }, "value": { "$ref": "#/$defs/CapabilityResult" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "task" }, "value": { "$ref": "#/$defs/PluginTaskResult" } } },
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "error" }, "value": { "$ref": "#/$defs/ConnectorError" } } }
                 ]
             },
@@ -284,6 +430,62 @@ pub fn schema_document() -> Value {
                     "result": { "$ref": "#/$defs/PluginHostResult" }
                 }
             },
+            "RequestProcessingInput": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["stage", "requestId", "format", "path", "headers", "body"],
+                "properties": {
+                    "stage": { "enum": ["ingress", "request", "outbound", "egress", "reply", "report"] },
+                    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "format": { "type": "string", "minLength": 1, "maxLength": 64 },
+                    "path": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                    "model": { "type": "string", "maxLength": 256 },
+                    "upstreamModel": { "type": "string", "maxLength": 256 },
+                    "headers": { "type": "object", "maxProperties": 64, "additionalProperties": { "type": "string", "maxLength": 8192 } },
+                    "body": {},
+                    "responseStatus": { "type": "integer", "minimum": 100, "maximum": 599 },
+                    "responseBody": {},
+                    "usage": {}
+                }
+            },
+            "JsonPatchOperation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "path"],
+                "properties": {
+                    "op": { "enum": ["add", "remove", "replace"] },
+                    "path": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 256 } },
+                    "value": {}
+                }
+            },
+            "RequestProcessingEffect": {
+                "oneOf": [
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "json_patch" }, "value": { "type": "object", "additionalProperties": false, "required": ["operations"], "properties": { "operations": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/JsonPatchOperation" } } } } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "header_patch" }, "value": { "type": "object", "additionalProperties": false, "required": ["set", "remove"], "properties": { "set": { "type": "object", "maxProperties": 64, "additionalProperties": { "type": "string", "maxLength": 8192 } }, "remove": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 128 } } } } } }
+                ]
+            },
+            "RequestProcessingFinding": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["code", "status", "message"],
+                "properties": {
+                    "code": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "status": { "enum": ["info", "warning", "fail"] },
+                    "message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+                    "recommendation": { "type": "string", "maxLength": 1024 }
+                }
+            },
+            "RequestProcessingOutput": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["action", "effects", "findings"],
+                "properties": {
+                    "action": { "enum": ["continue", "reject", "stop"] },
+                    "effects": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/RequestProcessingEffect" } },
+                    "findings": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/RequestProcessingFinding" } },
+                    "message": { "type": "string", "maxLength": 1024 }
+                }
+            },
             "PluginHostProtocol": {
                 "type": "object",
                 "additionalProperties": false,
@@ -292,7 +494,7 @@ pub fn schema_document() -> Value {
                     "encoding": { "const": "utf-8-json" },
                     "framing": { "const": "one-json-object-per-line" },
                     "maxFrameBytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
-                    "operations": { "const": ["manifest", "health", "invoke_capability"] }
+                    "operations": { "const": ["manifest", "health", "invoke_capability", "invoke_task"] }
                 }
             },
             "ConnectorLimits": {
