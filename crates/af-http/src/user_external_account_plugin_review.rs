@@ -266,7 +266,9 @@ pub fn user_external_account_plugin_review_openapi_document() -> utoipa::openapi
 
 #[cfg(test)]
 mod tests {
-    use super::user_external_account_plugin_review_openapi_document;
+    use super::{
+        token_has_live_external_read_scope, user_external_account_plugin_review_openapi_document,
+    };
 
     #[test]
     fn external_account_plugin_review_contract_exposes_bounded_static_views() {
