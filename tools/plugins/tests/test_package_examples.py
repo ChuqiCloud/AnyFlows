@@ -50,6 +50,32 @@ class ExamplePackageTests(unittest.TestCase):
                 "channel.monitor.events.review.read",
             )
 
+    def test_durable_channel_health_event_example_contains_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "channel-health-event.afplugin"
+            package = self.package(output, "channel-health-event")
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                package["metadata"]["manifest"]["capabilities"][0]["id"],
+                "events.channel-health.changed.consume",
+            )
+            self.assertEqual(
+                package["metadata"]["manifest"]["uiContributions"][0]["slot"],
+                "plugin_management",
+            )
+
+    def test_durable_merchant_service_event_example_contains_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "merchant-service-event.afplugin"
+            package = self.package(output, "merchant-service-event")
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                package["metadata"]["manifest"]["capabilities"][0]["id"],
+                "events.merchant-service.changed.consume",
+            )
+
     def test_channel_model_mapping_review_example_contains_the_python_sdk(self):
         with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
             output = Path(temporary) / "channel-model-mapping-review.afplugin"
@@ -59,6 +85,37 @@ class ExamplePackageTests(unittest.TestCase):
             self.assertEqual(
                 package["metadata"]["manifest"]["capabilities"][0]["id"],
                 "channel.model_mapping.review.read",
+            )
+
+    def test_account_balance_snapshot_review_example_contains_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "account-balance-snapshot-review.afplugin"
+            package = self.package(output, "account-balance-snapshot-review")
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                package["metadata"]["manifest"]["capabilities"][0]["id"],
+                "account.balance.snapshot.review.read",
+            )
+
+    def test_live_balance_review_example_contains_both_scopes_and_the_python_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="anyflows-example-test-") as temporary:
+            output = Path(temporary) / "account-balance-live-review.afplugin"
+            package = self.package(output, "account-balance-live-review")
+            manifest = package["metadata"]["manifest"]
+            self.assertIn("payload/anyflows_plugin.py", package["names"])
+            self.assertIn("payload/plugin.py", package["names"])
+            self.assertEqual(
+                {capability["id"] for capability in manifest["capabilities"]},
+                {
+                    "account.balance.snapshot.review.read",
+                    "account.balance.snapshot.live-review.read",
+                    "external.account.balance.read",
+                },
+            )
+            self.assertEqual(
+                manifest["uiViews"][0]["slot"],
+                "external_account",
             )
 
     def test_catalog_example_remains_the_default(self):
@@ -104,6 +161,31 @@ class ExamplePackageTests(unittest.TestCase):
             )["models"],
             [],
         )
+
+    def test_local_plugin_runner_completes_catalog_protocol_handshake(self):
+        runner = ROOT / "test-plugin.py"
+        catalog = ROOT / "examples" / "catalog"
+        fixture = catalog / "fixtures" / "input.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(runner),
+                "--root",
+                str(catalog),
+                "--manifest",
+                str(catalog / "manifest.json"),
+                "--capability",
+                "catalog.models.search",
+                "--input",
+                str(fixture),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn('"manifest": "ok"', result.stdout)
+        self.assertIn('"health": "ok"', result.stdout)
+        self.assertIn('"result": "capability"', result.stdout)
 
 
 if __name__ == "__main__":

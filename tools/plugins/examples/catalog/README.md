@@ -67,7 +67,7 @@ catalog/
 
 打开 `plugin.py`，可以按这个顺序阅读：
 
-1. 文件顶部导入 Python 标准库及 AnyFlows Python SDK；SDK 负责插件通信，不需要导入 AnyFlows 的 Rust 包。
+1. 文件顶部导入 Python 标准库及 AnyFlows Python SDK；SDK 负责插件通信。
 2. `ROOT` 定位示例目录。这样无论 AnyFlows 从哪个当前工作目录启动，代码都能找到 `models.json` 和 `manifest.json`。
 3. `read_catalog()` 是本例的业务函数。它先确认宿主调用的是已声明能力，再校验配置和输入字段。
 4. 函数读取随包附带的 `models.json`，根据可选搜索词过滤，再用 `cursor` 和 `limit` 截取当前页。
@@ -80,6 +80,16 @@ catalog/
 
 可以先在 `models.json` 增加、改写展示数据，再修改 `plugin.py` 的过滤规则。保持 Manifest 输入输出 Schema 与处理函数结构相符。将 `pluginId` 改为自己的命名空间，修改内容后递增 `pluginVersion`，然后打包成新制品；不要用相同 ID 覆盖已登记制品。
 
-常见修改顺序：先添加一条带有 `id`、`displayName` 和 `provider` 的模型资料；再用搜索词确认它能被找到；最后多次翻页确认 `nextCursor` 能继续前进并在末页变成 `null`。如果需要新的展示字段，先向宿主维护者确认输出 Schema 已支持该字段，再同时修改 Manifest、代码和数据。
+常见修改顺序：先添加一条带有 `id`、`displayName` 和 `provider` 的模型资料；再用搜索词确认它能被找到；最后多次翻页确认 `nextCursor` 能继续前进并在末页变成 `null`。如果需要新的展示字段，先确认输出 Schema 已支持该字段，再同时修改 Manifest、代码和数据。
 
-完整字段约束、对外 API 和游标规则见[模型资料目录契约](../../../../docs/plugin-development.md#模型资料目录)。想在其他业务模块增加插件入口时，先阅读[新模块接入流程](../../../../docs/plugin-development.md#想给新模块加插件入口)。
+完整字段约束、对外 API 和游标规则见[模型资料目录契约](../../../../docs/plugin-development.md#模型资料目录)。要接入其他业务模块，先让宿主提供该模块的输入输出 Schema、权限和调用入口。
+
+## 本地测试
+
+宿主输入样例在 `fixtures/input.json`。在仓库根目录运行：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/catalog --manifest tools/plugins/examples/catalog/manifest.json --capability catalog.models.search --input tools/plugins/examples/catalog/fixtures/input.json
+```
+
+成功输出包含 `manifest: ok`、`health: ok` 和 `result: capability`。插件输出是 `models` 数组和 `nextCursor`。

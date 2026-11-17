@@ -321,6 +321,58 @@
       ],
       "type": "object"
     },
+    "HostHttpMethod": {
+      "enum": [
+        "GET",
+        "HEAD"
+      ],
+      "type": "string"
+    },
+    "HostHttpRequestProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "endpointId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/$defs/HostHttpMethod"
+        },
+        "query": {
+          "additionalProperties": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "endpointId",
+        "method"
+      ],
+      "type": "object"
+    },
+    "HostHttpResponseProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {},
+        "statusCode": {
+          "maximum": 299,
+          "minimum": 200,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "statusCode",
+        "payload"
+      ],
+      "type": "object"
+    },
     "JsonPatchOperation": {
       "additionalProperties": false,
       "properties": {
@@ -701,9 +753,21 @@
           "type": "string"
         },
         "pluginVersion": {
-          "maxLength": 128,
-          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
-          "type": "string"
+          "$ref": "#/$defs/PluginVersion"
+        },
+        "uiContributions": {
+          "items": {
+            "$ref": "#/$defs/PluginUiContribution"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "uiViews": {
+          "items": {
+            "$ref": "#/$defs/PluginUiView"
+          },
+          "maxItems": 8,
+          "type": "array"
         }
       },
       "required": [
@@ -716,6 +780,177 @@
         "configSchema"
       ],
       "type": "object"
+    },
+    "PluginProxyError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "authentication_required",
+            "forbidden",
+            "rate_limited",
+            "temporarily_unavailable",
+            "unsupported",
+            "invalid_response"
+          ]
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "PluginProxyRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginVersion"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "proxyRequestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/HostHttpRequestProposal"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "capabilityId",
+        "capabilityVersion",
+        "proxyRequestId",
+        "request"
+      ],
+      "type": "object"
+    },
+    "PluginProxyResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginVersion"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "proxyRequestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/PluginProxyResult"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "capabilityId",
+        "capabilityVersion",
+        "proxyRequestId",
+        "result"
+      ],
+      "type": "object"
+    },
+    "PluginProxyResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "response"
+            },
+            "value": {
+              "$ref": "#/$defs/HostHttpResponseProjection"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "error"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginProxyError"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "PluginTaskOperation": {
       "oneOf": [
@@ -897,6 +1132,233 @@
           "type": "object"
         }
       ]
+    },
+    "PluginUiBlock": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "tone": {
+              "$ref": "#/$defs/PluginUiTone"
+            },
+            "type": {
+              "const": "badge"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "tone"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "metric"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginUiText"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "items": {
+                "$ref": "#/$defs/PluginUiText"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            },
+            "rows": {
+              "items": {
+                "items": {
+                  "$ref": "#/$defs/PluginUiText"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            "type": {
+              "const": "table"
+            }
+          },
+          "required": [
+            "type",
+            "columns",
+            "rows"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "title": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "info_card"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginUiContribution": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "enum": [
+            "info_card"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "slot": {
+          "enum": [
+            "plugin_management"
+          ]
+        },
+        "title": {
+          "$ref": "#/$defs/PluginUiText"
+        }
+      },
+      "required": [
+        "id",
+        "slot",
+        "component",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PluginUiText": {
+      "additionalProperties": false,
+      "maxProperties": 2,
+      "minProperties": 1,
+      "properties": {
+        "en": {
+          "maxLength": 512,
+          "minLength": 1,
+          "not": {
+            "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
+          },
+          "type": "string"
+        },
+        "zh": {
+          "maxLength": 512,
+          "minLength": 1,
+          "not": {
+            "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
+          },
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PluginUiTone": {
+      "enum": [
+        "neutral",
+        "success",
+        "warning",
+        "danger"
+      ],
+      "type": "string"
+    },
+    "PluginUiView": {
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/PluginUiBlock"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "slot": {
+          "$ref": "#/$defs/PluginUiViewSlot"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "slot",
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "PluginUiViewSlot": {
+      "enum": [
+        "plugin_management",
+        "channel_monitor",
+        "channel_model_mapping",
+        "merchant_service",
+        "external_account"
+      ],
+      "type": "string"
+    },
+    "PluginVersion": {
+      "maxLength": 128,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+      "type": "string"
     },
     "ProviderHeaderPatch": {
       "additionalProperties": false,
@@ -1270,19 +1732,31 @@
       "$ref": "#/$defs/ProviderRequestTransformOutput"
     },
     {
-      "$ref": "#/$defs/PluginHostRequest"
-    },
-    {
-      "$ref": "#/$defs/PluginHostResponse"
-    },
-    {
       "$ref": "#/$defs/RequestProcessingInput"
     },
     {
       "$ref": "#/$defs/RequestProcessingOutput"
     },
     {
+      "$ref": "#/$defs/PluginProxyRequest"
+    },
+    {
+      "$ref": "#/$defs/PluginProxyResponse"
+    },
+    {
+      "$ref": "#/$defs/PluginHostRequest"
+    },
+    {
+      "$ref": "#/$defs/PluginHostResponse"
+    },
+    {
       "$ref": "#/$defs/PluginHostProtocol"
+    },
+    {
+      "$ref": "#/$defs/PluginUiView"
+    },
+    {
+      "$ref": "#/$defs/PluginUiBlock"
     }
   ],
   "title": "AnyFlows Plugin Contract v1"

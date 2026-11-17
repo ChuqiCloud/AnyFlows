@@ -13,9 +13,13 @@ import tempfile
 
 EXAMPLES = {
     "catalog": "catalog",
+    "channel-health-event": "channel-health-event",
     "channel-model-mapping-review": "channel-model-mapping-review",
     "channel-monitor-review": "channel-monitor-review",
+    "account-balance-snapshot-review": "account-balance-snapshot-review",
+    "account-balance-live-review": "account-balance-live-review",
     "merchant-service-review": "merchant-service-review",
+    "merchant-service-event": "merchant-service-event",
 }
 
 
@@ -35,7 +39,7 @@ def main() -> int:
         shutil.copytree(
             root / "examples" / EXAMPLES[args.example],
             distribution,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "fixtures"),
         )
         shutil.copyfile(root / "sdk" / "python" / "anyflows_plugin.py", distribution / "anyflows_plugin.py")
         return subprocess.run([

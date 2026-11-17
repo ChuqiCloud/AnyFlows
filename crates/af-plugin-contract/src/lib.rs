@@ -4,9 +4,12 @@
 //! networking, or application services so other languages can implement the
 //! same versioned contract.
 
+#![recursion_limit = "256"]
+
 mod capability;
 mod error;
 mod manifest;
+mod proposal;
 mod request_processing;
 mod schema;
 mod task;
@@ -18,7 +21,11 @@ pub use capability::{
     ExternalWriteSemantics, ResultLookupSupport, SideEffectClass,
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
-pub use manifest::{ConnectorLimits, PluginId, PluginManifest};
+pub use manifest::{
+    ConnectorLimits, PluginId, PluginManifest, PluginUiBlock, PluginUiComponent,
+    PluginUiContribution, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView, PluginUiViewSlot,
+};
+pub use proposal::HostActionProposal;
 pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,
     REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingEffect,
@@ -32,10 +39,12 @@ pub use task::{
 };
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,
-    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
-    PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginHostOperation, PluginHostRequest,
-    PluginHostResponse, PluginHostResult, ProviderHeaderPatch, ProviderRequestTransformInput,
-    ProviderRequestTransformOutput, ProviderTransformAction, ProviderTransformRejection,
+    ExternalAccountProfile, ExternalBalanceSnapshot, HostHttpMethod, HostHttpRequestProposal,
+    HostHttpResponseProjection, InvocationMetadata, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
+    PluginHostOperation, PluginHostRequest, PluginHostResponse, PluginHostResult, PluginProxyError,
+    PluginProxyErrorCode, PluginProxyRequest, PluginProxyResponse, PluginProxyResult,
+    ProviderHeaderPatch, ProviderRequestTransformInput, ProviderRequestTransformOutput,
+    ProviderTransformAction, ProviderTransformRejection,
 };
 pub use version::{ContractVersion, ContractVersionRange, PluginVersion};
 

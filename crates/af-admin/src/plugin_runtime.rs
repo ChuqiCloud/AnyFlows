@@ -451,24 +451,6 @@ impl AdminPluginSidecarRuntime {
         .await
     }
 
-    /// Invoke a host capability with a request-scoped external read dispatcher.
-    /// The dispatcher is never stored in the deployment or sent to the sidecar.
-    pub(crate) async fn invoke_capability_with_proxy(
-        &self,
-        request: PluginCapabilityInvocation<'_>,
-    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
-        let remaining = request
-            .invocation
-            .remaining_timeout()
-            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-        tokio::time::timeout(remaining, self.invoke_capability_inner(request))
-            .await
-            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
-    }
-
-    /// Execute one task adapter operation through the active sidecar. The
-    /// caller must authorize the capability and keep public task IDs and
-    /// billing state in the host; the plugin only receives provider data.
     pub async fn invoke_task(
         &self,
         repository: &PluginCatalogRepository,
@@ -586,8 +568,6 @@ impl AdminPluginSidecarRuntime {
             .map_err(map_sidecar_error)
     }
 
-    /// Apply the bounded provider transform contract through an uploaded
-    /// plugin. Channel selection, credentials and billing remain host-owned.
     pub async fn transform_provider_request(
         &self,
         repository: &PluginCatalogRepository,
@@ -611,7 +591,7 @@ impl AdminPluginSidecarRuntime {
                     .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
             )
             .await?;
-        let output = serde_json::from_value::<ProviderRequestTransformOutput>(result.output)
+        let output = serde_json::from_value(result.output)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         output
             .validate_against(&request)
@@ -619,9 +599,6 @@ impl AdminPluginSidecarRuntime {
         Ok(output)
     }
 
-    /// Run a request-processing stage against a redacted snapshot. The caller
-    /// applies only effects allowed for the selected stage after this method
-    /// returns; this method never mutates a live request itself.
     pub async fn process_request_stage(
         &self,
         repository: &PluginCatalogRepository,
@@ -640,18 +617,33 @@ impl AdminPluginSidecarRuntime {
                 plugin_id,
                 generation,
                 invocation,
-                REQUEST_PROCESSING_CAPABILITY,
+                "request.processing.read",
                 1,
                 serde_json::to_value(&request)
                     .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
             )
             .await?;
-        let output = serde_json::from_value::<RequestProcessingOutput>(result.output)
+        let output = serde_json::from_value(result.output)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         output
             .validate_for(stage)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         Ok(output)
+    }
+
+    /// Invoke a host capability with a request-scoped external read dispatcher.
+    /// The dispatcher is never stored in the deployment or sent to the sidecar.
+    pub(crate) async fn invoke_capability_with_proxy(
+        &self,
+        request: PluginCapabilityInvocation<'_>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let remaining = request
+            .invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(remaining, self.invoke_capability_inner(request))
+            .await
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
     }
 
     async fn invoke_capability_inner(
