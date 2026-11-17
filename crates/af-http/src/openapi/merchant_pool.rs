@@ -255,7 +255,6 @@ pub(super) fn document() -> OpenApi {
                     "checks",
                     json!({"type":"array","maxItems":64,"items":reference("MerchantPluginReviewCheck")}),
                 ),
-                ("ui_views", json!({"type":"array","maxItems":8,"items":{"type":"object"}})),
             ],
             &[],
         ),
@@ -858,10 +857,6 @@ mod tests {
         assert_eq!(
             schemas["MerchantPluginReview"]["properties"]["checks"]["maxItems"],
             64
-        );
-        assert_eq!(
-            schemas["MerchantPluginReview"]["properties"]["ui_views"]["maxItems"],
-            8
         );
         assert_eq!(
             schemas["MerchantPluginReviewerSummary"]["properties"]["plugins"]["maxItems"],

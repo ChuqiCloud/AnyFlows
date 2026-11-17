@@ -95,6 +95,35 @@ class PluginSdkTests(unittest.TestCase):
             for field in envelope.keys() - {"operation", "deadlineUnixMs"}:
                 self.assertEqual(response[field], envelope[field])
 
+    def test_task_operation_returns_bounded_task_projection(self):
+        manifest = copy.deepcopy(MANIFEST)
+        manifest["capabilities"].append({
+            "id": "task.video.adapter", "version": 1, "access": "write",
+            "sideEffect": "external_write",
+            "writeSemantics": {"nativeIdempotencyKey": True, "resultLookup": "by_request_id", "reconciliation": True},
+        })
+        task = {
+            "kind": "submitted", "value": {
+                "task_id": "provider-1", "state": "queued", "progress_basis_points": 0,
+            },
+        }
+        plugin = Plugin(
+            manifest,
+            lambda *args: {"models": [], "nextCursor": None},
+            task_handler=lambda *args: task,
+            clock_ms=lambda: 1000,
+        )
+        response = plugin.respond({
+            **request({
+                "operation": "invoke_task", "connectionId": "task", "publicConfig": {},
+                "capabilityId": "task.video.adapter", "capabilityVersion": 1,
+                "task": {"kind": "status", "task_id": "provider-1"},
+            }),
+            "pluginId": manifest["pluginId"], "pluginVersion": manifest["pluginVersion"],
+        })
+        self.assertEqual(response["result"]["kind"], "task")
+        self.assertEqual(response["result"]["value"], task)
+
     def test_malformed_envelopes_and_non_json_numbers_close_the_stream(self):
         envelope = request({"operation": "health"})
         envelope["deploymentGeneration"] = True

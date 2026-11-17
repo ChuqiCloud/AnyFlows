@@ -38,8 +38,6 @@ const events = [
 const requests = []
 const targetWrites = []
 const pluginReviewRequests = []
-const actionProposalRequests = []
-const actionConfirmationRequests = []
 const modelMappingPluginReviewRequests = []
 const errors = []
 let server, browser, page, serverOutput = ''
@@ -102,12 +100,6 @@ try {
         display_name: 'CI monitor reviewer',
         plugin_version: '1.0.0',
         event_count: 2,
-        target_config_version: 4,
-        action_proposal: {
-          actionId: 'active-channel-monitor.target.set-enabled',
-          actionVersion: 1,
-          input: { enabled: true },
-        },
         summary: 'Read-only incident review: <img src=x onerror=alert(1)>',
         checks: [{
           code: 'monitor.recovered',
@@ -116,32 +108,6 @@ try {
           message: 'A recovery event followed the outage.',
           recommendation: 'Continue monitoring the next scheduled probes.',
         }],
-      })
-    }
-    if (path === '/api/admin/channel-monitor/targets/71/action-proposals' && method === 'POST') {
-      const body = request.postDataJSON()
-      actionProposalRequests.push(body)
-      assert.deepEqual(body.plugin_id, 'ci.monitor.review')
-      assert.equal(body.expected_target_version, 4)
-      assert.match(body.idempotency_key, /^[0-9a-f-]{36}$/u)
-      return respond({
-        proposal_key: 'proposal-71', plugin_id: body.plugin_id, target_id: 71,
-        action_id: 'active-channel-monitor.target.set-enabled', action_version: 1,
-        expected_enabled: false, requested_enabled: true, expected_target_version: 4,
-        status: 'pending', expires_at: now + 300, created_at: now,
-        confirmed_at: null, outcome: null,
-      })
-    }
-    if (path === '/api/admin/channel-monitor/action-proposals/proposal-71/confirm' && method === 'POST') {
-      const body = request.postDataJSON()
-      actionConfirmationRequests.push(body)
-      assert.match(body.confirmation_key, /^[0-9a-f-]{36}$/u)
-      return respond({
-        proposal_key: 'proposal-71', plugin_id: 'ci.monitor.review', target_id: 71,
-        action_id: 'active-channel-monitor.target.set-enabled', action_version: 1,
-        expected_enabled: false, requested_enabled: true, expected_target_version: 4,
-        status: 'confirmed', expires_at: now + 300, created_at: now,
-        confirmed_at: now, outcome: { code: 'confirmed', enabled: true },
       })
     }
     if (path === '/api/admin/channel-model-mapping/plugin-reviewers' && method === 'GET') {
@@ -202,16 +168,6 @@ try {
   await details.getByText(label('channels.activeMonitor.pluginReview.status.pass'), { exact: true }).waitFor()
   assert.equal(await details.locator('img').count(), 0, 'Plugin output is rendered as text, not HTML')
   assert.deepEqual(pluginReviewRequests, [{ plugin_id: 'ci.monitor.review' }])
-  await details.getByRole('button', { name: label('channels.activeMonitor.pluginReview.action.prepare'), exact: true }).click()
-  await details.getByText(label('channels.activeMonitor.pluginReview.action.confirmTitle'), { exact: true }).waitFor()
-  await details.getByText(label('channels.activeMonitor.pluginReview.action.target').replace('{{id}}', '71'), { exact: true }).waitFor()
-  await details.getByRole('checkbox').check()
-  const actionConfirmed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/channel-monitor/action-proposals/proposal-71/confirm' && response.request().method() === 'POST')
-  await details.getByRole('button', { name: label('channels.activeMonitor.pluginReview.action.confirm'), exact: true }).click()
-  assert.equal((await actionConfirmed).status(), 200)
-  await details.getByText(label('channels.activeMonitor.pluginReview.action.completed'), { exact: true }).waitFor()
-  assert.equal(actionProposalRequests.length, 1)
-  assert.equal(actionConfirmationRequests.length, 1)
 
   await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.channel') }).locator('select').selectOption('11')
   await details.locator('fieldset label').filter({ hasText: label('channels.activeMonitor.credential') }).locator('select').selectOption('12')

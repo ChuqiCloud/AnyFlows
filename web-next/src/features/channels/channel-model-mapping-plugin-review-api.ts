@@ -23,7 +23,6 @@ export type ChannelModelMappingPluginReview = {
   mapping_count: number
   summary: string
   checks: ChannelModelMappingPluginReviewCheck[]
-  ui_views: unknown[]
 }
 
 const key = ['channel-model-mapping-plugin-review'] as const

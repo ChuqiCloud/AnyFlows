@@ -107,10 +107,6 @@
     "rollback": "Roll back to this version",
     "grantsHint": "Select only the read capabilities required for this deployment. Grants are recorded as a separate deployment fact.",
     "configHint": "Configuration must be a JSON object. Do not enter keys, passwords, or other credentials.",
-    "configEditor": {
-      "advanced": "Advanced JSON",
-      "hint": "This configuration is sent to the plugin. Never enter passwords, API keys, tokens, cookies, or other credentials."
-    },
     "fields": {
       "pluginId": "Plugin ID",
       "version": "Version",
@@ -150,21 +146,6 @@
       "grants": "Granted capabilities",
       "history": "View history",
       "empty": "There are no plugin deployments."
-    },
-    "ui": {
-      "section": "Plugin information",
-      "scope": "Static text rendered by AnyFlows; this area does not run plugin code or actions."
-    },
-    "events": {
-      "title": "Plugin event results",
-      "description": "Read-only reports returned by installed plugins. Results expire after 30 days.",
-      "error": "Could not load plugin event results.",
-      "empty": "No completed plugin event results are available.",
-      "delivered": "Completed",
-      "completedAt": "Completed {{time}}",
-      "attempts": "Attempts: {{count}}",
-      "result": "View result JSON",
-      "more": "Load more results"
     },
     "errors": {
       "action": "The operation did not complete. Refresh the current state and retry, or check the service logs.",
@@ -796,21 +777,6 @@
         "eventCount": "Analyzed {{count}} events",
         "noChecks": "The plugin returned no analysis items.",
         "recommendation": "Recommendation",
-        "action": {
-          "suggestion": "The plugin suggested a target state change.",
-          "suggestionDetail": "Suggested target state: {{enabled}}. Creating a proposal does not change settings.",
-          "prepare": "Create confirmation proposal",
-          "prepareError": "Could not create the proposal. The target or plugin generation may have changed; run the analysis again.",
-          "confirmTitle": "Confirm target state change",
-          "target": "Target #{{id}}",
-          "change": "Change: {{before}} → {{after}}",
-          "expires": "Proposal expires at {{time}}",
-          "confirmCheck": "I reviewed the target and change and confirm the host should save this setting.",
-          "confirm": "Confirm and apply",
-          "confirmError": "Confirmation did not complete. The host rejects stale targets or revoked plugin grants.",
-          "completed": "The setting was updated. Re-enabling requires a new plugin proposal and administrator confirmation.",
-          "unavailable": "The proposal expired, the target changed, or plugin authorization was revoked. Run the analysis again."
-        },
         "status": { "pass": "Pass", "info": "Info", "warning": "Warning", "fail": "Failed" }
       }
     },
@@ -8178,28 +8144,6 @@
       "showHistory": "View balance history",
       "hideHistory": "Hide history",
       "history": "Balance snapshot history",
-      "pluginReview": {
-        "open": "Plugin analysis",
-        "title": "Analyze stored balance snapshots",
-        "subtitle": "Choose an authorized analysis plugin. It receives only balance amounts, units, status, and observation times.",
-        "consent": "By default, up to 20 stored balance snapshots are sent to the selected plugin without refreshing the upstream. Treat the result as a suggestion; the plugin receives no credentials and cannot affect your AnyFlows wallet.",
-        "allowExternalReads": "Also allow this plugin to read the account profile or current balance through AnyFlows for this review. Balance reads create a new snapshot; the plugin never receives the credential.",
-        "plugin": "Analysis plugin",
-        "run": "Analyze",
-        "listError": "Authorized analysis plugins could not be loaded.",
-        "none": "No plugin has been granted the balance snapshot analysis capability.",
-        "runError": "Analysis failed. Try again.",
-        "snapshotRange": "{{count}} records · {{from}} to {{to}}",
-        "noChecks": "The plugin returned no checks.",
-        "recommendation": "Recommendation",
-        "close": "Close",
-        "status": {
-          "pass": "Pass",
-          "info": "Info",
-          "warning": "Warning",
-          "fail": "Issue"
-        }
-      },
       "historyError": "Balance history could not be loaded.",
       "noHistory": "No historical snapshots yet.",
       "unlink": "Unlink",

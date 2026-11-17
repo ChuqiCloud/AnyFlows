@@ -364,58 +364,6 @@
         ],
         "type": "object"
       },
-      "HostHttpMethod": {
-        "enum": [
-          "GET",
-          "HEAD"
-        ],
-        "type": "string"
-      },
-      "HostHttpRequestProposal": {
-        "additionalProperties": false,
-        "properties": {
-          "endpointId": {
-            "maxLength": 128,
-            "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
-            "type": "string"
-          },
-          "method": {
-            "$ref": "#/components/schemas/HostHttpMethod"
-          },
-          "query": {
-            "additionalProperties": {
-              "maxLength": 512,
-              "type": "string"
-            },
-            "maxProperties": 32,
-            "propertyNames": {
-              "pattern": "^[A-Za-z0-9_.-]{1,64}$"
-            },
-            "type": "object"
-          }
-        },
-        "required": [
-          "endpointId",
-          "method"
-        ],
-        "type": "object"
-      },
-      "HostHttpResponseProjection": {
-        "additionalProperties": false,
-        "properties": {
-          "payload": {},
-          "statusCode": {
-            "maximum": 299,
-            "minimum": 200,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "statusCode",
-          "payload"
-        ],
-        "type": "object"
-      },
       "InvocationMetadata": {
         "additionalProperties": true,
         "properties": {
@@ -432,6 +380,33 @@
         "required": [
           "requestId",
           "deadlineUnixMs"
+        ],
+        "type": "object"
+      },
+      "JsonPatchOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "enum": [
+              "add",
+              "remove",
+              "replace"
+            ]
+          },
+          "path": {
+            "items": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "value": {}
+        },
+        "required": [
+          "op",
+          "path"
         ],
         "type": "object"
       },
@@ -497,6 +472,45 @@
               "input"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "capabilityId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+                "type": "string"
+              },
+              "capabilityVersion": {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "connectionId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "operation": {
+                "const": "invoke_task"
+              },
+              "publicConfig": {
+                "type": "object"
+              },
+              "task": {
+                "$ref": "#/components/schemas/PluginTaskOperation"
+              }
+            },
+            "required": [
+              "operation",
+              "connectionId",
+              "publicConfig",
+              "capabilityId",
+              "capabilityVersion",
+              "task"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -518,7 +532,8 @@
             "const": [
               "manifest",
               "health",
-              "invoke_capability"
+              "invoke_capability",
+              "invoke_task"
             ]
           }
         },
@@ -677,6 +692,22 @@
             "additionalProperties": false,
             "properties": {
               "kind": {
+                "const": "task"
+              },
+              "value": {
+                "$ref": "#/components/schemas/PluginTaskResult"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
                 "const": "error"
               },
               "value": {
@@ -732,21 +763,9 @@
             "type": "string"
           },
           "pluginVersion": {
-            "$ref": "#/components/schemas/PluginVersion"
-          },
-          "uiContributions": {
-            "items": {
-              "$ref": "#/components/schemas/PluginUiContribution"
-            },
-            "maxItems": 16,
-            "type": "array"
-          },
-          "uiViews": {
-            "items": {
-              "$ref": "#/components/schemas/PluginUiView"
-            },
-            "maxItems": 8,
-            "type": "array"
+            "maxLength": 128,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+            "type": "string"
           }
         },
         "required": [
@@ -760,403 +779,520 @@
         ],
         "type": "object"
       },
-      "PluginProxyError": {
+      "PluginTaskOperation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "idempotency_key": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "const": "submit"
+              },
+              "model": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "request": {}
+            },
+            "required": [
+              "kind",
+              "model",
+              "request"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "status"
+              },
+              "task_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "task_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "result"
+              },
+              "response": {},
+              "task_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "task_id",
+              "response"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "PluginTaskResult": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "submitted"
+              },
+              "value": {
+                "additionalProperties": false,
+                "properties": {
+                  "progress_basis_points": {
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "state": {
+                    "enum": [
+                      "submitted",
+                      "queued",
+                      "running"
+                    ]
+                  },
+                  "task_id": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "state"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "status"
+              },
+              "value": {
+                "additionalProperties": false,
+                "properties": {
+                  "failure_code": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "progress_basis_points": {
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "state": {
+                    "enum": [
+                      "submitted",
+                      "queued",
+                      "running",
+                      "succeeded",
+                      "failed"
+                    ]
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "result"
+              },
+              "value": {
+                "additionalProperties": false,
+                "properties": {
+                  "output": {},
+                  "task_id": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "output"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ProviderHeaderPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "remove": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "set": {
+            "additionalProperties": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxProperties": 32,
+            "type": "object"
+          }
+        },
+        "required": [
+          "set",
+          "remove"
+        ],
+        "type": "object"
+      },
+      "ProviderRequestTransformInput": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "headers": {
+            "additionalProperties": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "type": "object"
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "pattern": "^/[^?#\\\\]*$",
+            "type": "string"
+          },
+          "protocol": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_]+$",
+            "type": "string"
+          },
+          "upstreamModel": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "method",
+          "path",
+          "model",
+          "headers",
+          "body"
+        ],
+        "type": "object"
+      },
+      "ProviderRequestTransformOutput": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "continue",
+              "reject"
+            ]
+          },
+          "body": {},
+          "headers": {
+            "$ref": "#/components/schemas/ProviderHeaderPatch"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "pattern": "^/[^?#\\\\]*$",
+            "type": "string"
+          },
+          "rejection": {
+            "$ref": "#/components/schemas/ProviderTransformRejection"
+          }
+        },
+        "required": [
+          "action",
+          "headers"
+        ],
+        "type": "object"
+      },
+      "ProviderTransformRejection": {
         "additionalProperties": false,
         "properties": {
           "code": {
-            "enum": [
-              "authentication_required",
-              "forbidden",
-              "rate_limited",
-              "temporarily_unavailable",
-              "unsupported",
-              "invalid_response"
-            ]
-          }
-        },
-        "required": [
-          "code"
-        ],
-        "type": "object"
-      },
-      "PluginProxyRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "artifactSha256": {
-            "pattern": "^[a-f0-9]{64}$",
-            "type": "string"
-          },
-          "capabilityId": {
             "maxLength": 128,
-            "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+            "minLength": 1,
             "type": "string"
           },
-          "capabilityVersion": {
-            "maximum": 65535,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "deploymentGeneration": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "pluginId": {
-            "maxLength": 128,
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
-            "type": "string"
-          },
-          "pluginVersion": {
-            "$ref": "#/components/schemas/PluginVersion"
-          },
-          "protocolVersion": {
-            "const": 1
-          },
-          "proxyRequestId": {
-            "pattern": "^[A-Za-z0-9_.-]{1,64}$",
-            "type": "string"
-          },
-          "request": {
-            "$ref": "#/components/schemas/HostHttpRequestProposal"
-          },
-          "requestId": {
-            "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "message": {
+            "maxLength": 512,
+            "minLength": 1,
             "type": "string"
           }
         },
         "required": [
-          "protocolVersion",
-          "pluginId",
-          "pluginVersion",
-          "artifactSha256",
-          "deploymentGeneration",
-          "requestId",
-          "capabilityId",
-          "capabilityVersion",
-          "proxyRequestId",
-          "request"
+          "code",
+          "message"
         ],
         "type": "object"
       },
-      "PluginProxyResponse": {
-        "additionalProperties": false,
-        "properties": {
-          "artifactSha256": {
-            "pattern": "^[a-f0-9]{64}$",
-            "type": "string"
-          },
-          "capabilityId": {
-            "maxLength": 128,
-            "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
-            "type": "string"
-          },
-          "capabilityVersion": {
-            "maximum": 65535,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "deploymentGeneration": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "pluginId": {
-            "maxLength": 128,
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
-            "type": "string"
-          },
-          "pluginVersion": {
-            "$ref": "#/components/schemas/PluginVersion"
-          },
-          "protocolVersion": {
-            "const": 1
-          },
-          "proxyRequestId": {
-            "pattern": "^[A-Za-z0-9_.-]{1,64}$",
-            "type": "string"
-          },
-          "requestId": {
-            "pattern": "^[A-Za-z0-9_.-]{1,128}$",
-            "type": "string"
-          },
-          "result": {
-            "$ref": "#/components/schemas/PluginProxyResult"
-          }
-        },
-        "required": [
-          "protocolVersion",
-          "pluginId",
-          "pluginVersion",
-          "artifactSha256",
-          "deploymentGeneration",
-          "requestId",
-          "capabilityId",
-          "capabilityVersion",
-          "proxyRequestId",
-          "result"
-        ],
-        "type": "object"
-      },
-      "PluginProxyResult": {
+      "RequestProcessingEffect": {
         "oneOf": [
           {
             "additionalProperties": false,
             "properties": {
               "kind": {
-                "const": "response"
+                "const": "json_patch"
               },
               "value": {
-                "$ref": "#/components/schemas/HostHttpResponseProjection"
-              }
-            },
-            "required": [
-              "kind",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "kind": {
-                "const": "error"
-              },
-              "value": {
-                "$ref": "#/components/schemas/PluginProxyError"
-              }
-            },
-            "required": [
-              "kind",
-              "value"
-            ],
-            "type": "object"
-          }
-        ]
-      },
-      "PluginUiBlock": {
-        "oneOf": [
-          {
-            "additionalProperties": false,
-            "properties": {
-              "text": {
-                "$ref": "#/components/schemas/PluginUiText"
-              },
-              "type": {
-                "const": "text"
-              }
-            },
-            "required": [
-              "type",
-              "text"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "label": {
-                "$ref": "#/components/schemas/PluginUiText"
-              },
-              "tone": {
-                "$ref": "#/components/schemas/PluginUiTone"
-              },
-              "type": {
-                "const": "badge"
-              }
-            },
-            "required": [
-              "type",
-              "label",
-              "tone"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "label": {
-                "$ref": "#/components/schemas/PluginUiText"
-              },
-              "type": {
-                "const": "metric"
-              },
-              "value": {
-                "$ref": "#/components/schemas/PluginUiText"
-              }
-            },
-            "required": [
-              "type",
-              "label",
-              "value"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "columns": {
-                "items": {
-                  "$ref": "#/components/schemas/PluginUiText"
+                "additionalProperties": false,
+                "properties": {
+                  "operations": {
+                    "items": {
+                      "$ref": "#/components/schemas/JsonPatchOperation"
+                    },
+                    "maxItems": 128,
+                    "type": "array"
+                  }
                 },
-                "maxItems": 8,
-                "minItems": 1,
-                "type": "array"
+                "required": [
+                  "operations"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "header_patch"
               },
-              "rows": {
-                "items": {
-                  "items": {
-                    "$ref": "#/components/schemas/PluginUiText"
+              "value": {
+                "additionalProperties": false,
+                "properties": {
+                  "remove": {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
                   },
-                  "maxItems": 8,
-                  "minItems": 1,
-                  "type": "array"
+                  "set": {
+                    "additionalProperties": {
+                      "maxLength": 8192,
+                      "type": "string"
+                    },
+                    "maxProperties": 64,
+                    "type": "object"
+                  }
                 },
-                "maxItems": 16,
-                "type": "array"
-              },
-              "type": {
-                "const": "table"
+                "required": [
+                  "set",
+                  "remove"
+                ],
+                "type": "object"
               }
             },
             "required": [
-              "type",
-              "columns",
-              "rows"
-            ],
-            "type": "object"
-          },
-          {
-            "additionalProperties": false,
-            "properties": {
-              "description": {
-                "$ref": "#/components/schemas/PluginUiText"
-              },
-              "title": {
-                "$ref": "#/components/schemas/PluginUiText"
-              },
-              "type": {
-                "const": "info_card"
-              }
-            },
-            "required": [
-              "type",
-              "title"
+              "kind",
+              "value"
             ],
             "type": "object"
           }
         ]
       },
-      "PluginUiContribution": {
+      "RequestProcessingFinding": {
         "additionalProperties": false,
         "properties": {
-          "component": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "recommendation": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "status": {
             "enum": [
-              "info_card"
+              "info",
+              "warning",
+              "fail"
             ]
-          },
-          "description": {
-            "$ref": "#/components/schemas/PluginUiText"
-          },
-          "id": {
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "RequestProcessingInput": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {},
+          "format": {
             "maxLength": 64,
             "minLength": 1,
-            "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
             "type": "string"
           },
-          "slot": {
+          "headers": {
+            "additionalProperties": {
+              "maxLength": 8192,
+              "type": "string"
+            },
+            "maxProperties": 64,
+            "type": "object"
+          },
+          "model": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "responseBody": {},
+          "responseStatus": {
+            "maximum": 599,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "stage": {
             "enum": [
-              "plugin_management"
+              "ingress",
+              "request",
+              "outbound",
+              "egress",
+              "reply",
+              "report"
             ]
           },
-          "title": {
-            "$ref": "#/components/schemas/PluginUiText"
-          }
-        },
-        "required": [
-          "id",
-          "slot",
-          "component",
-          "title"
-        ],
-        "type": "object"
-      },
-      "PluginUiText": {
-        "additionalProperties": false,
-        "maxProperties": 2,
-        "minProperties": 1,
-        "properties": {
-          "en": {
-            "maxLength": 512,
-            "minLength": 1,
-            "not": {
-              "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
-            },
+          "upstreamModel": {
+            "maxLength": 256,
             "type": "string"
           },
-          "zh": {
-            "maxLength": 512,
-            "minLength": 1,
-            "not": {
-              "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
-            },
-            "type": "string"
-          }
+          "usage": {}
         },
+        "required": [
+          "stage",
+          "requestId",
+          "format",
+          "path",
+          "headers",
+          "body"
+        ],
         "type": "object"
       },
-      "PluginUiTone": {
-        "enum": [
-          "neutral",
-          "success",
-          "warning",
-          "danger"
-        ],
-        "type": "string"
-      },
-      "PluginUiView": {
+      "RequestProcessingOutput": {
         "additionalProperties": false,
         "properties": {
-          "blocks": {
+          "action": {
+            "enum": [
+              "continue",
+              "reject",
+              "stop"
+            ]
+          },
+          "effects": {
             "items": {
-              "$ref": "#/components/schemas/PluginUiBlock"
+              "$ref": "#/components/schemas/RequestProcessingEffect"
             },
-            "maxItems": 24,
-            "minItems": 1,
+            "maxItems": 32,
             "type": "array"
           },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RequestProcessingFinding"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "message": {
+            "maxLength": 1024,
             "type": "string"
-          },
-          "schemaVersion": {
-            "const": 1
-          },
-          "slot": {
-            "$ref": "#/components/schemas/PluginUiViewSlot"
           }
         },
         "required": [
-          "id",
-          "schemaVersion",
-          "slot",
-          "blocks"
+          "action",
+          "effects",
+          "findings"
         ],
         "type": "object"
-      },
-      "PluginUiViewSlot": {
-        "enum": [
-          "plugin_management",
-          "channel_monitor",
-          "channel_model_mapping",
-          "merchant_service",
-          "external_account"
-        ],
-        "type": "string"
-      },
-      "PluginVersion": {
-        "maxLength": 128,
-        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
-        "type": "string"
       }
     },
     "securitySchemes": {

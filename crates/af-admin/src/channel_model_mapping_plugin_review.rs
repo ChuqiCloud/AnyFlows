@@ -64,7 +64,6 @@ pub struct ChannelModelMappingPluginReview {
     pub mapping_count: u32,
     pub summary: String,
     pub checks: Vec<ChannelModelMappingPluginReviewCheck>,
-    pub ui_views: Vec<af_plugin_contract::PluginUiView>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -210,14 +209,6 @@ impl ChannelModelMappingPluginReviewService for DatabaseChannelModelMappingPlugi
                     mapping_count,
                     summary: result.summary,
                     checks: result.checks.into_iter().map(Into::into).collect(),
-                    ui_views: result
-                        .reviewer
-                        .ui_views
-                        .into_iter()
-                        .filter(|view| {
-                            view.slot == af_plugin_contract::PluginUiViewSlot::ChannelModelMapping
-                        })
-                        .collect(),
                 })
             })
             .await
@@ -241,7 +232,6 @@ fn review_contract<'a>(
         max_output_bytes: MAX_REVIEW_OUTPUT_BYTES,
         max_checks: MAX_REVIEW_CHECKS,
         budget: REVIEW_BUDGET,
-        action_proposal_capability: None,
     }
 }
 

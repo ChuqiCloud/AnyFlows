@@ -6,8 +6,7 @@ use af_admin::{
     ActiveChannelMonitorPluginReviewCheck, ActiveChannelMonitorPluginReviewError,
     ActiveChannelMonitorPluginReviewService, ActiveChannelMonitorPluginReviewStatus,
     ActiveChannelMonitorService, ActiveChannelMonitorServiceError, ActiveChannelMonitorTarget,
-    ActiveChannelMonitorTargetInput, HostActionProposal, PluginActionProposalRecord,
-    PluginActionProposalStatus, PluginUiView, SessionAuthentication, SessionAuthenticator,
+    ActiveChannelMonitorTargetInput, SessionAuthentication, SessionAuthenticator,
 };
 use af_domain::{ChannelId, CredentialId};
 use axum::{
@@ -136,82 +135,6 @@ pub struct ActiveChannelMonitorPluginReviewRequest {
     pub plugin_id: String,
 }
 
-#[derive(Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ActiveChannelMonitorPluginActionProposalRequest {
-    #[schema(min_length = 1, max_length = 128)]
-    pub plugin_id: String,
-    #[schema(minimum = 1)]
-    pub expected_target_version: i64,
-    #[schema(min_length = 1, max_length = 128)]
-    pub idempotency_key: String,
-}
-
-#[derive(Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ActiveChannelMonitorPluginActionConfirmRequest {
-    #[schema(min_length = 1, max_length = 128)]
-    pub confirmation_key: String,
-}
-
-#[derive(Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PluginActionProposalStatusResponse {
-    Pending,
-    Confirmed,
-    Expired,
-    Stale,
-    Revoked,
-}
-
-#[derive(Serialize, ToSchema)]
-pub struct ActiveChannelMonitorPluginActionProposalResponse {
-    #[schema(min_length = 1, max_length = 36)]
-    pub proposal_key: String,
-    #[schema(min_length = 1, max_length = 128)]
-    pub plugin_id: String,
-    pub target_id: i64,
-    #[schema(min_length = 1, max_length = 96)]
-    pub action_id: String,
-    pub action_version: u16,
-    pub expected_enabled: bool,
-    pub requested_enabled: bool,
-    pub expected_target_version: i64,
-    pub status: PluginActionProposalStatusResponse,
-    pub expires_at: i64,
-    pub created_at: i64,
-    pub confirmed_at: Option<i64>,
-    pub outcome: Option<serde_json::Value>,
-}
-
-impl From<PluginActionProposalRecord> for ActiveChannelMonitorPluginActionProposalResponse {
-    fn from(value: PluginActionProposalRecord) -> Self {
-        Self {
-            proposal_key: value.proposal_key,
-            plugin_id: value.plugin_id,
-            target_id: value.target_id,
-            action_id: value.action_id,
-            action_version: value.action_version,
-            expected_enabled: value.expected_enabled,
-            requested_enabled: value.requested_enabled,
-            expected_target_version: value.expected_target_version,
-            status: match value.status {
-                PluginActionProposalStatus::Pending => PluginActionProposalStatusResponse::Pending,
-                PluginActionProposalStatus::Confirmed => {
-                    PluginActionProposalStatusResponse::Confirmed
-                }
-                PluginActionProposalStatus::Expired => PluginActionProposalStatusResponse::Expired,
-                PluginActionProposalStatus::Stale => PluginActionProposalStatusResponse::Stale,
-                PluginActionProposalStatus::Revoked => PluginActionProposalStatusResponse::Revoked,
-            },
-            expires_at: value.expires_at,
-            created_at: value.created_at,
-            confirmed_at: value.confirmed_at,
-            outcome: value.outcome,
-        }
-    }
-}
-
 #[derive(Serialize, ToSchema)]
 pub struct ActiveChannelMonitorPluginReviewerResponse {
     #[schema(min_length = 1, max_length = 128)]
@@ -251,24 +174,6 @@ pub struct ActiveChannelMonitorPluginReviewCheckResponse {
 }
 
 #[derive(Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ActiveChannelMonitorPluginActionHintResponse {
-    pub action_id: String,
-    pub action_version: u16,
-    pub input: serde_json::Value,
-}
-
-impl From<HostActionProposal> for ActiveChannelMonitorPluginActionHintResponse {
-    fn from(value: HostActionProposal) -> Self {
-        Self {
-            action_id: value.action_id.as_str().to_owned(),
-            action_version: value.action_version,
-            input: value.input,
-        }
-    }
-}
-
-#[derive(Serialize, ToSchema)]
 pub struct ActiveChannelMonitorPluginReviewResponse {
     #[schema(min_length = 1, max_length = 128)]
     pub plugin_id: String,
@@ -278,14 +183,10 @@ pub struct ActiveChannelMonitorPluginReviewResponse {
     pub plugin_version: String,
     #[schema(minimum = 0)]
     pub event_count: u32,
-    pub target_config_version: i64,
     #[schema(min_length = 1, max_length = 2048)]
     pub summary: String,
     #[schema(max_items = 64)]
     pub checks: Vec<ActiveChannelMonitorPluginReviewCheckResponse>,
-    #[schema(value_type = Vec<serde_json::Value>, max_items = 8)]
-    pub ui_views: Vec<PluginUiView>,
-    pub action_proposal: Option<ActiveChannelMonitorPluginActionHintResponse>,
 }
 
 impl From<ActiveChannelMonitorPluginReviewCheck> for ActiveChannelMonitorPluginReviewCheckResponse {
@@ -379,14 +280,6 @@ pub fn build_active_channel_monitor_router(
         .route(
             "/api/admin/channel-monitor/targets/{id}/plugin-review",
             axum::routing::post(review_monitor_events),
-        )
-        .route(
-            "/api/admin/channel-monitor/targets/{id}/action-proposals",
-            axum::routing::post(propose_monitor_action),
-        )
-        .route(
-            "/api/admin/channel-monitor/action-proposals/{proposal_key}/confirm",
-            axum::routing::post(confirm_monitor_action_proposal),
         )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(authentication)
@@ -555,65 +448,9 @@ async fn review_monitor_events(
         display_name: review.display_name,
         plugin_version: review.plugin_version,
         event_count: review.event_count,
-        target_config_version: review.target_config_version,
         summary: review.summary,
         checks: review.checks.into_iter().map(Into::into).collect(),
-        ui_views: review.ui_views,
-        action_proposal: review.action_proposal.map(Into::into),
     }))
-}
-
-#[utoipa::path(post,path="/api/admin/channel-monitor/targets/{id}/action-proposals",operation_id="proposeAdminChannelMonitorTargetAction",summary="为监控目标创建插件动作提案",params(("id"=i64,Path,minimum=1)),request_body=ActiveChannelMonitorPluginActionProposalRequest,responses((status=200,body=ActiveChannelMonitorPluginActionProposalResponse)),security(("bearerAuth" = []))) ]
-async fn propose_monitor_action(
-    State(state): State<ActiveChannelMonitorState>,
-    Path(target_id): Path<i64>,
-    Extension(request_id): Extension<af_telemetry::RequestId>,
-    Extension(authentication): Extension<SessionAuthentication>,
-    request: Result<Json<ActiveChannelMonitorPluginActionProposalRequest>, JsonRejection>,
-) -> Result<Response, ManagementError> {
-    if target_id <= 0 {
-        return Err(ManagementError::InvalidRequest);
-    }
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let proposal = state
-        .plugin_review
-        .propose_target_action(
-            authentication.principal(),
-            target_id,
-            request.plugin_id,
-            request.expected_target_version,
-            request.idempotency_key,
-            request_id.as_str().to_owned(),
-        )
-        .await
-        .map_err(map_plugin_review_error)?;
-    Ok(no_store_json(
-        ActiveChannelMonitorPluginActionProposalResponse::from(proposal),
-    ))
-}
-
-#[utoipa::path(post,path="/api/admin/channel-monitor/action-proposals/{proposal_key}/confirm",operation_id="confirmAdminChannelMonitorActionProposal",summary="确认并执行渠道监控目标插件动作",params(("proposal_key"=String,Path,min_length=1,max_length=36)),request_body=ActiveChannelMonitorPluginActionConfirmRequest,responses((status=200,body=ActiveChannelMonitorPluginActionProposalResponse)),security(("bearerAuth" = []))) ]
-async fn confirm_monitor_action_proposal(
-    State(state): State<ActiveChannelMonitorState>,
-    Path(proposal_key): Path<String>,
-    Extension(request_id): Extension<af_telemetry::RequestId>,
-    Extension(authentication): Extension<SessionAuthentication>,
-    request: Result<Json<ActiveChannelMonitorPluginActionConfirmRequest>, JsonRejection>,
-) -> Result<Response, ManagementError> {
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let proposal = state
-        .plugin_review
-        .confirm_target_action(
-            authentication.principal(),
-            proposal_key,
-            request.confirmation_key,
-            request_id.as_str().to_owned(),
-        )
-        .await
-        .map_err(map_plugin_review_error)?;
-    Ok(no_store_json(
-        ActiveChannelMonitorPluginActionProposalResponse::from(proposal),
-    ))
 }
 
 #[derive(OpenApi)]
@@ -626,9 +463,7 @@ async fn confirm_monitor_action_proposal(
         delete_target,
         list_events,
         list_plugin_reviewers,
-        review_monitor_events,
-        propose_monitor_action,
-        confirm_monitor_action_proposal
+        review_monitor_events
     ),
     components(schemas(
         ActiveChannelMonitorSettingsRequest,
@@ -638,11 +473,6 @@ async fn confirm_monitor_action_proposal(
         ActiveChannelMonitorEventResponse,
         ActiveChannelMonitorEventKindResponse,
         ActiveChannelMonitorPluginReviewRequest,
-        ActiveChannelMonitorPluginActionProposalRequest,
-        ActiveChannelMonitorPluginActionConfirmRequest,
-        PluginActionProposalStatusResponse,
-        ActiveChannelMonitorPluginActionProposalResponse,
-        ActiveChannelMonitorPluginActionHintResponse,
         ActiveChannelMonitorPluginReviewerResponse,
         ActiveChannelMonitorPluginReviewerListResponse,
         ActiveChannelMonitorPluginReviewStatusResponse,
@@ -664,7 +494,7 @@ mod tests {
     fn every_active_monitor_endpoint_declares_bearer_authentication() {
         let document = serde_json::to_value(active_channel_monitor_openapi_document()).unwrap();
         let paths = document["paths"].as_object().unwrap();
-        assert_eq!(paths.len(), 8);
+        assert_eq!(paths.len(), 6);
         for path in paths.values() {
             for operation in path.as_object().unwrap().values() {
                 assert_eq!(
@@ -703,11 +533,6 @@ mod tests {
         assert_eq!(
             document["components"]["schemas"]["ActiveChannelMonitorPluginReviewStatusResponse"]["enum"],
             serde_json::json!(["pass", "info", "warning", "fail"])
-        );
-        assert_eq!(
-            document["components"]["schemas"]["ActiveChannelMonitorPluginReviewResponse"]["properties"]
-                ["ui_views"]["maxItems"],
-            8
         );
     }
 }

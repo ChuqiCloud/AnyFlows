@@ -17,8 +17,10 @@ use af_httpclient::{HeaderMap, HeaderValue, Method, PooledClient, StatusCode};
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
     CapabilityRequirement, CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
-    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId, PluginManifest,
-    PluginProxyRequest, PluginProxyResponse, PluginVersion, SideEffectClass,
+    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
+    PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId, PluginManifest, PluginVersion,
+    ProviderRequestTransformInput, ProviderRequestTransformOutput, RequestProcessingInput,
+    RequestProcessingOutput, RequestProcessingStage, SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -45,15 +47,8 @@ pub use sub2api::{Sub2ApiConnector, sub2api_registration};
 
 const ACCOUNT_PROFILE_READ: &str = "external.account.profile.read";
 const ACCOUNT_BALANCE_READ: &str = "external.account.balance.read";
-
-/// Per-invocation host service for a narrowly scoped external read callback.
-/// Implementations must bind the request to the authenticated account and to a
-/// host-owned endpoint policy; they must never forward plugin-supplied URLs or
-/// headers.
-#[async_trait]
-pub trait PluginProxyDispatcher: Send + Sync {
-    async fn dispatch(&self, request: PluginProxyRequest) -> PluginProxyResponse;
-}
+/// Capability ID for a host-controlled, credential-free provider request transform.
+pub const PROVIDER_REQUEST_TRANSFORM: &str = PROVIDER_REQUEST_TRANSFORM_CAPABILITY;
 
 /// Reviewed connector implementation compiled into the AnyFlows host.
 pub trait PlatformConnector: Send + Sync {
@@ -877,6 +872,40 @@ impl ConnectorRegistry {
         Ok(CapabilityResult { output })
     }
 
+    /// Run the provider request transform capability through the generic
+    /// contract and apply its host-side safety checks. The caller still owns
+    /// channel selection, credentials, billing and the actual HTTP request.
+    pub async fn transform_provider_request(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        request: ProviderRequestTransformInput,
+    ) -> Result<ProviderRequestTransformOutput, ConnectorOperationError> {
+        request
+            .validate()
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+        let capability_id = CapabilityId::new(PROVIDER_REQUEST_TRANSFORM.to_owned())
+            .expect("static provider transform capability ID is valid");
+        let result = self
+            .invoke_capability(
+                negotiated,
+                invocation,
+                &capability_id,
+                CapabilityInvocation {
+                    capability_version: 1,
+                    input: serde_json::to_value(&request)
+                        .map_err(|_| ConnectorOperationError::InvalidInvocation)?,
+                },
+            )
+            .await?;
+        let output: ProviderRequestTransformOutput = serde_json::from_value(result.output)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        output
+            .validate_against(&request)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        Ok(output)
+    }
+
     pub fn plugin_ids(&self) -> impl Iterator<Item = &PluginId> {
         self.connectors.keys()
     }
@@ -1193,6 +1222,36 @@ pub enum ConnectorOperationError {
     Connector(ConnectorError),
 }
 
+/// Decode and validate the redacted request snapshot supplied to a request
+/// processing capability.  This helper is intentionally separate from the
+/// relay pipeline so callers can add the capability without exposing a
+/// credential or database handle to the plugin.
+pub fn validate_request_processing_input(
+    value: Value,
+) -> Result<RequestProcessingInput, ConnectorOperationError> {
+    let input = serde_json::from_value::<RequestProcessingInput>(value)
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    input
+        .validate()
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    Ok(input)
+}
+
+/// Decode and validate a plugin's bounded request processing proposal.  The
+/// stage comes from the host rather than from plugin output and therefore
+/// cannot be forged by a plugin.
+pub fn validate_request_processing_output(
+    value: Value,
+    stage: RequestProcessingStage,
+) -> Result<RequestProcessingOutput, ConnectorOperationError> {
+    let output = serde_json::from_value::<RequestProcessingOutput>(value)
+        .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+    output
+        .validate_for(stage)
+        .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+    Ok(output)
+}
+
 fn bearer_headers(credential: &ExternalPlatformCredential) -> Result<HeaderMap, ConnectorError> {
     let mut headers = HeaderMap::new();
     let encoded = Zeroizing::new(format!("Bearer {}", credential.expose()));
@@ -1341,6 +1400,30 @@ mod tests {
         delay: Duration,
     }
 
+    struct ProviderTransformCapability {
+        id: CapabilityId,
+    }
+
+    #[async_trait]
+    impl CapabilityHandler for ProviderTransformCapability {
+        fn capability_id(&self) -> &CapabilityId {
+            &self.id
+        }
+
+        async fn invoke(
+            &self,
+            _invocation: &CapabilityContext<'_>,
+            input: Value,
+        ) -> Result<Value, ConnectorError> {
+            Ok(serde_json::json!({
+                "action": "continue",
+                "path": input["path"],
+                "body": input["body"],
+                "headers": {"set": {"x-provider-mode": "compat"}, "remove": []}
+            }))
+        }
+    }
+
     #[async_trait]
     impl CapabilityHandler for EchoCapability {
         fn capability_id(&self) -> &CapabilityId {
@@ -1415,8 +1498,6 @@ mod tests {
                 "required": ["scope"],
                 "additionalProperties": false
             }),
-            ui_contributions: Vec::new(),
-            ui_views: Vec::new(),
         };
         ConnectorRegistration::new(Arc::new(GenericConnector { manifest })).with_capability_handler(
             Arc::new(EchoCapability {
@@ -1525,8 +1606,6 @@ mod tests {
                     "required": ["baseUrl"],
                     "additionalProperties": false
                 }),
-                ui_contributions: Vec::new(),
-                ui_views: Vec::new(),
             },
             invalid_balance,
         });
@@ -1599,6 +1678,73 @@ mod tests {
             capability_version: 2,
             input,
         }
+    }
+
+    fn provider_transform_registration() -> ConnectorRegistration {
+        let id = CapabilityId::new(PROVIDER_REQUEST_TRANSFORM_CAPABILITY).unwrap();
+        let manifest = PluginManifest {
+            plugin_id: PluginId::new("org.example.provider-transform").unwrap(),
+            display_name: "Provider transform".to_owned(),
+            plugin_version: PluginVersion::new("1.0.0").unwrap(),
+            contract_range: ContractVersionRange::new(
+                ContractVersion::new(1, 0),
+                ContractVersion::new(1, 0),
+            )
+            .unwrap(),
+            capabilities: vec![CapabilityDeclaration {
+                id: id.clone(),
+                version: 1,
+                access: CapabilityAccess::Read,
+                side_effect: SideEffectClass::None,
+                write_semantics: None,
+                input_schema: Some(serde_json::json!({"type":"object"})),
+                output_schema: Some(serde_json::json!({"type":"object"})),
+            }],
+            authentication_modes: vec!["none".to_owned()],
+            limits: ConnectorLimits {
+                max_concurrency: 2,
+                request_timeout_ms: 10_000,
+                max_response_bytes: 1_048_576,
+                max_page_size: 100,
+            },
+            config_schema: serde_json::json!({"type":"object"}),
+        };
+        ConnectorRegistration::new(Arc::new(GenericConnector { manifest }))
+            .with_capability_handler(Arc::new(ProviderTransformCapability { id }))
+    }
+
+    #[tokio::test]
+    async fn provider_transform_keeps_billing_and_authentication_host_owned() {
+        let mut registry = ConnectorRegistry::new();
+        registry
+            .register(provider_transform_registration())
+            .unwrap();
+        let plugin_id = PluginId::new("org.example.provider-transform").unwrap();
+        let negotiated = registry
+            .negotiate(
+                &plugin_id,
+                ContractVersion::new(1, 0),
+                &[required(PROVIDER_REQUEST_TRANSFORM_CAPABILITY)],
+            )
+            .unwrap();
+        let input = ProviderRequestTransformInput {
+            protocol: "openai".to_owned(),
+            method: "POST".to_owned(),
+            path: "/v1/responses".to_owned(),
+            model: "gpt-6.1-sol".to_owned(),
+            upstream_model: None,
+            headers: std::collections::BTreeMap::new(),
+            body: serde_json::json!({"model":"gpt-6.1-sol", "stream":false}),
+        };
+        let output = registry
+            .transform_provider_request(&negotiated, &capability_call_context(), input)
+            .await
+            .unwrap();
+        assert_eq!(
+            output.action,
+            af_plugin_contract::ProviderTransformAction::Continue
+        );
+        assert_eq!(output.headers.set["x-provider-mode"], "compat");
     }
 
     #[tokio::test]
@@ -1783,6 +1929,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn request_processing_boundary_filters_billing_and_secret_mutations() {
+        let input = serde_json::json!({
+            "stage": "outbound",
+            "requestId": "req-1",
+            "format": "openai",
+            "path": "/v1/chat/completions",
+            "model": "gpt-4o",
+            "upstreamModel": "gpt-4o",
+            "headers": {"accept": "application/json"},
+            "body": {"messages": []}
+        });
+        assert!(validate_request_processing_input(input).is_ok());
+
+        let output = serde_json::json!({
+            "action": "continue",
+            "effects": [{"kind": "json_patch", "value": {"operations": [{"op": "replace", "path": ["model"], "value": "other"}]}}],
+            "findings": []
+        });
+        assert!(
+            validate_request_processing_output(output, RequestProcessingStage::Outbound).is_err()
+        );
+    }
+
+    #[test]
+    fn request_report_cannot_request_a_write() {
+        let output = serde_json::json!({
+            "action": "reject",
+            "effects": [],
+            "findings": []
+        });
+        assert!(
+            validate_request_processing_output(output, RequestProcessingStage::Report).is_err()
+        );
+    }
+
     #[tokio::test]
     async fn manifest_deadline_and_activation_state_are_enforced() {
         let mut registry = ConnectorRegistry::new();
@@ -1878,8 +2060,6 @@ mod tests {
                     max_page_size: 100,
                 },
                 config_schema: serde_json::json!({ "type": "object" }),
-                ui_contributions: Vec::new(),
-                ui_views: Vec::new(),
             },
             invalid_balance: false,
         }));

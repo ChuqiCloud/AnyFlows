@@ -3,6 +3,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{ConnectorError, ContractValidationError};
+use crate::{PluginTaskOperation, PluginTaskResult};
+
+/// Capability used by a plugin that proposes bounded Provider request changes.
+pub const PROVIDER_REQUEST_TRANSFORM_CAPABILITY: &str = "provider.request.transform";
 
 /// Correlation and time budget supplied for one host-to-connector invocation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -36,30 +40,48 @@ pub struct CapabilityResult {
     pub output: serde_json::Value,
 }
 
-/// The only request shape a future host-managed external HTTP proxy may accept.
+/// A host-projected provider request passed to a request-transform plugin.
 ///
-/// This proposal contains no URL, headers, credential, or body. `endpoint_id`
-/// must resolve through a host-owned, generation-bound allowlist; query keys are
-/// data only and must be independently validated by that endpoint's policy.
-/// Defining this value does not enable proxy access by itself.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// The host must remove credentials and other protected headers before it
+/// serializes this value. `body` is the client/provider JSON body before the
+/// provider request is sent; it is never a live host object.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct HostHttpRequestProposal {
-    /// Host-registered endpoint identifier, never an address or path.
-    pub endpoint_id: String,
-    pub method: HostHttpMethod,
-    /// Bounded, non-sensitive query fields. The host applies the endpoint's
-    /// exact key allowlist before URL encoding.
+pub struct ProviderRequestTransformInput {
+    pub protocol: String,
+    pub method: String,
+    pub path: String,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_model: Option<String>,
     #[serde(default)]
-    pub query: BTreeMap<String, String>,
+    pub headers: BTreeMap<String, String>,
+    pub body: serde_json::Value,
 }
 
-impl HostHttpRequestProposal {
+impl ProviderRequestTransformInput {
     pub fn validate(&self) -> Result<(), ContractValidationError> {
-        if !valid_endpoint_id(&self.endpoint_id)
-            || self.query.len() > 32
-            || self.query.iter().any(|(key, value)| {
-                !valid_query_key(key) || value.len() > 512 || value.chars().any(char::is_control)
+        const METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+        if self.protocol.is_empty()
+            || self.protocol.len() > 64
+            || self
+                .protocol
+                .bytes()
+                .any(|byte| !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'))
+            || !METHODS.contains(&self.method.as_str())
+            || !valid_provider_path(&self.path)
+            || self.model.is_empty()
+            || self.model.len() > 256
+            || self.model.chars().any(char::is_control)
+            || self.upstream_model.as_ref().is_some_and(|model| {
+                model.is_empty() || model.len() > 256 || model.chars().any(char::is_control)
+            })
+            || self.headers.len() > 64
+            || self.headers.iter().any(|(name, value)| {
+                !valid_header_name(name)
+                    || value.len() > 4096
+                    || value.bytes().any(|byte| byte.is_ascii_control())
+                    || is_protected_header(name)
             })
         {
             return Err(ContractValidationError::InvalidExternalValue);
@@ -68,237 +90,178 @@ impl HostHttpRequestProposal {
     }
 }
 
-/// Safe methods permitted by the host-managed external read proxy.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum HostHttpMethod {
-    Get,
-    Head,
-}
-
-/// A bounded JSON projection returned by a future host proxy continuation.
-///
-/// The host must project the upstream response using its endpoint schema before
-/// constructing this value. Raw response bytes, headers, cookies, and credential
-/// material are intentionally absent. Defining this value does not enable proxy
-/// access by itself.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct HostHttpResponseProjection {
-    pub status_code: u16,
-    pub payload: serde_json::Value,
-}
-
-impl HostHttpResponseProjection {
-    pub fn validate(&self, max_payload_bytes: usize) -> Result<(), ContractValidationError> {
-        if !(200..=299).contains(&self.status_code)
-            || serde_json::to_vec(&self.payload)
-                .map_err(|_| ContractValidationError::InvalidExternalValue)?
-                .len()
-                > max_payload_bytes
-        {
-            return Err(ContractValidationError::InvalidExternalValue);
-        }
-        Ok(())
-    }
-}
-
-/// A nested sidecar-to-host proxy callback bound to one in-flight invocation.
-///
-/// The continuation has no target URL or authorization header. The host resolves
-/// `endpoint_id` from the installed manifest, checks the granted capability and
-/// invocation generation again, injects the linked account credential in memory,
-/// applies the endpoint's query allowlist and returns only a JSON projection.
-/// Current Sidecar protocol handlers do not yet execute this continuation.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginProxyRequest {
-    pub protocol_version: u16,
-    pub plugin_id: crate::PluginId,
-    pub plugin_version: crate::PluginVersion,
-    pub artifact_sha256: String,
-    pub deployment_generation: u64,
-    /// The parent capability invocation's request ID.
-    pub request_id: String,
-    /// Capability grant that authorizes this exact external read operation.
-    pub capability_id: crate::CapabilityId,
-    pub capability_version: u16,
-    /// Unique request/response correlation ID within that invocation.
-    pub proxy_request_id: String,
-    pub request: HostHttpRequestProposal,
-}
-
-impl PluginProxyRequest {
-    pub fn validate(&self) -> Result<(), ContractValidationError> {
-        if self.protocol_version != 1
-            || !valid_digest(&self.artifact_sha256)
-            || self.deployment_generation == 0
-            || !valid_wire_token(&self.request_id, 128)
-            || self.capability_version == 0
-            || !matches!(
-                self.capability_id.as_str(),
-                "external.account.profile.read" | "external.account.balance.read"
-            )
-            || !valid_wire_token(&self.proxy_request_id, 64)
-        {
-            return Err(ContractValidationError::InvalidExternalValue);
-        }
-        self.request.validate()
-    }
-}
-
-/// Host continuation result for one authenticated proxy callback.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginProxyResponse {
-    pub protocol_version: u16,
-    pub plugin_id: crate::PluginId,
-    pub plugin_version: crate::PluginVersion,
-    pub artifact_sha256: String,
-    pub deployment_generation: u64,
-    pub request_id: String,
-    pub capability_id: crate::CapabilityId,
-    pub capability_version: u16,
-    pub proxy_request_id: String,
-    pub result: PluginProxyResult,
-}
-
-impl PluginProxyResponse {
-    pub fn validate(&self, max_payload_bytes: usize) -> Result<(), ContractValidationError> {
-        if self.protocol_version != 1
-            || !valid_digest(&self.artifact_sha256)
-            || self.deployment_generation == 0
-            || !valid_wire_token(&self.request_id, 128)
-            || self.capability_version == 0
-            || !matches!(
-                self.capability_id.as_str(),
-                "external.account.profile.read" | "external.account.balance.read"
-            )
-            || !valid_wire_token(&self.proxy_request_id, 64)
-        {
-            return Err(ContractValidationError::InvalidExternalValue);
-        }
-        if let PluginProxyResult::Response(projection) = &self.result {
-            projection.validate(max_payload_bytes)?;
-        }
-        Ok(())
-    }
-
-    /// Check that a continuation belongs to the exact in-flight request.
-    #[must_use]
-    pub fn matches_request(&self, request: &PluginProxyRequest) -> bool {
-        self.protocol_version == request.protocol_version
-            && self.plugin_id == request.plugin_id
-            && self.plugin_version == request.plugin_version
-            && self.artifact_sha256 == request.artifact_sha256
-            && self.deployment_generation == request.deployment_generation
-            && self.request_id == request.request_id
-            && self.capability_id == request.capability_id
-            && self.capability_version == request.capability_version
-            && self.proxy_request_id == request.proxy_request_id
-    }
-}
-
-/// Either a sanitized success projection or a fixed error classification.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum PluginProxyResult {
-    Response(HostHttpResponseProjection),
-    Error(PluginProxyError),
-}
-
-/// Fixed proxy error classification; upstream body and headers are never
-/// reflected through the continuation.
+/// Whether a provider transform should continue the request or return a
+/// bounded plugin-authored rejection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PluginProxyErrorCode {
-    AuthenticationRequired,
-    Forbidden,
-    RateLimited,
-    TemporarilyUnavailable,
-    Unsupported,
-    InvalidResponse,
+pub enum ProviderTransformAction {
+    Continue,
+    Reject,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// Header changes a provider transform may request. Authentication and
+/// transport headers are deliberately rejected by `validate_against`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginProxyError {
-    pub code: PluginProxyErrorCode,
+pub struct ProviderHeaderPatch {
+    #[serde(default)]
+    pub set: BTreeMap<String, String>,
+    #[serde(default)]
+    pub remove: Vec<String>,
 }
 
-fn valid_digest(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+/// Public error returned when a transform rejects a request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderTransformRejection {
+    pub code: String,
+    pub message: String,
 }
 
-fn valid_wire_token(value: &str, max_bytes: usize) -> bool {
+/// Result of a `provider.request.transform` invocation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderRequestTransformOutput {
+    pub action: ProviderTransformAction,
+    /// Relative upstream path. The host keeps the configured upstream host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Complete replacement JSON body. Protected billing fields must be
+    /// preserved byte-for-byte as JSON values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+    #[serde(default)]
+    pub headers: ProviderHeaderPatch,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<ProviderTransformRejection>,
+}
+
+impl ProviderRequestTransformOutput {
+    /// Validate the output against the original host projection. This is the
+    /// final host-side guard against changing billing, authentication or
+    /// transport semantics.
+    pub fn validate_against(
+        &self,
+        input: &ProviderRequestTransformInput,
+    ) -> Result<(), ContractValidationError> {
+        if let Some(path) = &self.path {
+            if !valid_provider_path(path) {
+                return Err(ContractValidationError::InvalidExternalValue);
+            }
+        }
+        if self.headers.set.len() > 32
+            || self.headers.remove.len() > 32
+            || self.headers.set.iter().any(|(name, value)| {
+                !valid_header_name(name)
+                    || value.len() > 4096
+                    || value.bytes().any(|byte| byte.is_ascii_control())
+                    || is_protected_header(name)
+            })
+            || self
+                .headers
+                .remove
+                .iter()
+                .any(|name| !valid_header_name(name) || is_protected_header(name))
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        let protected = [
+            "model",
+            "stream",
+            "stream_options",
+            "n",
+            "size",
+            "quality",
+            "resolution",
+            "seconds",
+            "duration",
+            "service_tier",
+        ];
+        if let Some(body) = &self.body {
+            if let (Some(input_object), Some(body_object)) =
+                (input.body.as_object(), body.as_object())
+            {
+                for key in protected {
+                    if input_object.get(key) != body_object.get(key) {
+                        return Err(ContractValidationError::InvalidExternalValue);
+                    }
+                }
+            } else if body != &input.body {
+                return Err(ContractValidationError::InvalidExternalValue);
+            }
+        }
+        match (self.action, self.rejection.as_ref()) {
+            (ProviderTransformAction::Continue, None) => Ok(()),
+            (ProviderTransformAction::Continue, Some(_)) => {
+                Err(ContractValidationError::InvalidExternalValue)
+            }
+            (ProviderTransformAction::Reject, Some(rejection))
+                if self.path.is_none()
+                    && self.body.is_none()
+                    && self.headers.set.is_empty()
+                    && self.headers.remove.is_empty()
+                    && valid_rejection(&rejection.code, &rejection.message) =>
+            {
+                Ok(())
+            }
+            (ProviderTransformAction::Reject, _) => {
+                Err(ContractValidationError::InvalidExternalValue)
+            }
+        }
+    }
+}
+
+fn valid_provider_path(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= max_bytes
-        && value
+        && value.len() <= 2048
+        && value.starts_with('/')
+        && !value.starts_with("//")
+        && !value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+            .any(|byte| matches!(byte, b'?' | b'#' | b'\\'))
+        && !value.split('/').any(|segment| segment == "..")
+        && !value.bytes().any(|byte| byte.is_ascii_control())
 }
 
-fn valid_endpoint_id(value: &str) -> bool {
+fn valid_header_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
-        && value.split('.').all(|segment| {
-            !segment.is_empty()
-                && segment.as_bytes()[0].is_ascii_lowercase()
-                && segment.as_bytes()[segment.len() - 1].is_ascii_alphanumeric()
-                && segment
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        })
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn valid_query_key(value: &str) -> bool {
-    if value.is_empty()
-        || value.len() > 64
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
-    {
-        return false;
-    }
-    let mut normalized = String::with_capacity(value.len());
-    let characters = value.chars().collect::<Vec<_>>();
-    for (index, character) in characters.iter().copied().enumerate() {
-        let previous = index.checked_sub(1).and_then(|index| characters.get(index));
-        let next = characters.get(index + 1);
-        let camel_case_boundary = character.is_ascii_uppercase()
-            && previous.is_some_and(|previous| {
-                previous.is_ascii_lowercase()
-                    || (previous.is_ascii_uppercase() && next.is_some_and(char::is_ascii_lowercase))
-            });
-        if camel_case_boundary {
-            normalized.push('_');
-        }
-        if character.is_ascii_alphanumeric() {
-            normalized.push(character.to_ascii_lowercase());
-        } else {
-            normalized.push('_');
-        }
-    }
-    let compact = normalized.replace(['_', '-', '.'], "");
-    !(compact.contains("apikey")
-        || normalized.split(['_', '-', '.']).any(|part| {
-            [
-                "authorization",
-                "auth",
-                "code",
-                "cookie",
-                "credential",
-                "key",
-                "password",
-                "secret",
-                "signature",
-                "token",
-            ]
-            .contains(&part)
-        }))
+fn is_protected_header(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "host"
+            | "content-length"
+            | "content-type"
+            | "content-encoding"
+            | "transfer-encoding"
+            | "x-api-key"
+            | "x-goog-api-key"
+            | "mj-api-secret"
+    )
+}
+
+fn valid_rejection(code: &str, message: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= 128
+        && code.as_bytes()[0].is_ascii_lowercase()
+        && code.bytes().all(|byte| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || byte == b'_'
+                || byte == b'.'
+                || byte == b'-'
+        })
+        && !message.is_empty()
+        && message.len() <= 512
+        && !message.chars().any(char::is_control)
 }
 
 /// Request frame for the language-neutral newline-delimited sidecar protocol.
@@ -331,6 +294,25 @@ impl PluginHostRequest {
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
+        if let PluginHostOperation::InvokeTask {
+            connection_id,
+            public_config,
+            capability_id,
+            capability_version,
+            task,
+        } = &self.operation
+        {
+            if connection_id.is_empty()
+                || connection_id.len() > 128
+                || !public_config.is_object()
+                || capability_id.is_empty()
+                || *capability_version == 0
+            {
+                return Err(ContractValidationError::InvalidExternalValue);
+            }
+            task.validate()
+                .map_err(|_| ContractValidationError::InvalidExternalValue)?;
+        }
         Ok(())
     }
 }
@@ -352,6 +334,19 @@ pub enum PluginHostOperation {
         #[serde(rename = "capabilityVersion", alias = "capability_version")]
         capability_version: u16,
         input: serde_json::Value,
+    },
+    /// Invoke the task adapter without granting it task ids, billing or
+    /// credential authority. The host owns all lifecycle state around it.
+    InvokeTask {
+        #[serde(rename = "connectionId", alias = "connection_id")]
+        connection_id: String,
+        #[serde(rename = "publicConfig", alias = "public_config")]
+        public_config: serde_json::Value,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(rename = "capabilityVersion", alias = "capability_version")]
+        capability_version: u16,
+        task: PluginTaskOperation,
     },
 }
 
@@ -375,6 +370,7 @@ pub enum PluginHostResult {
     Manifest(crate::PluginManifest),
     Health(ConnectorHealth),
     Capability(CapabilityResult),
+    Task(PluginTaskResult),
     Error(ConnectorError),
 }
 
@@ -493,10 +489,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        CapabilityInvocation, CapabilityResult, HostHttpMethod, HostHttpRequestProposal,
-        HostHttpResponseProjection, PluginHostOperation, PluginHostRequest, PluginHostResponse,
-        PluginHostResult, PluginProxyError, PluginProxyErrorCode, PluginProxyRequest,
-        PluginProxyResponse, PluginProxyResult,
+        CapabilityInvocation, CapabilityResult, PluginHostOperation, PluginHostRequest,
+        PluginHostResponse, PluginHostResult, ProviderHeaderPatch, ProviderRequestTransformInput,
+        ProviderRequestTransformOutput, ProviderTransformAction, ProviderTransformRejection,
     };
 
     fn catalogue_request() -> PluginHostRequest {
@@ -613,139 +608,71 @@ mod tests {
     }
 
     #[test]
-    fn host_http_proxy_proposals_cannot_name_urls_or_carry_credentials() {
-        let request = HostHttpRequestProposal {
-            endpoint_id: "external.account.self.read".to_owned(),
-            method: HostHttpMethod::Get,
-            query: BTreeMap::from([("page".to_owned(), "1".to_owned())]),
-        };
-        request.validate().unwrap();
-        let encoded = serde_json::to_value(&request).unwrap();
-        assert_eq!(encoded["method"], "GET");
-        assert!(encoded.get("url").is_none());
-        assert!(encoded.get("headers").is_none());
-        assert!(encoded.get("credential").is_none());
-
-        let mut credential_query = request.clone();
-        credential_query
-            .query
-            .insert("access_token".to_owned(), "must-not-pass".to_owned());
-        assert!(credential_query.validate().is_err());
-        for name in ["apikey", "api_key", "api-key", "api.key", "APIKey"] {
-            let mut secret_query = request.clone();
-            secret_query
-                .query
-                .insert(name.to_owned(), "must-not-pass".to_owned());
-            assert!(
-                secret_query.validate().is_err(),
-                "accepted query key: {name}"
-            );
-        }
-        let mut secretish_query = request.clone();
-        secretish_query
-            .query
-            .insert("clientKeyId".to_owned(), "must-not-pass".to_owned());
-        assert!(secretish_query.validate().is_err());
-
-        let mut arbitrary_url = request.clone();
-        arbitrary_url.endpoint_id = "https://attacker.example/private".to_owned();
-        assert!(arbitrary_url.validate().is_err());
-    }
-
-    #[test]
-    fn host_http_projection_is_correlated_and_bounded_json_only() {
-        let response = HostHttpResponseProjection {
-            status_code: 200,
-            payload: serde_json::json!({ "subject": "external-42" }),
-        };
-        response.validate(128).unwrap();
-        assert!(response.validate(1).is_err());
-        assert!(
-            HostHttpResponseProjection {
-                status_code: 302,
-                payload: serde_json::json!({}),
-            }
-            .validate(128)
-            .is_err()
-        );
-        assert!(
-            HostHttpResponseProjection {
-                status_code: 200,
-                payload: serde_json::json!({}),
-            }
-            .validate(128)
-            .is_ok()
-        );
-
-        assert!(
-            serde_json::from_value::<HostHttpResponseProjection>(serde_json::json!({
-                "callId": "call-1",
-                "statusCode": 200,
-                "payload": {},
-                "headers": {"set-cookie": "secret"}
-            }))
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn proxy_continuation_binds_package_generation_and_parent_invocation() {
-        let request = PluginProxyRequest {
-            protocol_version: 1,
-            plugin_id: crate::PluginId::new("org.example.connector").unwrap(),
-            plugin_version: crate::PluginVersion::new("1.0.0").unwrap(),
-            artifact_sha256: "a".repeat(64),
-            deployment_generation: 17,
-            request_id: "host-invocation-1".to_owned(),
-            capability_id: crate::CapabilityId::new("external.account.profile.read").unwrap(),
+    fn task_operation_uses_an_explicit_wire_kind() {
+        let operation = PluginHostOperation::InvokeTask {
+            connection_id: "task-adapter".to_owned(),
+            public_config: serde_json::json!({}),
+            capability_id: "task.video.adapter".to_owned(),
             capability_version: 1,
-            proxy_request_id: "proxy-1".to_owned(),
-            request: HostHttpRequestProposal {
-                endpoint_id: "external.account.self.read".to_owned(),
-                method: HostHttpMethod::Get,
-                query: BTreeMap::new(),
+            task: crate::PluginTaskOperation::Status {
+                task_id: "provider-1".to_owned(),
             },
         };
-        request.validate().unwrap();
-        let mut arbitrary_capability = request.clone();
-        arbitrary_capability.capability_id =
-            crate::CapabilityId::new("catalog.models.search").unwrap();
-        assert!(arbitrary_capability.validate().is_err());
-        let response = PluginProxyResponse {
-            protocol_version: request.protocol_version,
-            plugin_id: request.plugin_id.clone(),
-            plugin_version: request.plugin_version.clone(),
-            artifact_sha256: request.artifact_sha256.clone(),
-            deployment_generation: request.deployment_generation,
-            request_id: request.request_id.clone(),
-            capability_id: request.capability_id.clone(),
-            capability_version: request.capability_version,
-            proxy_request_id: request.proxy_request_id.clone(),
-            result: PluginProxyResult::Response(HostHttpResponseProjection {
-                status_code: 200,
-                payload: serde_json::json!({"subject":"external-7"}),
+        let value = serde_json::to_value(operation).unwrap();
+        assert_eq!(value["operation"]["operation"], "invoke_task");
+        assert_eq!(value["operation"]["task"]["kind"], "status");
+        assert_eq!(value["operation"]["task"]["task_id"], "provider-1");
+    }
+
+    #[test]
+    fn provider_transform_rejects_protected_headers_and_billing_changes() {
+        let input = ProviderRequestTransformInput {
+            protocol: "openai".to_owned(),
+            method: "POST".to_owned(),
+            path: "/v1/chat/completions".to_owned(),
+            model: "gpt-6.1-sol".to_owned(),
+            upstream_model: Some("gpt-6.1-sol".to_owned()),
+            headers: BTreeMap::from([("accept".to_owned(), "application/json".to_owned())]),
+            body: serde_json::json!({"model":"gpt-6.1-sol", "stream":false, "messages":[]}),
+        };
+        input.validate().unwrap();
+        let mut output = ProviderRequestTransformOutput {
+            action: ProviderTransformAction::Continue,
+            path: Some("/v1/chat/completions".to_owned()),
+            body: Some(serde_json::json!({"model":"other", "stream":false, "messages":[]})),
+            headers: ProviderHeaderPatch::default(),
+            rejection: None,
+        };
+        assert!(output.validate_against(&input).is_err());
+        output.body = None;
+        output
+            .headers
+            .set
+            .insert("Authorization".to_owned(), "bad".to_owned());
+        assert!(output.validate_against(&input).is_err());
+    }
+
+    #[test]
+    fn provider_transform_rejection_is_bounded_and_explicit() {
+        let input = ProviderRequestTransformInput {
+            protocol: "openai".to_owned(),
+            method: "POST".to_owned(),
+            path: "/v1/responses".to_owned(),
+            model: "gpt-6.1-sol".to_owned(),
+            upstream_model: None,
+            headers: BTreeMap::new(),
+            body: serde_json::json!({"model":"gpt-6.1-sol"}),
+        };
+        let output = ProviderRequestTransformOutput {
+            action: ProviderTransformAction::Reject,
+            path: None,
+            body: None,
+            headers: ProviderHeaderPatch::default(),
+            rejection: Some(ProviderTransformRejection {
+                code: "provider.policy_blocked".to_owned(),
+                message: "该请求被 Provider 策略拒绝".to_owned(),
             }),
         };
-        response.validate(128).unwrap();
-        assert!(response.matches_request(&request));
-        let mut different_capability = response.clone();
-        different_capability.capability_id =
-            crate::CapabilityId::new("external.account.balance.read").unwrap();
-        assert!(different_capability.validate(128).is_ok());
-        assert!(!different_capability.matches_request(&request));
-        let mut stale = response;
-        stale.deployment_generation = 16;
-        assert!(stale.validate(128).is_ok());
-        assert!(!stale.matches_request(&request));
-        assert_eq!(
-            serde_json::to_value(PluginProxyResult::Error(PluginProxyError {
-                code: PluginProxyErrorCode::TemporarilyUnavailable,
-            }))
-            .unwrap(),
-            serde_json::json!({
-                "kind": "error",
-                "value": {"code": "temporarily_unavailable"}
-            })
-        );
+        assert!(output.validate_against(&input).is_ok());
     }
 }

@@ -2,7 +2,7 @@
 
 这个例子会检查商户填写的服务说明和模型能力，并在商户工作台显示摘要与建议。它是一个只读插件：不访问外网，不连接数据库，不接收 API Key、上游地址、上游模型映射、价格或财务资料，也不能替商户修改服务或替管理员批准服务。
 
-目录中只需修改三个文件：`manifest.json` 描述输入输出格式和运行限制；`plugin.py` 写检查规则；Python SDK 负责与 AnyFlows 通信。宿主的业务页面、权限和插件运行过程由 AnyFlows 管理。
+你不需要理解 AnyFlows 的 Rust 代码。开发时只需认识三个文件：`manifest.json` 描述输入输出格式和运行限制；`plugin.py` 写检查规则；Python SDK 负责与 AnyFlows 通信。宿主的业务页面、权限和插件运行过程由 AnyFlows 管理。
 
 ## 1. 准备环境
 
@@ -50,7 +50,7 @@ python tools/plugins/package-example.py dist/merchant-service-review.afplugin --
 3. 等插件节点状态显示就绪。
 4. 用商户账号进入“我的服务”，在服务行中点“插件检查”，选择 `Example merchant service review`，再点“运行检查”。
 
-此能力的部署 `publicConfig` 必须是空对象 `{}`。插件使用本次调用传入的商户服务资料；不需要在管理页面填写额外配置。普通上传安装会完成制品登记，手工登记的制品须先审批。只有已启用且明确授予上述能力的插件才会列在商户可选清单中。
+此能力的部署 `publicConfig` 必须是空对象 `{}`。插件使用本次调用传入的商户服务资料；不需要在管理页面填写额外配置。只有已启用、已批准且明确授予上述能力的插件才会列在商户可选清单中。
 
 若用系统 API Token 调用：获取可选插件清单使用 `merchant_plugins:read`；执行检查使用 `merchant_plugins:execute`。模型调用 API Key 不具备这两项系统 API 权限。
 
@@ -182,11 +182,13 @@ if not streaming_models:
 
 文件底部的 `main()` 读取同目录的 `manifest.json`，然后调用 `Plugin(manifest, review_service).serve()`。SDK 会处理启动握手、健康检查、JSON Lines 请求、超时和响应校验。协议数据写在标准输出，不能用 `print()` 打调试日志；如需调试输出，只写标准错误，并且不要输出服务隐私资料。
 
-## 7. 这个示例的适用范围
+## 7. 把自定义插件接入其他 AnyFlows 模块
 
-本示例只适用于商户服务资料检查。上传包不会自动创建页面、菜单、HTTP 接口或后台任务。要接入其他模块，先由宿主提供该模块的 capability、输入输出 Schema、权限和安装/测试入口，再按对应契约开发插件。
+上传 `.afplugin` 不会自动创建页面、菜单、HTTP 接口或后台任务。新增业务入口需要 AnyFlows 开发者在宿主增加固定 capability 和调用代码，确定调用者与数据边界，校验插件输出，再按需要增加界面和 API 文档。完成宿主接入后，插件作者才可以使用对应契约开发插件。
 
-当前插件不能修改模型定价、渠道凭据、钱包、余额、结算、登录身份、数据库或核心权限。
+不用了解 AnyFlows 内部代码也可以按已有示例开发“商户服务资料检查”或“公开模型资料目录”。若要新增别的模块，先请 AnyFlows 维护者提供该模块的输入字段、输出 Schema、授权方式和安装/测试入口；不要猜 capability 名称或复制一个看似相近的接口。具体宿主接入方式参见 [`docs/plugin-development.md`](../../../../docs/plugin-development.md) 的“想给新模块加插件入口”。
+
+目前通用插件只开放 `read` + `none` 的无副作用能力。任何影响模型定价、渠道凭据、钱包、余额、结算、登录身份、数据库或核心权限的操作都由宿主控制，不可以通过插件输出建议或自行调用外网来替代宿主授权。
 
 ## 8. 常见问题
 
@@ -201,13 +203,3 @@ if not streaming_models:
 | 页面显示检查失败或版本冲突 | 刷新服务草稿后重试；服务内容在检查过程中发生变化时，宿主会丢弃旧版本结果 |
 
 如果更改了 `manifest.json`、`plugin.py` 或公开资源，要打一个新包并提升 `pluginVersion`。安装包发布内容不会自动同步到运行节点之外的 Python 包管理器。
-
-## 本地测试
-
-宿主输入在 `fixtures/input.json`，包含一个服务和一个公开模型。运行：
-
-```bash
-python tools/plugins/test-plugin.py --root tools/plugins/examples/merchant-service-review --manifest tools/plugins/examples/merchant-service-review/manifest.json --capability merchant.service.review.read --input tools/plugins/examples/merchant-service-review/fixtures/input.json
-```
-
-输出必须是 `summary` 和 `checks`。测试工具会先验证 `manifest`、`health`，再调用检查函数。

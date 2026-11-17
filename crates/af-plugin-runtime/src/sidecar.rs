@@ -1,7 +1,7 @@
 //! Administrator-managed sidecar transport with host-selected process containment.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -13,7 +13,7 @@ use std::{
 use crate::sidecar_isolation::spawn_windows_sidecar;
 use crate::{
     CapabilityContext, CapabilityExecutionContext, CapabilityHandler, ConnectorRegistration,
-    PlatformConnector, PluginProxyDispatcher,
+    PlatformConnector,
     schema::CompiledJsonSchema,
     sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy, prepare_sidecar_launch},
 };
@@ -21,7 +21,7 @@ use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
     InvocationMetadata, PluginHostOperation, PluginHostRequest, PluginHostResponse,
-    PluginHostResult, PluginId, PluginManifest, PluginProxyRequest, PluginProxyResult,
+    PluginHostResult, PluginId, PluginManifest, PluginTaskOperation, PluginTaskResult,
     PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
@@ -52,7 +52,6 @@ const SIDE_CAR_PROTOCOL_VERSION: u16 = 1;
 const MAX_SIGNATURE_BYTES: usize = 64;
 const MAX_PACKAGE_FILES: usize = 100_000;
 const DEFAULT_MAX_FRAME_BYTES: usize = 1_048_576;
-const MAX_PROXY_CALLBACKS_PER_INVOCATION: usize = 4;
 const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SIGNATURE_DOMAIN: &[u8] = b"ANYFLOWS_PLUGIN_ARTIFACT_V2\0";
@@ -791,11 +790,6 @@ struct SidecarProcess {
     next_request_id: u64,
 }
 
-enum SidecarOutputFrame {
-    ProxyRequest(PluginProxyRequest),
-    Response(PluginHostResponse),
-}
-
 impl SidecarProcess {
     fn kill_process_group(&mut self) {
         let process_group_id = self.process_group_id.take();
@@ -1056,32 +1050,6 @@ impl SidecarSupervisor {
         Ok(session)
     }
 
-    /// Invoke a host-selected capability on the exact active generation. The
-    /// optional dispatcher is scoped to this invocation, so implementations
-    /// can bind it to one authenticated user's linked external account.
-    pub async fn invoke_host_capability_with_proxy(
-        &self,
-        plugin_id: &PluginId,
-        generation: u64,
-        invocation: &CapabilityExecutionContext,
-        capability_id: &CapabilityId,
-        capability_version: u16,
-        input: Value,
-        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
-    ) -> Result<CapabilityResult, SidecarError> {
-        let session = self.session(plugin_id, generation).await?;
-        session
-            .invoke_host_capability_with_proxy(
-                generation,
-                invocation,
-                capability_id,
-                capability_version,
-                input,
-                proxy_dispatcher,
-            )
-            .await
-    }
-
     /// Stop all managed child processes during graceful host shutdown.
     pub async fn shutdown(&self) {
         let sessions = {
@@ -1156,10 +1124,11 @@ impl SidecarSession {
                 capability.id == *grant
                     && capability.version == *version
                     && capability.access == CapabilityAccess::Read
-                    && (capability.side_effect == SideEffectClass::None
-                        || (capability.side_effect == SideEffectClass::ExternalRead
-                            && is_external_read_capability(capability.id.as_str())))
-            })
+                    && capability.side_effect == SideEffectClass::None
+            }) || matches!(
+                grant.as_str(),
+                "external.account.profile.read" | "external.account.balance.read"
+            )
         }) {
             return Err(SidecarError::CapabilityNotGranted);
         }
@@ -1249,12 +1218,7 @@ impl SidecarSession {
             artifact,
         });
         let response = match session
-            .exchange(
-                PluginHostOperation::Manifest,
-                limits.startup_timeout,
-                None,
-                None,
-            )
+            .exchange(PluginHostOperation::Manifest, limits.startup_timeout, None)
             .await
         {
             Ok(response) => response,
@@ -1335,7 +1299,6 @@ impl SidecarSession {
                 PluginHostOperation::Health,
                 self.limits.request_timeout,
                 None,
-                None,
             )
             .await?
         {
@@ -1359,26 +1322,6 @@ impl SidecarSession {
         capability_version: u16,
         input: Value,
     ) -> Result<CapabilityResult, SidecarError> {
-        self.invoke_internal(
-            deployment_generation,
-            invocation,
-            capability_id,
-            capability_version,
-            input,
-            None,
-        )
-        .await
-    }
-
-    async fn invoke_internal(
-        &self,
-        deployment_generation: u64,
-        invocation: &CapabilityContext<'_>,
-        capability_id: &CapabilityId,
-        capability_version: u16,
-        input: Value,
-        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
-    ) -> Result<CapabilityResult, SidecarError> {
         self.ensure_generation(deployment_generation)?;
         if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
             return Err(SidecarError::CapabilityNotGranted);
@@ -1394,15 +1337,8 @@ impl SidecarSession {
         if sensitive_payload {
             return Err(SidecarError::SensitivePayload);
         }
-        let capability_policy_matches = match declaration.side_effect {
-            SideEffectClass::None => true,
-            SideEffectClass::ExternalRead => {
-                proxy_dispatcher.is_some() && is_external_read_capability(capability_id.as_str())
-            }
-            SideEffectClass::ExternalWrite => false,
-        };
         if declaration.access != CapabilityAccess::Read
-            || !capability_policy_matches
+            || declaration.side_effect != SideEffectClass::None
             || declaration.version != capability_version
             || declaration.input_schema.is_none()
             || declaration.output_schema.is_none()
@@ -1442,7 +1378,6 @@ impl SidecarSession {
                 },
                 self.limits.request_timeout,
                 Some(invocation.metadata()),
-                proxy_dispatcher,
             )
             .await?
         {
@@ -1504,32 +1439,126 @@ impl SidecarSession {
         Ok(result)
     }
 
-    /// Invoke an external-read capability through a host-owned, per-invocation
-    /// dispatcher. The dispatcher itself is never sent to the sidecar.
-    pub async fn invoke_host_capability_with_proxy(
+    /// Invoke a task adapter through the sidecar protocol. The host retains
+    /// the public task identity, credential, billing reservation and final
+    /// settlement; the plugin receives only the provider-facing operation.
+    pub async fn invoke_task(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityContext<'_>,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        task: PluginTaskOperation,
+    ) -> Result<PluginTaskResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        task.validate()
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        let is_submit = matches!(&task, PluginTaskOperation::Submit { .. });
+        if (is_submit
+            && (declaration.access != CapabilityAccess::Write
+                || declaration.side_effect != SideEffectClass::ExternalWrite
+                || declaration.write_semantics.is_none()))
+            || declaration.version != capability_version
+        {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let task_value =
+            serde_json::to_value(&task).map_err(|_| SidecarError::InvalidConfiguration)?;
+        if contains_sensitive_fields(invocation.public_config())
+            || contains_sensitive_fields(&task_value)
+        {
+            return Err(SidecarError::SensitivePayload);
+        }
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            CompiledJsonSchema::compile(schema)
+                .map_err(|_| SidecarError::InvalidHandshake)?
+                .validate(&task_value)
+                .map_err(|_| SidecarError::InvalidConfiguration)?;
+        }
+        crate::ensure_json_payload_within_limit(
+            &task_value,
+            self.manifest.limits.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        match self
+            .exchange(
+                PluginHostOperation::InvokeTask {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    task,
+                },
+                self.limits.request_timeout,
+                Some(invocation.metadata()),
+            )
+            .await?
+        {
+            PluginHostResult::Task(result) => {
+                result
+                    .validate()
+                    .map_err(|_| SidecarError::ProtocolViolation)?;
+                let result_value =
+                    serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
+                if crate::ensure_json_payload_within_limit(
+                    &result_value,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .is_err()
+                    || contains_sensitive_fields(&result_value)
+                {
+                    self.stop().await;
+                    return Err(SidecarError::ProtocolViolation);
+                }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&result_value)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
+    /// Task equivalent of `invoke_host_capability`; the execution context is
+    /// host-owned and never exposes credentials to the sidecar.
+    pub async fn invoke_host_task(
         &self,
         deployment_generation: u64,
         invocation: &CapabilityExecutionContext,
         capability_id: &CapabilityId,
         capability_version: u16,
-        input: Value,
-        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
-    ) -> Result<CapabilityResult, SidecarError> {
+        task: PluginTaskOperation,
+    ) -> Result<PluginTaskResult, SidecarError> {
         let context = CapabilityContext::from_execution_context(invocation);
-        crate::ensure_json_payload_within_limit(&input, invocation.max_response_bytes as usize)
-            .map_err(|_| SidecarError::FrameTooLarge)?;
         let result = self
-            .invoke_internal(
+            .invoke_task(
                 deployment_generation,
                 &context,
                 capability_id,
                 capability_version,
-                input,
-                proxy_dispatcher,
+                task,
             )
             .await?;
+        let result_value =
+            serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
         crate::ensure_json_payload_within_limit(
-            &result.output,
+            &result_value,
             invocation.max_response_bytes as usize,
         )
         .map_err(|_| SidecarError::FrameTooLarge)?;
@@ -1546,7 +1575,6 @@ impl SidecarSession {
         operation: PluginHostOperation,
         requested_timeout: Duration,
         metadata: Option<&InvocationMetadata>,
-        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
     ) -> Result<PluginHostResult, SidecarError> {
         let deployment_generation = self.deployment_generation;
         if deployment_generation == 0 {
@@ -1655,72 +1683,23 @@ impl SidecarSession {
                 .flush()
                 .await
                 .map_err(|_| SidecarError::ProcessExited)?;
-            let mut proxy_callbacks = 0;
-            let mut proxy_request_ids = BTreeSet::new();
-            loop {
-                let frame = read_frame(
-                    &mut exchange_guard.process.stdout,
-                    self.limits.max_frame_bytes,
-                )
-                .await?;
-                match Self::decode_sidecar_output_frame(&frame)? {
-                    SidecarOutputFrame::ProxyRequest(proxy_request) => {
-                        proxy_callbacks += 1;
-                        if proxy_callbacks > MAX_PROXY_CALLBACKS_PER_INVOCATION
-                            || !self.proxy_request_matches_host_request(&proxy_request, &request)
-                            || !proxy_request_ids.insert(proxy_request.proxy_request_id.clone())
-                        {
-                            return Err(SidecarError::ProtocolViolation);
-                        }
-                        let dispatcher = proxy_dispatcher
-                            .as_ref()
-                            .ok_or(SidecarError::CapabilityNotGranted)?;
-                        let proxy_response = dispatcher.dispatch(proxy_request.clone()).await;
-                        if !proxy_response.matches_request(&proxy_request)
-                            || proxy_response
-                                .validate(self.manifest.limits.max_response_bytes as usize)
-                                .is_err()
-                            || matches!(
-                                &proxy_response.result,
-                                PluginProxyResult::Response(projection)
-                                    if contains_sensitive_fields(&projection.payload)
-                            )
-                        {
-                            return Err(SidecarError::ProtocolViolation);
-                        }
-                        let mut proxy_frame = serde_json::to_vec(&proxy_response)
-                            .map_err(|_| SidecarError::ProtocolViolation)?;
-                        if proxy_frame.len() + 1 > self.limits.max_frame_bytes {
-                            return Err(SidecarError::FrameTooLarge);
-                        }
-                        proxy_frame.push(b'\n');
-                        exchange_guard
-                            .process
-                            .stdin
-                            .write_all(&proxy_frame)
-                            .await
-                            .map_err(|_| SidecarError::ProcessExited)?;
-                        exchange_guard
-                            .process
-                            .stdin
-                            .flush()
-                            .await
-                            .map_err(|_| SidecarError::ProcessExited)?;
-                    }
-                    SidecarOutputFrame::Response(response) => {
-                        if response.protocol_version != SIDE_CAR_PROTOCOL_VERSION
-                            || response.request_id != request_id
-                            || response.plugin_id != self.artifact.plugin_id
-                            || response.plugin_version != self.artifact.plugin_version
-                            || response.artifact_sha256 != self.artifact.sha256
-                            || response.deployment_generation != deployment_generation
-                        {
-                            return Err(SidecarError::ProtocolViolation);
-                        }
-                        return Ok(response.result);
-                    }
-                }
+            let frame = read_frame(
+                &mut exchange_guard.process.stdout,
+                self.limits.max_frame_bytes,
+            )
+            .await?;
+            let response: PluginHostResponse =
+                serde_json::from_slice(&frame).map_err(|_| SidecarError::ProtocolViolation)?;
+            if response.protocol_version != SIDE_CAR_PROTOCOL_VERSION
+                || response.request_id != request_id
+                || response.plugin_id != self.artifact.plugin_id
+                || response.plugin_version != self.artifact.plugin_version
+                || response.artifact_sha256 != self.artifact.sha256
+                || response.deployment_generation != deployment_generation
+            {
+                return Err(SidecarError::ProtocolViolation);
             }
+            Ok(response.result)
         };
         match timeout(operation_timeout, exchange).await {
             Ok(Ok(result)) => {
@@ -1740,30 +1719,6 @@ impl SidecarSession {
         }
     }
 
-    fn decode_sidecar_output_frame(frame: &[u8]) -> Result<SidecarOutputFrame, SidecarError> {
-        if let Ok(response) = serde_json::from_slice::<PluginHostResponse>(frame) {
-            return Ok(SidecarOutputFrame::Response(response));
-        }
-        serde_json::from_slice::<PluginProxyRequest>(frame)
-            .map(SidecarOutputFrame::ProxyRequest)
-            .map_err(|_| SidecarError::ProtocolViolation)
-    }
-
-    fn proxy_request_matches_host_request(
-        &self,
-        proxy: &PluginProxyRequest,
-        host: &PluginHostRequest,
-    ) -> bool {
-        proxy_request_matches_host_request(
-            proxy,
-            host,
-            &self.manifest,
-            &self.artifact.sha256,
-            self.deployment_generation,
-            &self.granted_capabilities,
-        )
-    }
-
     /// Build a registration only for declared generic read capabilities.
     pub fn registration(self: &Arc<Self>) -> Result<ConnectorRegistration, SidecarError> {
         let mut effective_manifest = self.manifest.clone();
@@ -1781,11 +1736,10 @@ impl SidecarSession {
             if self.granted_capabilities.get(&capability.id) != Some(&capability.version) {
                 continue;
             }
-            let side_effect_is_supported = capability.side_effect == SideEffectClass::None
-                || (capability.side_effect == SideEffectClass::ExternalRead
-                    && is_external_read_capability(capability.id.as_str()));
-            if capability.access != CapabilityAccess::Read
-                || !side_effect_is_supported
+            if capability.id.as_str() == "external.account.profile.read"
+                || capability.id.as_str() == "external.account.balance.read"
+                || capability.access != CapabilityAccess::Read
+                || capability.side_effect != SideEffectClass::None
                 || capability.input_schema.is_none()
                 || capability.output_schema.is_none()
             {
@@ -1808,53 +1762,6 @@ impl SidecarSession {
             Err(SidecarError::InvalidConfiguration)
         }
     }
-}
-
-fn proxy_request_matches_host_request(
-    proxy: &PluginProxyRequest,
-    host: &PluginHostRequest,
-    manifest: &PluginManifest,
-    artifact_sha256: &str,
-    deployment_generation: u64,
-    granted_capabilities: &BTreeMap<CapabilityId, u16>,
-) -> bool {
-    if proxy.validate().is_err()
-        || proxy.protocol_version != host.protocol_version
-        || proxy.plugin_id != host.plugin_id
-        || proxy.plugin_version != host.plugin_version
-        || proxy.artifact_sha256 != host.artifact_sha256
-        || proxy.request_id != host.request_id
-        || host.plugin_id != manifest.plugin_id
-        || host.plugin_version != manifest.plugin_version
-        || host.artifact_sha256 != artifact_sha256
-        || host.deployment_generation != deployment_generation
-        || proxy.deployment_generation != deployment_generation
-    {
-        return false;
-    }
-    matches!(
-        &host.operation,
-        PluginHostOperation::InvokeCapability {
-            capability_id,
-            capability_version,
-            ..
-        } if capability_id == "account.balance.snapshot.live-review.read"
-            && *capability_version == 1
-    ) && granted_capabilities.iter().any(|(id, version)| {
-        id.as_str() == "account.balance.snapshot.live-review.read" && *version == 1
-    }) && manifest.capabilities.iter().any(|capability| {
-        capability.id.as_str() == "account.balance.snapshot.live-review.read"
-            && capability.version == 1
-            && capability.access == CapabilityAccess::Read
-            && capability.side_effect == SideEffectClass::None
-    }) && granted_capabilities.get(&proxy.capability_id) == Some(&proxy.capability_version)
-        && manifest.capabilities.iter().any(|capability| {
-            capability.id == proxy.capability_id
-                && capability.version == proxy.capability_version
-                && capability.access == CapabilityAccess::Read
-                && capability.side_effect == SideEffectClass::ExternalRead
-                && is_external_read_capability(capability.id.as_str())
-        })
 }
 
 struct SidecarPlatformConnector {
@@ -1980,13 +1887,6 @@ fn contains_sensitive_fields(value: &Value) -> bool {
     }
 }
 
-fn is_external_read_capability(value: &str) -> bool {
-    matches!(
-        value,
-        "external.account.profile.read" | "external.account.balance.read"
-    )
-}
-
 fn is_sensitive_field_name(name: &str) -> bool {
     let normalized = name
         .bytes()
@@ -2053,24 +1953,19 @@ pub enum SidecarError {
 #[cfg(test)]
 mod tests {
     use af_plugin_contract::{
-        CapabilityAccess, CapabilityDeclaration, CapabilityId, ConnectorError, ConnectorErrorCode,
-        ConnectorLimits, ContractVersion, ContractVersionRange, HostHttpMethod,
-        HostHttpRequestProposal, OperationOutcome, PluginHostOperation, PluginHostRequest,
-        PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProxyRequest,
-        PluginVersion, SideEffectClass,
+        CapabilityAccess, CapabilityDeclaration, CapabilityId, ConnectorLimits, ContractVersion,
+        ContractVersionRange, PluginId, PluginManifest, PluginVersion, SideEffectClass,
     };
     use base64::Engine as _;
     use ring::signature::{Ed25519KeyPair, KeyPair as _};
     use serde_json::json;
 
     use super::{
-        PluginArtifactDescriptor, SidecarError, SidecarOutputFrame, SidecarSession,
-        TrustedPluginKey, VerifiedPluginArtifact, can_publish_generation, canonicalize_json,
-        contains_sensitive_fields, default_request_id, is_sensitive_field_name,
-        plugin_artifact_signature_payload, plugin_package_digest,
-        proxy_request_matches_host_request, validate_public_plugin_configuration,
+        PluginArtifactDescriptor, SidecarError, TrustedPluginKey, VerifiedPluginArtifact,
+        can_publish_generation, canonicalize_json, contains_sensitive_fields, default_request_id,
+        is_sensitive_field_name, plugin_artifact_signature_payload, plugin_package_digest,
+        validate_public_plugin_configuration,
     };
-    use std::collections::BTreeMap;
 
     fn signing_test_manifest() -> PluginManifest {
         PluginManifest {
@@ -2099,153 +1994,7 @@ mod tests {
                 max_page_size: 1,
             },
             config_schema: json!({ "type": "object" }),
-            ui_contributions: Vec::new(),
-            ui_views: Vec::new(),
         }
-    }
-
-    fn external_proxy_capability() -> CapabilityDeclaration {
-        CapabilityDeclaration {
-            id: CapabilityId::new("external.account.profile.read").unwrap(),
-            version: 1,
-            access: CapabilityAccess::Read,
-            side_effect: SideEffectClass::ExternalRead,
-            write_semantics: None,
-            input_schema: Some(json!({ "type": "object" })),
-            output_schema: Some(json!({ "type": "object" })),
-        }
-    }
-
-    fn live_balance_review_capability() -> CapabilityDeclaration {
-        CapabilityDeclaration {
-            id: CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(),
-            version: 1,
-            access: CapabilityAccess::Read,
-            side_effect: SideEffectClass::None,
-            write_semantics: None,
-            input_schema: Some(json!({ "type": "object" })),
-            output_schema: Some(json!({ "type": "object" })),
-        }
-    }
-
-    #[test]
-    fn sidecar_proxy_callback_binds_parent_identity_and_separate_external_grant() {
-        let mut manifest = signing_test_manifest();
-        manifest.capabilities.push(live_balance_review_capability());
-        manifest.capabilities.push(external_proxy_capability());
-        let external_capability = CapabilityId::new("external.account.profile.read").unwrap();
-        let digest = "a".repeat(64);
-        let host_request = PluginHostRequest {
-            protocol_version: 1,
-            plugin_id: manifest.plugin_id.clone(),
-            plugin_version: manifest.plugin_version.clone(),
-            artifact_sha256: digest.clone(),
-            deployment_generation: 7,
-            request_id: "host-invocation-7".to_owned(),
-            deadline_unix_ms: 2_000,
-            operation: PluginHostOperation::InvokeCapability {
-                connection_id: "account-scope-opaque".to_owned(),
-                public_config: json!({}),
-                capability_id: "account.balance.snapshot.live-review.read".to_owned(),
-                capability_version: 1,
-                input: json!({ "snapshots": [] }),
-            },
-        };
-        let proxy_request = PluginProxyRequest {
-            protocol_version: 1,
-            plugin_id: manifest.plugin_id.clone(),
-            plugin_version: manifest.plugin_version.clone(),
-            artifact_sha256: digest.clone(),
-            deployment_generation: 7,
-            request_id: host_request.request_id.clone(),
-            capability_id: external_capability.clone(),
-            capability_version: 1,
-            proxy_request_id: "proxy-1".to_owned(),
-            request: HostHttpRequestProposal {
-                endpoint_id: "account.profile".to_owned(),
-                method: HostHttpMethod::Get,
-                query: BTreeMap::new(),
-            },
-        };
-        let grants = BTreeMap::from([
-            (
-                CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(),
-                1,
-            ),
-            (external_capability.clone(), 1),
-        ]);
-        assert!(proxy_request_matches_host_request(
-            &proxy_request,
-            &host_request,
-            &manifest,
-            &digest,
-            7,
-            &grants,
-        ));
-
-        let mut wrong_parent = proxy_request.clone();
-        wrong_parent.request_id = "other-invocation".to_owned();
-        assert!(!proxy_request_matches_host_request(
-            &wrong_parent,
-            &host_request,
-            &manifest,
-            &digest,
-            7,
-            &grants,
-        ));
-        let mut wrong_parent_capability = host_request.clone();
-        if let PluginHostOperation::InvokeCapability { capability_id, .. } =
-            &mut wrong_parent_capability.operation
-        {
-            *capability_id = "catalog.models.search".to_owned();
-        }
-        assert!(!proxy_request_matches_host_request(
-            &proxy_request,
-            &wrong_parent_capability,
-            &manifest,
-            &digest,
-            7,
-            &grants,
-        ));
-        let without_external_grant = BTreeMap::from([(
-            CapabilityId::new("account.balance.snapshot.live-review.read").unwrap(),
-            1,
-        )]);
-        assert!(!proxy_request_matches_host_request(
-            &proxy_request,
-            &host_request,
-            &manifest,
-            &digest,
-            7,
-            &without_external_grant,
-        ));
-
-        let callback_frame = serde_json::to_vec(&proxy_request).unwrap();
-        assert!(matches!(
-            SidecarSession::decode_sidecar_output_frame(&callback_frame),
-            Ok(SidecarOutputFrame::ProxyRequest(_))
-        ));
-        let response_frame = serde_json::to_vec(&PluginHostResponse {
-            protocol_version: 1,
-            plugin_id: manifest.plugin_id.clone(),
-            plugin_version: manifest.plugin_version.clone(),
-            artifact_sha256: digest,
-            deployment_generation: 7,
-            request_id: host_request.request_id,
-            result: PluginHostResult::Error(ConnectorError::new(
-                ConnectorErrorCode::Unsupported,
-                OperationOutcome::NotApplied,
-            )),
-        })
-        .unwrap();
-        assert!(matches!(
-            SidecarSession::decode_sidecar_output_frame(&response_frame),
-            Ok(SidecarOutputFrame::Response(_))
-        ));
-        assert!(matches!(
-            SidecarSession::decode_sidecar_output_frame(br#"{"frameType":"proxyRequest"}"#),
-            Err(SidecarError::ProtocolViolation)
-        ));
     }
 
     fn signed_fixture(

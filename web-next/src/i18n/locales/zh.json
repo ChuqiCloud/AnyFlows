@@ -107,10 +107,6 @@
     "rollback": "回滚到此版本",
     "grantsHint": "只勾选本次部署所需的只读能力。能力授权会作为独立部署事实保存。",
     "configHint": "配置必须是 JSON 对象；不要填写密钥、口令或其他凭据。",
-    "configEditor": {
-      "advanced": "高级 JSON 配置",
-      "hint": "这些配置会发送给插件。请勿填写密码、API Key、令牌、Cookie 或其他凭据。"
-    },
     "fields": {
       "pluginId": "插件 ID",
       "version": "版本",
@@ -150,21 +146,6 @@
       "grants": "已授权能力",
       "history": "查看历史",
       "empty": "当前没有插件部署。"
-    },
-    "ui": {
-      "section": "插件信息",
-      "scope": "由 AnyFlows 展示的静态文本；此处不会运行插件代码或操作。"
-    },
-    "events": {
-      "title": "插件事件结果",
-      "description": "已安装插件返回的只读报告，结果保留 30 天。",
-      "error": "插件事件结果加载失败。",
-      "empty": "暂无已完成的插件事件结果。",
-      "delivered": "已完成",
-      "completedAt": "完成于 {{time}}",
-      "attempts": "尝试次数：{{count}}",
-      "result": "查看结果 JSON",
-      "more": "加载更多结果"
     },
     "errors": {
       "action": "操作未完成。请刷新当前状态后重试，或检查服务日志。",
@@ -796,21 +777,6 @@
         "eventCount": "已分析 {{count}} 条事件",
         "noChecks": "插件没有返回分析项。",
         "recommendation": "建议",
-        "action": {
-          "suggestion": "插件提出了一个目标状态建议。",
-          "suggestionDetail": "建议将此目标设为：{{enabled}}。创建提案不会修改设置。",
-          "prepare": "创建待确认提案",
-          "prepareError": "无法创建提案。目标或插件版本可能已变化，请重新分析。",
-          "confirmTitle": "确认目标状态变更",
-          "target": "目标 #{{id}}",
-          "change": "变更：{{before}} → {{after}}",
-          "expires": "提案过期时间：{{time}}",
-          "confirmCheck": "我已核对目标和变更内容，确认由宿主保存此设置。",
-          "confirm": "确认并执行",
-          "confirmError": "确认未完成。若目标或插件授权发生变化，提案会被拒绝。",
-          "completed": "设置已更新。重新启用需由插件重新提交并经管理员确认。",
-          "unavailable": "提案已过期、目标已变化或插件授权已撤销。请重新分析。"
-        },
         "status": { "pass": "通过", "info": "提示", "warning": "警告", "fail": "未通过" }
       }
     },
@@ -8176,28 +8142,6 @@
       "showHistory": "查看余额记录",
       "hideHistory": "收起记录",
       "history": "余额快照历史",
-      "pluginReview": {
-        "open": "插件分析",
-        "title": "分析已保存的余额快照",
-        "subtitle": "选择一个已获授权的分析插件。插件只收到余额数值、币种、状态和记录时间。",
-        "consent": "默认仅将此账户最多 20 条已保存余额快照发送给所选插件，不刷新上游。结果是插件建议，请自行判断；插件不会获得凭据，也不能影响 AnyFlows 钱包。",
-        "allowExternalReads": "另外允许插件本次通过 AnyFlows 读取账户基本资料或最新余额。余额读取会生成新快照；凭据不会交给插件。",
-        "plugin": "分析插件",
-        "run": "开始分析",
-        "listError": "无法读取已授权的分析插件。",
-        "none": "没有已获授余额快照分析能力的插件。",
-        "runError": "分析失败，请重试。",
-        "snapshotRange": "{{count}} 条记录 · {{from}} 至 {{to}}",
-        "noChecks": "插件没有返回检查项。",
-        "recommendation": "建议",
-        "close": "关闭",
-        "status": {
-          "pass": "通过",
-          "info": "说明",
-          "warning": "注意",
-          "fail": "异常"
-        }
-      },
       "historyError": "无法读取余额记录。",
       "noHistory": "暂无历史快照。",
       "unlink": "解除关联",

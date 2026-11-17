@@ -14,7 +14,6 @@ from anyflows_plugin import Plugin, PluginError
 # 运行时清单跟随插件包放置。它描述本插件支持的固定能力和 JSON Schema。
 ROOT = Path(__file__).resolve().parent
 CAPABILITY = "channel.monitor.events.review.read"
-ACTION_PROPOSAL_CAPABILITY = "channel.monitor.target.action-propose.read"
 EVENT_FIELDS = {"kind", "latency_ms", "occurred_epoch_seconds"}
 ALLOWED_KINDS = {"down", "recovered"}
 
@@ -52,7 +51,7 @@ def review_events(
     探测请求、渠道修改或路由权重写入这里。宿主只会给本插件提供事件快照。
     """
     # 宿主固定调用这个能力。拒绝意外传入的能力名称，避免复用处理器时混淆。
-    if capability_id not in {CAPABILITY, ACTION_PROPOSAL_CAPABILITY}:
+    if capability_id != CAPABILITY:
         raise PluginError("unsupported")
 
     # 当前业务接入不需要部署设置；配置必须保持空对象。
@@ -60,9 +59,7 @@ def review_events(
         raise PluginError("invalid_configuration")
 
     # 只接受契约声明的输入对象和字段，不猜测、不吞掉额外数据。
-    if not isinstance(value, dict) or set(value) != {"events", "targetEnabled"}:
-        raise PluginError("invalid_configuration")
-    if type(value["targetEnabled"]) is not bool:
+    if not isinstance(value, dict) or set(value) != {"events"}:
         raise PluginError("invalid_configuration")
     events = value["events"]
     if not isinstance(events, list) or len(events) > 100:
@@ -187,18 +184,6 @@ def review_events(
 
     # 结果契约最多允许 64 项；这个示例固定返回少量规则，仍显式守住上限。
     result = {"summary": summary, "checks": checks[:64]}
-    if ordered and ordered[-1]["kind"] == "down" and value["targetEnabled"]:
-        result["actionProposal"] = {
-            "actionId": "active-channel-monitor.target.set-enabled",
-            "actionVersion": 1,
-            "input": {"enabled": False},
-        }
-    elif ordered and ordered[-1]["kind"] == "recovered" and not value["targetEnabled"]:
-        result["actionProposal"] = {
-            "actionId": "active-channel-monitor.target.set-enabled",
-            "actionVersion": 1,
-            "input": {"enabled": True},
-        }
     encoded = json.dumps(result, ensure_ascii=False, allow_nan=False).encode("utf-8")
     if len(encoded) > 16 * 1024:
         # 这是业务数据无效的统一错误，不把本地路径或异常内容发回宿主。

@@ -10,7 +10,6 @@ import {
   useChannelModelMappingPluginReviewers,
   useReviewChannelModelMappingWithPlugin,
 } from './channel-model-mapping-plugin-review-api'
-import { PluginUiViewsRenderer } from '@/features/plugin-lifecycle/plugin-ui-views'
 
 function reviewCheckStyle(status: ChannelModelMappingPluginReviewCheck['status']) {
   if (status === 'fail') return 'border-danger/25 bg-danger/5'
@@ -24,7 +23,7 @@ function isForbidden(error: unknown) {
 }
 
 export function ChannelModelMappingPluginReviewPanel({ channels }: { channels: AdminChannel[] }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const reviewers = useChannelModelMappingPluginReviewers(open)
   const review = useReviewChannelModelMappingWithPlugin()
@@ -104,7 +103,6 @@ export function ChannelModelMappingPluginReviewPanel({ channels }: { channels: A
             <p className="whitespace-pre-wrap break-words text-[11px] leading-4">{check.message}</p>
             {check.recommendation ? <p className="whitespace-pre-wrap break-words text-[11px] leading-4 text-muted-foreground">{t('channels.modelMappingPluginReview.recommendation')}: {check.recommendation}</p> : null}
           </li>)}</ul> : <p className="text-[11px] text-muted-foreground">{t('channels.modelMappingPluginReview.noChecks')}</p>}
-          <PluginUiViewsRenderer manifest={{ uiViews: result.ui_views }} slot="channel_model_mapping" locale={i18n.resolvedLanguage ?? 'en'} />
         </div> : null}
       </> : null}
     </div>

@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import type { MerchantPluginReviewCheck } from './merchant-pool-model'
 import { useMerchantPluginReviewers, useMerchantServicePluginReview } from './merchant-pool-api'
 import { PoolButton as Button, PoolEmpty, PoolError, PoolField, PoolLoading, PoolSelect } from './merchant-pool-ui'
-import { PluginUiViewsRenderer } from '@/features/plugin-lifecycle/plugin-ui-views'
 
 function checkStyle(status: MerchantPluginReviewCheck['status']) {
   if (status === 'fail') return 'border-danger/25 bg-danger/5'
@@ -14,7 +13,7 @@ function checkStyle(status: MerchantPluginReviewCheck['status']) {
 }
 
 export function MerchantServicePluginReview({ serviceId, serviceName, onClose }: { serviceId: number; serviceName: string; onClose: () => void }) {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const reviewers = useMerchantPluginReviewers()
   const review = useMerchantServicePluginReview()
   const [selectedPluginId, setSelectedPluginId] = useState('')
@@ -58,7 +57,6 @@ export function MerchantServicePluginReview({ serviceId, serviceName, onClose }:
               <p className="whitespace-pre-wrap break-words text-xs leading-5">{check.message}</p>
               {check.recommendation ? <p className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground">{t('merchantPool.pluginReview.recommendation')}: {check.recommendation}</p> : null}
             </li>)}</ul>}
-            <PluginUiViewsRenderer manifest={{ uiViews: review.data.ui_views }} slot="merchant_service" locale={i18n.resolvedLanguage ?? 'en'} />
           </section> : null}
         </>}
       </DrawerBody>
