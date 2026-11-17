@@ -134,6 +134,16 @@ impl CapabilityExecutionContext {
     pub fn remaining_timeout(&self) -> Result<Duration, ConnectorOperationError> {
         operation_timeout_for_metadata(&self.metadata, 300_000)
     }
+
+    #[must_use]
+    pub fn connection_id(&self) -> &str {
+        &self.connection_id
+    }
+
+    #[must_use]
+    pub const fn metadata(&self) -> &InvocationMetadata {
+        &self.metadata
+    }
 }
 
 impl std::fmt::Debug for CapabilityExecutionContext {
@@ -918,8 +928,8 @@ impl ConnectorRegistry {
 pub fn validate_request_processing_input(
     value: Value,
 ) -> Result<RequestProcessingInput, ConnectorOperationError> {
-    let input =
-        serde_json::from_value(value).map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    let input = serde_json::from_value::<RequestProcessingInput>(value)
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
     input
         .validate()
         .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
@@ -930,8 +940,8 @@ pub fn validate_request_processing_output(
     value: Value,
     stage: RequestProcessingStage,
 ) -> Result<RequestProcessingOutput, ConnectorOperationError> {
-    let output =
-        serde_json::from_value(value).map_err(|_| ConnectorOperationError::InvalidResponse)?;
+    let output = serde_json::from_value::<RequestProcessingOutput>(value)
+        .map_err(|_| ConnectorOperationError::InvalidResponse)?;
     output
         .validate_for(stage)
         .map_err(|_| ConnectorOperationError::InvalidResponse)?;
