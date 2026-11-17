@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 
-use crate::{ConnectorError, ContractValidationError};
+use crate::{ConnectorError, ContractValidationError, PluginTaskOperation, PluginTaskResult};
+
+pub const PROVIDER_REQUEST_TRANSFORM_CAPABILITY: &str = "provider.request.transform";
 
 /// Correlation and time budget supplied for one host-to-connector invocation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -79,24 +79,6 @@ impl ProviderRequestTransformInput {
             })
         {
             return Err(ContractValidationError::InvalidExternalValue);
-        }
-        if let PluginHostOperation::InvokeTask {
-            connection_id,
-            public_config,
-            capability_id,
-            capability_version,
-            task,
-        } = &self.operation
-        {
-            if connection_id.is_empty()
-                || connection_id.len() > 128
-                || !public_config.is_object()
-                || capability_id.is_empty()
-                || *capability_version == 0
-                || task.validate().is_err()
-            {
-                return Err(ContractValidationError::InvalidExternalValue);
-            }
         }
         Ok(())
     }
@@ -542,6 +524,24 @@ impl PluginHostRequest {
             || self.deadline_unix_ms == 0
         {
             return Err(ContractValidationError::InvalidExternalValue);
+        }
+        if let PluginHostOperation::InvokeTask {
+            connection_id,
+            public_config,
+            capability_id,
+            capability_version,
+            task,
+        } = &self.operation
+        {
+            if connection_id.is_empty()
+                || connection_id.len() > 128
+                || !public_config.is_object()
+                || capability_id.is_empty()
+                || *capability_version == 0
+                || task.validate().is_err()
+            {
+                return Err(ContractValidationError::InvalidExternalValue);
+            }
         }
         Ok(())
     }
