@@ -17,7 +17,8 @@ use af_plugin_contract::{
     CapabilityId, CapabilityResult, PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId,
     PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
     ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
-    RequestProcessingInput, RequestProcessingOutput, RequestProcessingStage,
+    RequestProcessingInput, RequestProcessingOutput, RequestProcessingPipelineResult,
+    RequestProcessingStage,
 };
 use af_plugin_runtime::{
     CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError,
@@ -634,7 +635,29 @@ impl AdminPluginSidecarRuntime {
     /// Execute request-processing stages in order for one enabled deployment.
     /// Each stage is validated independently; a reject/stop proposal ends the
     /// pipeline so the host can apply the terminal decision immediately.
+    /// Existing callers receive the output list; the `_with_state` variant
+    /// also returns the final snapshot after non-terminal effects.
     pub async fn process_request_pipeline(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        request: RequestProcessingInput,
+        stages: &[RequestProcessingStage],
+    ) -> Result<Vec<RequestProcessingOutput>, AdminPluginLifecycleError> {
+        Ok(self
+            .process_request_pipeline_with_state(
+                repository, plugin_id, generation, invocation, request, stages,
+            )
+            .await?
+            .outputs)
+    }
+
+    /// Execute stages and return the final request snapshot after applying
+    /// each non-terminal effect. The compatibility method above returns only
+    /// the output list for existing callers.
+    pub async fn process_request_pipeline_with_state(
         &self,
         repository: &PluginCatalogRepository,
         plugin_id: &str,
@@ -642,7 +665,10 @@ impl AdminPluginSidecarRuntime {
         invocation: &CapabilityExecutionContext,
         mut request: RequestProcessingInput,
         stages: &[RequestProcessingStage],
-    ) -> Result<Vec<RequestProcessingOutput>, AdminPluginLifecycleError> {
+    ) -> Result<RequestProcessingPipelineResult, AdminPluginLifecycleError> {
+        request
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let mut outputs = Vec::with_capacity(stages.len());
         for stage in stages {
             request.stage = *stage;
@@ -660,12 +686,17 @@ impl AdminPluginSidecarRuntime {
                 af_plugin_contract::RequestProcessingAction::Reject
                     | af_plugin_contract::RequestProcessingAction::Stop
             );
+            if !terminal {
+                request
+                    .apply_effects(&output.effects)
+                    .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+            }
             outputs.push(output);
             if terminal {
                 break;
             }
         }
-        Ok(outputs)
+        Ok(RequestProcessingPipelineResult { request, outputs })
     }
 
     /// Invoke a host capability with a request-scoped external read dispatcher.

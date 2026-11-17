@@ -426,3 +426,5 @@ def review_live_balance(capability_id, public_config, value, context):
 ### 请求处理
 
 `request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。
+
+当宿主显式执行多个阶段时，`continue` 结果中的 `json_patch` 和 `header_patch` 会按顺序应用到下一阶段输入。JSON Patch 只支持 `add`、`replace`、`remove`；中间路径必须存在，`replace` 和 `remove` 的目标项也必须存在，`add` 可新增对象字段或插入数组项。缺失路径、根替换和受保护字段都会使整批提案失败，且不会留下部分修改。头部修改按不区分大小写的名称合并，认证、Cookie、Host、内容长度和协议控制头不能修改。插件只能影响这条插件处理流水线的快照，真实转发、路由、计费和结算仍由宿主决定。

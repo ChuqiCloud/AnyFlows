@@ -35,7 +35,7 @@ pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,
     REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingEffect,
     RequestProcessingFinding, RequestProcessingFindingStatus, RequestProcessingInput,
-    RequestProcessingOutput, RequestProcessingStage,
+    RequestProcessingOutput, RequestProcessingPipelineResult, RequestProcessingStage,
 };
 pub use schema::{openapi_document, schema_document};
 pub use task::{

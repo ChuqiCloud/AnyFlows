@@ -21,7 +21,8 @@ use af_plugin_contract::{
     PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId, PluginManifest, PluginProxyRequest,
     PluginProxyResponse, PluginVersion, ProviderRequestTransformInput,
     ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY, RequestProcessingInput,
-    RequestProcessingOutput, RequestProcessingStage, SideEffectClass,
+    RequestProcessingOutput, RequestProcessingPipelineResult, RequestProcessingStage,
+    SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -955,18 +956,40 @@ impl ConnectorRegistry {
     }
 
     /// Execute several request stages in order and stop at the first terminal
-    /// proposal. Returning every validated output lets the host decide how to
-    /// merge effects, record findings, or run the remaining stages according
-    /// to its own product policy.
+    /// proposal. Existing callers receive every validated output; use
+    /// `process_request_pipeline_with_state` when the final patched snapshot
+    /// is also needed.
     pub async fn process_request_pipeline(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        request: RequestProcessingInput,
+        stages: &[RequestProcessingStage],
+    ) -> Result<Vec<RequestProcessingOutput>, ConnectorOperationError> {
+        Ok(self
+            .process_request_pipeline_with_state(negotiated, invocation, request, stages)
+            .await?
+            .outputs)
+    }
+
+    /// Execute stages and return both the validated outputs and the request
+    /// snapshot after all non-terminal effects have been applied. The original
+    /// pipeline method remains available for callers that only need outputs.
+    pub async fn process_request_pipeline_with_state(
         &self,
         negotiated: &NegotiatedConnector,
         invocation: &CapabilityExecutionContext,
         mut request: RequestProcessingInput,
         stages: &[RequestProcessingStage],
-    ) -> Result<Vec<RequestProcessingOutput>, ConnectorOperationError> {
+    ) -> Result<RequestProcessingPipelineResult, ConnectorOperationError> {
+        request
+            .validate()
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
         if stages.is_empty() {
-            return Ok(Vec::new());
+            return Ok(RequestProcessingPipelineResult {
+                request,
+                outputs: Vec::new(),
+            });
         }
         let mut outputs = Vec::with_capacity(stages.len());
         for stage in stages {
@@ -979,12 +1002,17 @@ impl ConnectorRegistry {
                 af_plugin_contract::RequestProcessingAction::Reject
                     | af_plugin_contract::RequestProcessingAction::Stop
             );
+            if !terminal {
+                request
+                    .apply_effects(&output.effects)
+                    .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+            }
             outputs.push(output);
             if terminal {
                 break;
             }
         }
-        Ok(outputs)
+        Ok(RequestProcessingPipelineResult { request, outputs })
     }
 
     pub fn plugin_ids(&self) -> impl Iterator<Item = &PluginId> {

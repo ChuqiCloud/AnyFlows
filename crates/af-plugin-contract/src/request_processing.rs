@@ -105,6 +105,53 @@ impl RequestProcessingInput {
         }
         Ok(())
     }
+
+    /// Apply a validated plugin proposal before the next processing stage.
+    ///
+    /// This is deliberately implemented by the host contract crate so every
+    /// runtime uses the same bounded JSON and header semantics. Protected
+    /// fields have already been rejected by `RequestProcessingOutput::validate_for`;
+    /// a missing path is still treated as an invalid proposal instead of being
+    /// silently ignored.
+    pub fn apply_effects(
+        &mut self,
+        effects: &[RequestProcessingEffect],
+    ) -> Result<(), ContractValidationError> {
+        validate_effects(effects)?;
+        let mut next = self.clone();
+        for effect in effects {
+            match effect {
+                RequestProcessingEffect::JsonPatch(patch) => {
+                    for operation in &patch.operations {
+                        apply_json_patch(&mut next.body, operation)?;
+                    }
+                }
+                RequestProcessingEffect::HeaderPatch(patch) => {
+                    for name in &patch.remove {
+                        next.headers
+                            .retain(|current, _| !current.eq_ignore_ascii_case(name));
+                    }
+                    for (name, value) in &patch.set {
+                        next.headers
+                            .retain(|current, _| !current.eq_ignore_ascii_case(name));
+                        next.headers.insert(name.clone(), value.clone());
+                    }
+                }
+            }
+        }
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
+}
+
+/// Host-side result of running a sequence of request-processing stages.
+/// `request` contains the validated effects accumulated through the last
+/// non-terminal stage; plugins never receive this structure as a wire frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RequestProcessingPipelineResult {
+    pub request: RequestProcessingInput,
+    pub outputs: Vec<RequestProcessingOutput>,
 }
 
 /// The host action requested by a plugin.  The host may downgrade a proposal
@@ -228,45 +275,56 @@ impl RequestProcessingOutput {
         }) {
             return Err(ContractValidationError::InvalidExternalValue);
         }
-        let mut patch_operations = 0;
-        for effect in &self.effects {
-            match effect {
-                RequestProcessingEffect::JsonPatch(patch) => {
-                    patch_operations += patch.operations.len();
-                    if patch.operations.len() > MAX_PATCH_OPERATIONS
-                        || patch.operations.iter().any(invalid_json_patch)
-                    {
-                        return Err(ContractValidationError::InvalidExternalValue);
-                    }
-                }
-                RequestProcessingEffect::HeaderPatch(patch) => {
-                    if patch.set.len() > MAX_HEADERS
-                        || patch.remove.len() > MAX_HEADERS
-                        || patch.set.iter().any(|(name, value)| {
-                            !valid_header_name(name)
-                                || protected_header(name)
-                                || value.len() > 8192
-                                || value.chars().any(char::is_control)
-                        })
-                        || patch
-                            .remove
-                            .iter()
-                            .any(|name| !valid_header_name(name) || protected_header(name))
-                    {
-                        return Err(ContractValidationError::InvalidExternalValue);
-                    }
-                }
-            }
-        }
-        if patch_operations > MAX_PATCH_OPERATIONS {
-            return Err(ContractValidationError::InvalidExternalValue);
-        }
+        validate_effects(&self.effects)?;
         Ok(())
     }
 }
 
+fn validate_effects(effects: &[RequestProcessingEffect]) -> Result<(), ContractValidationError> {
+    let mut patch_operations = 0;
+    if effects.len() > MAX_EFFECTS {
+        return Err(ContractValidationError::InvalidExternalValue);
+    }
+    for effect in effects {
+        match effect {
+            RequestProcessingEffect::JsonPatch(patch) => {
+                if patch.operations.len() > MAX_PATCH_OPERATIONS
+                    || patch.operations.iter().any(invalid_json_patch)
+                {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+                patch_operations = patch_operations
+                    .checked_add(patch.operations.len())
+                    .ok_or(ContractValidationError::InvalidExternalValue)?;
+            }
+            RequestProcessingEffect::HeaderPatch(patch) => {
+                if patch.set.len() > MAX_HEADERS
+                    || patch.remove.len() > MAX_HEADERS
+                    || patch.set.iter().any(|(name, value)| {
+                        !valid_header_name(name)
+                            || protected_header(name)
+                            || value.len() > 8192
+                            || value.chars().any(char::is_control)
+                    })
+                    || patch
+                        .remove
+                        .iter()
+                        .any(|name| !valid_header_name(name) || protected_header(name))
+                {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+            }
+        }
+    }
+    if patch_operations > MAX_PATCH_OPERATIONS {
+        return Err(ContractValidationError::InvalidExternalValue);
+    }
+    Ok(())
+}
+
 fn invalid_json_patch(operation: &JsonPatchOperation) -> bool {
-    operation.path.len() > 32
+    operation.path.is_empty()
+        || operation.path.len() > 32
         || operation.path.iter().any(|segment| {
             segment.is_empty()
                 || segment.len() > 256
@@ -280,6 +338,97 @@ fn invalid_json_patch(operation: &JsonPatchOperation) -> bool {
                 .is_none_or(|value| json_size(value) > MAX_JSON_BYTES),
             JsonPatchOperationKind::Remove => operation.value.is_some(),
         }
+}
+
+fn apply_json_patch(
+    body: &mut Value,
+    operation: &JsonPatchOperation,
+) -> Result<(), ContractValidationError> {
+    if operation.path.is_empty() {
+        return Err(ContractValidationError::InvalidExternalValue);
+    }
+    let (parent_path, leaf) = operation
+        .path
+        .split_at(operation.path.len().saturating_sub(1));
+    let parent = value_at_path_mut(body, parent_path)?;
+    match parent {
+        Value::Object(object) => match operation.op {
+            JsonPatchOperationKind::Add | JsonPatchOperationKind::Replace => {
+                let value = operation
+                    .value
+                    .clone()
+                    .ok_or(ContractValidationError::InvalidExternalValue)?;
+                if operation.op == JsonPatchOperationKind::Replace && !object.contains_key(&leaf[0])
+                {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+                object.insert(leaf[0].clone(), value);
+            }
+            JsonPatchOperationKind::Remove => {
+                if object.remove(&leaf[0]).is_none() {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+            }
+        },
+        Value::Array(array) => {
+            let index = leaf[0]
+                .parse::<usize>()
+                .map_err(|_| ContractValidationError::InvalidExternalValue)?;
+            match operation.op {
+                JsonPatchOperationKind::Add => {
+                    let value = operation
+                        .value
+                        .clone()
+                        .ok_or(ContractValidationError::InvalidExternalValue)?;
+                    if index > array.len() {
+                        return Err(ContractValidationError::InvalidExternalValue);
+                    }
+                    array.insert(index, value);
+                }
+                JsonPatchOperationKind::Replace => {
+                    let value = operation
+                        .value
+                        .clone()
+                        .ok_or(ContractValidationError::InvalidExternalValue)?;
+                    let target = array
+                        .get_mut(index)
+                        .ok_or(ContractValidationError::InvalidExternalValue)?;
+                    *target = value;
+                }
+                JsonPatchOperationKind::Remove => {
+                    if index >= array.len() {
+                        return Err(ContractValidationError::InvalidExternalValue);
+                    }
+                    array.remove(index);
+                }
+            }
+        }
+        _ => return Err(ContractValidationError::InvalidExternalValue),
+    }
+    Ok(())
+}
+
+fn value_at_path_mut<'a>(
+    mut value: &'a mut Value,
+    path: &[String],
+) -> Result<&'a mut Value, ContractValidationError> {
+    for segment in path {
+        value = match value {
+            Value::Object(object) => object
+                .get_mut(segment)
+                .ok_or(ContractValidationError::InvalidExternalValue)?,
+            Value::Array(array) => {
+                let index = segment
+                    .parse::<usize>()
+                    .map_err(|_| ContractValidationError::InvalidExternalValue)?;
+                array
+                    .get_mut(index)
+                    .ok_or(ContractValidationError::InvalidExternalValue)?
+            }
+            _ => return Err(ContractValidationError::InvalidExternalValue),
+        };
+    }
+    Ok(value)
 }
 
 fn is_protected_json_path(segment: &str) -> bool {
@@ -413,5 +562,72 @@ mod tests {
             message: None,
         };
         assert!(value.validate_for(RequestProcessingStage::Report).is_ok());
+    }
+
+    #[test]
+    fn effects_are_applied_with_shared_json_and_header_semantics() {
+        let mut value = input(RequestProcessingStage::Ingress);
+        value.body = serde_json::json!({"metadata": {"tenant": "old"}, "items": ["a"]});
+        value.headers.insert("x-trace".to_owned(), "old".to_owned());
+        let effects = vec![
+            RequestProcessingEffect::JsonPatch(JsonPatchEffect {
+                operations: vec![JsonPatchOperation {
+                    op: JsonPatchOperationKind::Replace,
+                    path: vec!["metadata".to_owned(), "tenant".to_owned()],
+                    value: Some(serde_json::json!("new")),
+                }],
+            }),
+            RequestProcessingEffect::HeaderPatch(HeaderPatchEffect {
+                set: BTreeMap::from([("X-Trace".to_owned(), "next".to_owned())]),
+                remove: vec!["accept".to_owned()],
+            }),
+        ];
+        value.apply_effects(&effects).unwrap();
+        assert_eq!(value.body["metadata"]["tenant"], "new");
+        assert_eq!(value.headers.get("X-Trace"), Some(&"next".to_owned()));
+        assert!(!value.headers.contains_key("accept"));
+    }
+
+    #[test]
+    fn effects_reject_missing_paths_and_root_replacement() {
+        let mut value = input(RequestProcessingStage::Ingress);
+        let missing = vec![RequestProcessingEffect::JsonPatch(JsonPatchEffect {
+            operations: vec![JsonPatchOperation {
+                op: JsonPatchOperationKind::Replace,
+                path: vec!["missing".to_owned()],
+                value: Some(serde_json::json!(true)),
+            }],
+        })];
+        assert!(value.apply_effects(&missing).is_err());
+        let root = vec![RequestProcessingEffect::JsonPatch(JsonPatchEffect {
+            operations: vec![JsonPatchOperation {
+                op: JsonPatchOperationKind::Replace,
+                path: Vec::new(),
+                value: Some(serde_json::json!({})),
+            }],
+        })];
+        assert!(value.apply_effects(&root).is_err());
+    }
+
+    #[test]
+    fn failed_effect_batch_does_not_partially_mutate_input() {
+        let mut value = input(RequestProcessingStage::Ingress);
+        let original = value.clone();
+        let effects = vec![RequestProcessingEffect::JsonPatch(JsonPatchEffect {
+            operations: vec![
+                JsonPatchOperation {
+                    op: JsonPatchOperationKind::Add,
+                    path: vec!["annotation".to_owned()],
+                    value: Some(serde_json::json!("temporary")),
+                },
+                JsonPatchOperation {
+                    op: JsonPatchOperationKind::Replace,
+                    path: vec!["missing".to_owned()],
+                    value: Some(serde_json::json!(true)),
+                },
+            ],
+        })];
+        assert!(value.apply_effects(&effects).is_err());
+        assert_eq!(value, original);
     }
 }
