@@ -2844,14 +2844,18 @@ export type PluginCapabilityGrantResponse = {
 };
 export type PluginCapabilityInvocationRequest = {
     capability_version: number;
-    input: unknown;
+    input: {
+        [key: string]: unknown;
+    };
 };
 export type PluginCapabilityInvocationResponse = {
     pluginId: string;
     deploymentGeneration: number;
     capabilityId: string;
     capabilityVersion: number;
-    output: unknown;
+    output: {
+        [key: string]: unknown;
+    };
 };
 export type PluginCatalogModelPageResponse = {
     source: PluginCatalogSourceResponse;
