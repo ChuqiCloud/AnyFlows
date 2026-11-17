@@ -34,7 +34,7 @@ export function pluginPages(deployment: PluginDeploymentResponse, locale: string
       || page.capabilityVersion < 1 || page.capabilityVersion > 65535) return []
     const encoded = JSON.stringify(page)
     if (!encoded || new TextEncoder().encode(encoded).length > 8 * 1024) return []
-    const declaration = capabilities.map(record).find((item) => item?.id === page.capabilityId && item.version === page.capabilityVersion)
+    const declaration = capabilities.map(record).find((item) => item !== undefined && item.id === page.capabilityId && item.version === page.capabilityVersion)
     const isReadOnly = declaration?.access === 'read' && declaration.sideEffect === 'none'
     const granted = deployment.grantedCapabilities.some((grant) => grant.id === page.capabilityId && grant.version === page.capabilityVersion)
     const title = localizedPluginUiText(page.title, locale)
