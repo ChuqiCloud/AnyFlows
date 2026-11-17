@@ -1,45 +1,47 @@
-# Live balance review example
+# 外部账户实时余额分析示例
 
-This example compares the current balance from a linked external account with its saved snapshots. The user must check the one-time permission in AnyFlows for each review. The host reads the account through its existing connector and stores the new snapshot; the plugin receives only the snapshot fields and a fixed balance projection.
+本示例比较用户当前外部账户余额与 AnyFlows 已保存的余额快照。每次运行前，用户都必须在页面勾选一次性授权。宿主使用已有连接器读取当前账户并保存新快照，然后只把允许的余额字段传给插件。
 
-The plugin receives no user ID, account ID, provider URL, credential, request header, or arbitrary HTTP access. It cannot refresh a different account, modify the account binding, credit a wallet, or change the balance ledger. The comparison is informational and is not a provider statement or financial recommendation.
+插件不会收到用户 ID、账户 ID、提供商 URL、凭据、请求头，也没有任意 HTTP 能力。插件不能读取其他账户、修改账户绑定、充值钱包或修改账本。结果仅用于提示，不代表提供商账单或财务建议。
 
-## Package
+## 打包
 
-From the repository root, create a package with:
+在仓库根目录运行：
 
-```sh
+```bash
 python tools/plugins/package-example.py dist/account-balance-live-review.afplugin --example account-balance-live-review
 ```
 
-The output path must not already exist.
+输出文件必须尚不存在。
 
-## Install and enable
+## 安装和授权
 
-Upload the package in the administrator's **Plugins** page. Enable it and grant:
+管理员在“插件管理”上传包，启用部署并授予：
 
-- `account.balance.snapshot.live-review.read@1` for the user-selected analysis.
-- `external.account.balance.read@1` for the fixed host callback.
+- `account.balance.snapshot.live-review.read@1`：允许运行余额分析；
+- `external.account.balance.read@1`：允许插件请求宿主固定的余额回调。
 
-The deployment configuration must remain empty. These are distinct grants: the first lets the host invoke the analyzer, and the second lets the plugin request the host's registered balance projection during that invocation. Neither grant provides an account credential or a general network client.
+部署配置必须是空对象 `{}`。这两个授权互相独立，都不会把账户凭据或通用网络客户端交给插件。
 
-On **Profile and security**, the linked account owner chooses the plugin. The checkbox allowing a current balance read is off by default and applies only to that review. Without the checkbox, AnyFlows invokes the snapshot-only capability; it does not refresh the upstream account. With consent, the host reads the currently selected account, records the returned balance snapshot, then sends the limited projection back through the active Sidecar call.
+用户在“个人资料与安全”页面选择已绑定账户和插件。实时读取复选框默认关闭，只对本次分析有效：
 
-The review endpoints require a user session or a system PAT with `external_accounts:read`. If a PAT request sets `allow_external_reads` to `true`, it must also have the separate `external_accounts:live_read` scope. The default **Account read-only** PAT preset does not grant this scope; choose **External account live read** only when the token needs it. Per-request consent is still required.
+- 不勾选：只分析本地快照，不刷新上游账户；
+- 勾选：宿主读取当前选中的账户、保存新快照，再通过 Sidecar 回调返回有限字段。
 
-## Python handler
+使用系统 PAT 时，查看插件需要 `external_accounts:read`。如果请求把 `allow_external_reads` 设为 `true`，PAT 还必须有 `external_accounts:live_read`。PAT scope 不能替代页面上的逐次同意。
 
-The Python SDK passes a fourth `context` argument only when the handler declares it. Existing three-argument handlers continue to work. A handler can request only a host-registered endpoint identifier:
+## Python 处理函数
+
+只有处理函数声明第四个参数时，SDK 才会传入 `context`：
 
 ```python
 def review_live_balance(capability_id, public_config, value, context):
     current = context.proxy_read("account.balance")
-    # Validate current and value against the published schemas before comparing.
     return make_report(value["snapshots"], current)
 ```
 
-The callback has no URL, path, headers, body, credential, or account ID. The SDK and host correlate it to the same request, artifact digest, deployment generation, capability grant, and deadline. The host currently accepts at most four callbacks in one invocation and terminates the process on malformed or mismatched protocol frames.
+回调只能使用宿主登记的 endpoint ID。SDK 和宿主会校验同一请求的制品摘要、部署代次、能力授权和截止时间。一次调用最多四次回调；协议帧异常或关联信息不一致时，宿主会终止插件。
 
-## Extend safely
+## 修改示例
 
-To expose another provider field, update the host-registered projection and its schema first. Do not add a URL or free-form route parameter to a plugin request. A new remote read needs a separate fixed endpoint, explicit capability grant, per-request user consent, owner check, bounded response projection, and regression coverage.
+需要新增提供商字段时，先由宿主增加固定投影和 Schema。不要向插件请求中增加 URL、自由路由参数或凭据。新的远程读取必须拥有独立 endpoint、独立 capability、逐次同意、账户归属检查、输出上限和回归测试。

@@ -15,6 +15,7 @@
 | [插件开发](plugin-development.md) | 支持范围、完整示例、自定义模块接入和打包 |
 | [插件安装与运维](plugin-sidecars.md) | 上传安装、升级回滚、多节点状态、卸载和故障排查 |
 | [插件协议参考](plugin-protocol-reference.md) | Manifest、JSON Lines 请求响应、包格式和签名规则 |
+| [插件动作确认](plugin-actions.md) | 渠道监控目标启停提案、管理员确认和接口权限 |
 | [渠道配置](channels.md) | 客户端档案、代理池和 NVIDIA 上游 |
 | [渠道质量评分](channel-routing.md) | 成功率与延迟、模型隔离、软避让和可选上游价值配置 |
 | [对话协议](conversation-compatibility.md) | 四类协议转换、历史回放和兼容范围 |
