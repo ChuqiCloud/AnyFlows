@@ -52696,9 +52696,7 @@
             "maximum": 65535,
             "minimum": 1
           },
-          "input": {
-            "type": "object"
-          }
+          "input": {}
         },
         "additionalProperties": false
       },
@@ -52727,9 +52725,7 @@
             "format": "int32",
             "minimum": 0
           },
-          "output": {
-            "type": "object"
-          }
+          "output": {}
         }
       },
       "PluginCatalogModelPageResponse": {

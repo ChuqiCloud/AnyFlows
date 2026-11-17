@@ -1370,6 +1370,42 @@ mod tests {
     }
 
     #[test]
+    fn plugin_custom_capability_preserves_all_json_value_shapes() {
+        let request_schema = serde_json::to_value(
+            <PluginCapabilityInvocationRequest as utoipa::PartialSchema>::schema(),
+        )
+        .unwrap();
+        let response_schema = serde_json::to_value(
+            <PluginCapabilityInvocationResponse as utoipa::PartialSchema>::schema(),
+        )
+        .unwrap();
+        assert_eq!(request_schema["properties"]["input"], json!({}));
+        assert_eq!(response_schema["properties"]["output"], json!({}));
+        for value in [
+            json!([]),
+            json!("value"),
+            json!(0),
+            json!(false),
+            Value::Null,
+        ] {
+            let request = serde_json::from_value::<PluginCapabilityInvocationRequest>(json!({
+                "capability_version": 1,
+                "input": value.clone(),
+            }))
+            .unwrap();
+            assert_eq!(request.input, value);
+            let response = PluginCapabilityInvocationResponse {
+                plugin_id: "org.example.custom".to_owned(),
+                deployment_generation: 1,
+                capability_id: "vendor.custom.lookup".to_owned(),
+                capability_version: 1,
+                output: value.clone(),
+            };
+            assert_eq!(serde_json::to_value(response).unwrap()["output"], value);
+        }
+    }
+
+    #[test]
     fn deployment_config_rejects_credential_like_field_names() {
         assert!(contains_sensitive_config_fields(&json!({
             "proxy": { "client_secret": "not-accepted" }

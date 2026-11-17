@@ -17,7 +17,7 @@
 | 渠道模型映射检查 | `channel.model_mapping.review.read`（v1） | 管理员选中的公开模型名和映射值 | 摘要、检查项和建议 |
 | 渠道健康事件 | `events.channel-health.changed.consume`（v1） | `eventKey`、状态变化和时间 | 有界的处理结果 |
 | 商户服务事件 | `events.merchant-service.changed.consume`（v1） | `eventKey`、服务 ID、版本、状态和时间 | 有界的处理结果 |
-| 自定义只读能力 | 清单中的 namespaced capability | 由 `inputSchema` 定义的 JSON 对象 | 由 `outputSchema` 定义的 JSON 对象；管理员可通过宿主通用入口调用 |
+| 自定义只读能力 | 清单中的 namespaced capability | 符合 `inputSchema` 的 JSON 值 | 符合 `outputSchema` 的 JSON 值；管理员可通过宿主通用入口调用 |
 | 已保存余额快照分析 | `account.balance.snapshot.review.read`（v1） | 本人最多 20 条余额快照 | 摘要、检查项和建议 |
 | 当前余额读取 | `account.balance.snapshot.live-review.read` + `external.account.balance.read`（均为 v1） | 用户本次同意后由宿主返回的当前余额投影 | 摘要、检查项和建议 |
 | 固定页面补充内容 | `uiViews` / `uiContributions` | 插件清单中的静态文本和指标 | 宿主组件渲染的卡片、徽标、指标或表格 |
@@ -37,6 +37,8 @@ Content-Type: application/json
 ```
 
 部署必须已启用、制品已批准、该能力版本已授权；宿主会再次校验 Schema、输入输出大小和部署代次。此接口只执行无副作用的只读能力，不替代外部读取、写入、任务提交或业务动作的专用宿主入口。
+
+自定义能力的输入和输出不限于对象，也可以是数组、字符串、数字、布尔值或 `null`，具体由各自的 Schema 决定。请求外层仍是上例的对象；把所需 JSON 值放在 `input` 字段中。管理页面对对象 Schema 提供字段编辑器，其他类型使用 JSON 输入框；对象编辑器中的“高级 JSON 配置”也可以编辑完整输入。
 
 固定业务页面仍只支持清单声明的宿主渲染视图。需要新业务页面、用户操作或可改变平台状态的功能时，宿主仍需提供对应的数据投影、权限边界和动作确认流程。
 

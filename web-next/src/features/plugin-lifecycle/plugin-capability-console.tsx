@@ -1,4 +1,4 @@
-import { Button, Chip, Select, SelectItem } from '@heroui/react'
+import { Button, Chip, Select, SelectItem, Textarea } from '@heroui/react'
 import { Play } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -39,11 +39,23 @@ function capabilities(deployment: PluginDeploymentResponse): Capability[] {
   })
 }
 
-function parseInput(value: string): Record<string, unknown> | undefined {
+function parseInput(value: string): { valid: true; value: unknown } | { valid: false } {
   try {
-    return object(JSON.parse(value))
+    return { valid: true, value: JSON.parse(value) }
   } catch {
-    return undefined
+    return { valid: false }
+  }
+}
+
+function initialInput(schema?: Record<string, unknown>): string {
+  switch (schema?.type) {
+    case 'array': return '[]'
+    case 'string': return '""'
+    case 'number':
+    case 'integer': return '0'
+    case 'boolean': return 'false'
+    case 'null': return 'null'
+    default: return '{}'
   }
 }
 
@@ -51,7 +63,7 @@ export function PluginCapabilityConsole({ deployment }: { deployment: PluginDepl
   const { t, i18n } = useTranslation()
   const callable = capabilities(deployment)
   const [capabilityId, setCapabilityId] = useState(callable[0]?.id ?? '')
-  const [input, setInput] = useState('{}')
+  const [input, setInput] = useState(() => initialInput(callable[0]?.inputSchema))
   const [output, setOutput] = useState<unknown>()
   const invocation = usePluginCustomCapability()
   const selected = callable.find((item) => item.id === capabilityId) ?? callable[0]
@@ -67,8 +79,9 @@ export function PluginCapabilityConsole({ deployment }: { deployment: PluginDepl
         label={t('pluginLifecycle.capabilityConsole.capability')}
         selectedKeys={selected ? [selected.id] : []}
         onSelectionChange={(keys) => {
-          setCapabilityId(String(Array.from(keys)[0] ?? ''))
-          setInput('{}')
+          const id = String(Array.from(keys)[0] ?? '')
+          setCapabilityId(id)
+          setInput(initialInput(callable.find((capability) => capability.id === id)?.inputSchema))
           setOutput(undefined)
         }}
         disallowEmptySelection
@@ -77,24 +90,30 @@ export function PluginCapabilityConsole({ deployment }: { deployment: PluginDepl
           {capability.id} · v{capability.version}
         </SelectItem>)}
       </Select>
-      {selected ? <PluginConfigEditor
+      {selected && (selected.inputSchema.type === 'object' || object(selected.inputSchema.properties)) ? <PluginConfigEditor
         schema={selected.inputSchema}
         value={input}
         onChange={(next) => { setInput(next); setOutput(undefined) }}
         locale={i18n.resolvedLanguage ?? 'en'}
+      /> : selected ? <Textarea
+        label={t('apiExplorer.requestBody')}
+        minRows={5}
+        value={input}
+        onValueChange={(next) => { setInput(next); setOutput(undefined) }}
+        classNames={{ input: 'font-mono text-xs' }}
       /> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           color="primary"
-          isDisabled={!selected || !parsed || invocation.isPending}
+          isDisabled={!selected || !parsed.valid || invocation.isPending}
           onPress={() => {
-            if (!selected || !parsed) return
+            if (!selected || !parsed.valid) return
             invocation.mutate({
               pluginId: deployment.pluginId,
               capabilityId: selected.id,
               capabilityVersion: selected.version,
-              input: parsed,
+              input: parsed.value,
             }, { onSuccess: (result) => setOutput(result.output) })
           }}
         >

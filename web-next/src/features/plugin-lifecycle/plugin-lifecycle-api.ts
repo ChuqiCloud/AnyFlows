@@ -242,7 +242,7 @@ export function usePluginCustomCapability() {
       pluginId: string
       capabilityId: string
       capabilityVersion: number
-      input: Record<string, unknown>
+      input: unknown
     }) => {
       const result = await apiClient.post<PluginCapabilityInvocationResult>({
         url: `/api/admin/plugins/${encodeURIComponent(pluginId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
