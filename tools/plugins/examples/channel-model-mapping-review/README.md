@@ -2,7 +2,7 @@
 
 这个示例读取 AnyFlows 宿主提供的公开模型名和映射关系，返回静态检查摘要。它不会连接上游、读取 API Key 或地址，也不会写入渠道配置。检查结果只是提示，是否修改映射仍由管理员决定。
 
-不需要了解 AnyFlows 的 Rust 代码。这个目录中，`manifest.json` 描述宿主会传入和接收的数据格式，`plugin.py` 实现检查规则，Python SDK 负责和宿主交换协议数据。
+这个目录中，`manifest.json` 描述宿主会传入和接收的数据格式，`plugin.py` 实现检查规则，Python SDK 负责和宿主交换协议数据。
 
 ## 1. 准备环境
 
@@ -138,4 +138,4 @@ Copy-Item tools/plugins/sdk/python/anyflows_plugin.py my-channel-mapping-review/
 python tools/plugins/package-plugin.py my-channel-mapping-review my-channel-mapping-review/manifest.json plugin.py dist/my-channel-mapping-review.afplugin
 ```
 
-通用打包命令的四个参数依次是：只包含要发布文件的目录、Manifest 文件路径、目录内入口路径、尚不存在的输出包路径。分发目录至少要有 `manifest.json`、`plugin.py` 和 `anyflows_plugin.py`。模型映射输入输出格式和能力 ID 属于宿主固定契约；若要改变字段，需要先由 AnyFlows 维护者发布新契约。
+通用打包命令的四个参数依次是：只包含要发布文件的目录、Manifest 文件路径、目录内入口路径、尚不存在的输出包路径。分发目录至少要有 `manifest.json`、`plugin.py` 和 `anyflows_plugin.py`。模型映射输入输出格式和能力 ID 属于宿主固定契约；若要改变字段，必须先由宿主发布新契约。
