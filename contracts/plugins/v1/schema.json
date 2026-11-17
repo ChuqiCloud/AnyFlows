@@ -373,6 +373,33 @@
       ],
       "type": "object"
     },
+    "JsonPatchOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "add",
+            "remove",
+            "replace"
+          ]
+        },
+        "path": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "value": {}
+      },
+      "required": [
+        "op",
+        "path"
+      ],
+      "type": "object"
+    },
     "PluginHostOperation": {
       "oneOf": [
         {
@@ -435,6 +462,45 @@
             "input"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilityId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+              "type": "string"
+            },
+            "capabilityVersion": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "connectionId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "operation": {
+              "const": "invoke_task"
+            },
+            "publicConfig": {
+              "type": "object"
+            },
+            "task": {
+              "$ref": "#/$defs/PluginTaskOperation"
+            }
+          },
+          "required": [
+            "operation",
+            "connectionId",
+            "publicConfig",
+            "capabilityId",
+            "capabilityVersion",
+            "task"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -456,7 +522,8 @@
           "const": [
             "manifest",
             "health",
-            "invoke_capability"
+            "invoke_capability",
+            "invoke_task"
           ]
         }
       },
@@ -603,6 +670,22 @@
             },
             "value": {
               "$ref": "#/$defs/CapabilityResult"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "task"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginTaskResult"
             }
           },
           "required": [
@@ -869,6 +952,187 @@
         }
       ]
     },
+    "PluginTaskOperation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "idempotency_key": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "submit"
+            },
+            "model": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "request": {}
+          },
+          "required": [
+            "kind",
+            "model",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "status"
+            },
+            "task_id": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "task_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "result"
+            },
+            "response": {},
+            "task_id": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "task_id",
+            "response"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginTaskResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "submitted"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "progress_basis_points": {
+                  "maximum": 10000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "state": {
+                  "enum": [
+                    "submitted",
+                    "queued",
+                    "running"
+                  ]
+                },
+                "task_id": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task_id",
+                "state"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "status"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "failure_code": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "progress_basis_points": {
+                  "maximum": 10000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "state": {
+                  "enum": [
+                    "submitted",
+                    "queued",
+                    "running",
+                    "succeeded",
+                    "failed"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "result"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "output": {},
+                "task_id": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task_id",
+                "output"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PluginUiBlock": {
       "oneOf": [
         {
@@ -1095,6 +1359,340 @@
       "maxLength": 128,
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
       "type": "string"
+    },
+    "ProviderHeaderPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "set": {
+          "additionalProperties": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxProperties": 32,
+          "type": "object"
+        }
+      },
+      "required": [
+        "set",
+        "remove"
+      ],
+      "type": "object"
+    },
+    "ProviderRequestTransformInput": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {},
+        "headers": {
+          "additionalProperties": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "model": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^/[^?#\\\\]*$",
+          "type": "string"
+        },
+        "protocol": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9_]+$",
+          "type": "string"
+        },
+        "upstreamModel": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "method",
+        "path",
+        "model",
+        "headers",
+        "body"
+      ],
+      "type": "object"
+    },
+    "ProviderRequestTransformOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "continue",
+            "reject"
+          ]
+        },
+        "body": {},
+        "headers": {
+          "$ref": "#/$defs/ProviderHeaderPatch"
+        },
+        "path": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^/[^?#\\\\]*$",
+          "type": "string"
+        },
+        "rejection": {
+          "$ref": "#/$defs/ProviderTransformRejection"
+        }
+      },
+      "required": [
+        "action",
+        "headers"
+      ],
+      "type": "object"
+    },
+    "ProviderTransformRejection": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "RequestProcessingEffect": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "json_patch"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "operations": {
+                  "items": {
+                    "$ref": "#/$defs/JsonPatchOperation"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "operations"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "header_patch"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "remove": {
+                  "items": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                },
+                "set": {
+                  "additionalProperties": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "maxProperties": 64,
+                  "type": "object"
+                }
+              },
+              "required": [
+                "set",
+                "remove"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RequestProcessingFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "recommendation": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "info",
+            "warning",
+            "fail"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "status",
+        "message"
+      ],
+      "type": "object"
+    },
+    "RequestProcessingInput": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {},
+        "format": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "model": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "responseBody": {},
+        "responseStatus": {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "stage": {
+          "enum": [
+            "ingress",
+            "request",
+            "outbound",
+            "egress",
+            "reply",
+            "report"
+          ]
+        },
+        "upstreamModel": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "usage": {}
+      },
+      "required": [
+        "stage",
+        "requestId",
+        "format",
+        "path",
+        "headers",
+        "body"
+      ],
+      "type": "object"
+    },
+    "RequestProcessingOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "continue",
+            "reject",
+            "stop"
+          ]
+        },
+        "effects": {
+          "items": {
+            "$ref": "#/$defs/RequestProcessingEffect"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/RequestProcessingFinding"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "message": {
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "effects",
+        "findings"
+      ],
+      "type": "object"
     }
   },
   "$id": "urn:anyflows:plugin-contract:v1",
@@ -1120,6 +1718,24 @@
     },
     {
       "$ref": "#/$defs/CapabilityResult"
+    },
+    {
+      "$ref": "#/$defs/PluginTaskOperation"
+    },
+    {
+      "$ref": "#/$defs/PluginTaskResult"
+    },
+    {
+      "$ref": "#/$defs/ProviderRequestTransformInput"
+    },
+    {
+      "$ref": "#/$defs/ProviderRequestTransformOutput"
+    },
+    {
+      "$ref": "#/$defs/RequestProcessingInput"
+    },
+    {
+      "$ref": "#/$defs/RequestProcessingOutput"
     },
     {
       "$ref": "#/$defs/PluginProxyRequest"

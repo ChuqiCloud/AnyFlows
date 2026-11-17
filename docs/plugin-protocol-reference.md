@@ -180,3 +180,6 @@ plugin_isolation = "auto"
 | `POST /artifacts/{artifact_id}/cleanup` | 清理已撤销且没有启用引用的制品。 |
 
 常见响应：`422 / plugin_lifecycle_capability_review_required` 表示包已保存但还要授权能力；`409 / plugin_lifecycle_conflict` 表示代次或当前状态发生冲突，应先刷新状态。完整参数以 [OpenAPI 文档](../web-next/openapi/openapi.json) 为准。
+## 数据面扩展契约
+
+`invoke_task`、`provider.request.transform` 和 `request.processing.read` 已纳入 v1 Schema。任务插件的状态、进度、失败码和幂等键由宿主校验；Provider 转换不能选择上游主机或修改认证、模型计费字段；请求处理提案由宿主按阶段和管理员策略决定是否应用。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。

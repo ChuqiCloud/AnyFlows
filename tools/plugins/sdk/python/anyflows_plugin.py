@@ -231,10 +231,12 @@ class Plugin:
         manifest: dict[str, Any],
         handler: Callable[..., Any],
         *,
+        task_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
         clock_ms: Callable[[], int] | None = None,
     ) -> None:
         self.manifest = copy.deepcopy(manifest)
         self.handler = handler
+        self.task_handler = task_handler
         self.clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
         # The wire envelope has an independent host limit. maxResponseBytes
         # limits capability values, not Manifest/health or correlation metadata.
@@ -266,7 +268,7 @@ class Plugin:
                 result = {"kind": "health", "value": {
                     "status": "healthy", "checkedAtUnixMs": self.clock_ms(),
                 }}
-            else:
+            elif kind == "invoke_capability":
                 declaration = self.declarations.get(operation["capabilityId"])
                 if (
                     not declaration
@@ -289,6 +291,29 @@ class Plugin:
                 if request["deadlineUnixMs"] <= self.clock_ms():
                     raise PluginError("temporarily_unavailable")
                 result = {"kind": "capability", "value": {"output": output}}
+            else:
+                declaration = self.declarations.get(operation["capabilityId"])
+                if (
+                    not declaration
+                    or declaration["version"] != operation["capabilityVersion"]
+                    or self.task_handler is None
+                ):
+                    raise PluginError("unsupported")
+                if operation["task"]["kind"] == "submit" and (
+                    declaration.get("access") != "write"
+                    or declaration.get("sideEffect") != "external_write"
+                    or "writeSemantics" not in declaration
+                ):
+                    raise PluginError("forbidden")
+                output = self.task_handler(
+                    operation["capabilityId"], operation["publicConfig"], operation["task"]
+                )
+                self._validate_task_result(output)
+                if self._json_size(output) > self.max_response_bytes:
+                    raise PluginError("invalid_response")
+                if request["deadlineUnixMs"] <= self.clock_ms():
+                    raise PluginError("temporarily_unavailable")
+                result = {"kind": "task", "value": output}
         except ProtocolError:
             raise
         except PluginError as error:
@@ -351,6 +376,38 @@ class Plugin:
         return len(json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8"))
 
     @staticmethod
+    def _validate_task_result(value: Any) -> None:
+        if not isinstance(value, dict) or set(value) != {"kind", "value"}:
+            raise PluginError("invalid_response")
+        if value["kind"] not in {"submitted", "status", "result"} or not isinstance(value["value"], dict):
+            raise PluginError("invalid_response")
+        payload = value["value"]
+        if value["kind"] == "submitted":
+            if set(payload) - {"task_id", "state", "progress_basis_points"} or not isinstance(payload.get("task_id"), str) or not 1 <= len(payload["task_id"].encode("utf-8")) <= 512 or not payload["task_id"].strip() or payload["task_id"].strip() != payload["task_id"] or any(character.isspace() or ord(character) < 32 for character in payload["task_id"]):
+                raise PluginError("invalid_response")
+            if payload.get("state") not in {"submitted", "queued", "running"}:
+                raise PluginError("invalid_response")
+            progress = payload.get("progress_basis_points")
+            if progress is not None and (type(progress) is not int or not 0 <= progress <= 10000):
+                raise PluginError("invalid_response")
+        elif value["kind"] == "status":
+            if set(payload) - {"state", "progress_basis_points", "failure_code"} or payload.get("state") not in {
+                "submitted", "queued", "running", "succeeded", "failed"
+            }:
+                raise PluginError("invalid_response")
+            progress = payload.get("progress_basis_points")
+            if progress is not None and (type(progress) is not int or not 0 <= progress <= 10000):
+                raise PluginError("invalid_response")
+            if payload.get("state") == "failed":
+                code = payload.get("failure_code")
+                if not isinstance(code, str) or not 1 <= len(code.encode("utf-8")) <= 128 or code.strip() != code or any(character.isspace() or ord(character) < 32 for character in code):
+                    raise PluginError("invalid_response")
+            elif "failure_code" in payload:
+                raise PluginError("invalid_response")
+        elif set(payload) - {"task_id", "output"} or not isinstance(payload.get("task_id"), str) or not 1 <= len(payload["task_id"].encode("utf-8")) <= 512 or not payload["task_id"].strip() or payload["task_id"].strip() != payload["task_id"] or any(character.isspace() or ord(character) < 32 for character in payload["task_id"]) or "output" not in payload or payload["output"] is None:
+            raise PluginError("invalid_response")
+
+    @staticmethod
     def _normalize_legacy_request(request: Any) -> Any:
         if not isinstance(request, dict) or not isinstance(request.get("operation"), dict):
             return request
@@ -386,13 +443,16 @@ class Plugin:
         ):
             raise ProtocolError("invalid correlation metadata")
         operation = request["operation"]
-        if not isinstance(operation, dict) or operation.get("operation") not in {"manifest", "health", "invoke_capability"}:
+        if not isinstance(operation, dict) or operation.get("operation") not in {"manifest", "health", "invoke_capability", "invoke_task"}:
             raise ProtocolError("invalid operation")
         if operation["operation"] in {"manifest", "health"}:
             if set(operation) != {"operation"}:
                 raise ProtocolError("unexpected operation fields")
             return
-        if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "input"}:
+        if operation["operation"] == "invoke_task":
+            if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "task"}:
+                raise ProtocolError("invalid task operation")
+        elif set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "input"}:
             raise ProtocolError("invalid capability operation")
         if (
             not isinstance(operation["connectionId"], str)
@@ -403,6 +463,50 @@ class Plugin:
             or not 1 <= operation["capabilityVersion"] <= 65535
         ):
             raise ProtocolError("invalid capability fields")
+        if operation["operation"] == "invoke_task":
+            task = operation["task"]
+            if not isinstance(task, dict) or task.get("kind") not in {"submit", "status", "result"}:
+                raise ProtocolError("invalid task operation")
+            if task["kind"] == "submit" and (
+                set(task) - {"kind", "model", "request", "idempotency_key"}
+                or not isinstance(task.get("model"), str)
+                or not 1 <= len(task["model"].encode("utf-8")) <= 128
+                or not task["model"].strip()
+                or task["model"].strip() != task["model"]
+                or any(character.isspace() or ord(character) < 32 for character in task["model"])
+                or "request" not in task
+            ):
+                raise ProtocolError("invalid task operation")
+            if "idempotency_key" in task and (
+                not isinstance(task["idempotency_key"], str)
+                or not 1 <= len(task["idempotency_key"].encode("utf-8")) <= 256
+                or not task["idempotency_key"].strip()
+                or task["idempotency_key"].strip() != task["idempotency_key"]
+                or any(character.isspace() or ord(character) < 32 for character in task["idempotency_key"])
+            ):
+                raise ProtocolError("invalid task operation")
+            if task["kind"] == "status" and (
+                set(task) != {"kind", "task_id"}
+                or not isinstance(task["task_id"], str)
+                or not 1 <= len(task["task_id"].encode("utf-8")) <= 512
+                or not task["task_id"].strip()
+                or task["task_id"].strip() != task["task_id"]
+                or any(character.isspace() or ord(character) < 32 for character in task["task_id"])
+            ):
+                raise ProtocolError("invalid task operation")
+            if task["kind"] == "result" and (
+                set(task) != {"kind", "task_id", "response"}
+                or not isinstance(task["task_id"], str)
+                or not 1 <= len(task["task_id"].encode("utf-8")) <= 512
+                or not task["task_id"].strip()
+                or task["task_id"].strip() != task["task_id"]
+                or any(character.isspace() or ord(character) < 32 for character in task["task_id"])
+                or task["response"] is None
+            ):
+                raise ProtocolError("invalid task operation")
+            if self._json_size(task) > self.max_response_bytes:
+                raise ProtocolError("task input exceeds advertised limit")
+            return
         if self._json_size(operation["input"]) > self.max_response_bytes:
             raise ProtocolError("capability input exceeds advertised limit")
 
