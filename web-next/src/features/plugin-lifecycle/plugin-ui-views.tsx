@@ -6,6 +6,9 @@ type ViewBlock =
   | { type: 'badge'; label: string; tone: Tone }
   | { type: 'metric'; label: string; value: string }
   | { type: 'table'; columns: string[]; rows: string[][] }
+  | { type: 'list'; items: string[] }
+  | { type: 'notice'; title: string; description?: string; tone: Tone }
+  | { type: 'progress'; label: string; percent: number }
   | { type: 'info_card'; title: string; description?: string }
 type View = { id: string; blocks: ViewBlock[] }
 
@@ -69,6 +72,28 @@ function parseBlock(value: unknown, locale: string): ViewBlock | undefined {
       rows: rows as string[][],
     }
   }
+  if (value.type === 'list' && hasOnlyKeys(value, ['type', 'items'])) {
+    if (!Array.isArray(value.items) || value.items.length < 1 || value.items.length > 16) return undefined
+    const items = value.items.map((item) => localizedText(item, locale))
+    if (items.some((item) => !item)) return undefined
+    return { type: 'list', items: items as string[] }
+  }
+  if (value.type === 'notice' && hasOnlyKeys(value, ['type', 'title', 'description', 'tone'])) {
+    const title = localizedText(value.title, locale)
+    const description = value.description === undefined ? undefined : localizedText(value.description, locale)
+    return title
+      && (value.description === undefined || description)
+      && ['neutral', 'success', 'warning', 'danger'].includes(String(value.tone))
+      ? { type: 'notice', title, ...(description ? { description } : {}), tone: value.tone as Tone }
+      : undefined
+  }
+  if (value.type === 'progress' && hasOnlyKeys(value, ['type', 'label', 'percent'])) {
+    const label = localizedText(value.label, locale)
+    return label && typeof value.percent === 'number' && Number.isInteger(value.percent)
+      && value.percent >= 0 && value.percent <= 100
+      ? { type: 'progress', label, percent: value.percent }
+      : undefined
+  }
   if (value.type === 'info_card' && hasOnlyKeys(value, ['type', 'title', 'description'])) {
     const title = localizedText(value.title, locale)
     const description = value.description === undefined ? undefined : localizedText(value.description, locale)
@@ -124,6 +149,17 @@ function RenderBlock({ block }: { block: ViewBlock }) {
   }
   if (block.type === 'metric') return <div className="flex flex-wrap items-baseline justify-between gap-2"><dt className="text-xs text-muted-foreground">{block.label}</dt><dd className="m-0 break-words text-sm font-semibold">{block.value}</dd></div>
   if (block.type === 'table') return <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-xs"><thead><tr>{block.columns.map((column, index) => <th key={index} scope="col" className="border-b border-[var(--hairline)] px-2 py-1.5 font-medium text-muted-foreground">{column}</th>)}</tr></thead><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-[var(--hairline)] px-2 py-1.5">{cell}</td>)}</tr>)}</tbody></table></div>
+  if (block.type === 'list') return <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">{block.items.map((item, index) => <li key={index}>{item}</li>)}</ul>
+  if (block.type === 'notice') {
+    const toneClass: Record<Tone, string> = {
+      neutral: 'border-[var(--hairline)] bg-content1/40',
+      success: 'border-success/30 bg-success/5',
+      warning: 'border-warning/30 bg-warning/5',
+      danger: 'border-danger/30 bg-danger/5',
+    }
+    return <aside className={`rounded-lg border p-3 ${toneClass[block.tone]}`}><h3 className="text-sm font-medium">{block.title}</h3>{block.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{block.description}</p> : null}</aside>
+  }
+  if (block.type === 'progress') return <div className="space-y-1"><div className="flex justify-between gap-2 text-xs"><span className="text-muted-foreground">{block.label}</span><span>{block.percent}%</span></div><progress className="h-2 w-full accent-primary" max={100} value={block.percent} aria-label={block.label} /></div>
   return <div className="rounded-lg border border-[var(--hairline)] bg-content1/40 p-3"><h3 className="text-sm font-medium">{block.title}</h3>{block.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{block.description}</p> : null}</div>
 }
 

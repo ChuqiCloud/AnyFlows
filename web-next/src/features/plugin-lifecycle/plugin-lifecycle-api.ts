@@ -228,6 +228,35 @@ export function usePluginDeploymentHistory(pluginId: string | undefined, refresh
   })
 }
 
+export type PluginCapabilityInvocationResult = {
+  pluginId: string
+  deploymentGeneration: number
+  capabilityId: string
+  capabilityVersion: number
+  output: unknown
+}
+
+export function usePluginCustomCapability() {
+  return useMutation({
+    mutationFn: async ({ pluginId, capabilityId, capabilityVersion, input }: {
+      pluginId: string
+      capabilityId: string
+      capabilityVersion: number
+      input: Record<string, unknown>
+    }) => {
+      const result = await apiClient.post<PluginCapabilityInvocationResult>({
+        url: `/api/admin/plugins/${encodeURIComponent(pluginId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
+        body: { capability_version: capabilityVersion, input },
+        security: [
+          { key: 'bearerAuth', scheme: 'bearer', type: 'http' },
+          { key: 'personalAccessTokenBearer', scheme: 'bearer', type: 'http' },
+        ],
+      }) as unknown as { data: PluginCapabilityInvocationResult }
+      return result.data
+    },
+  })
+}
+
 function invalidate(client: ReturnType<typeof useQueryClient>) {
   return client.invalidateQueries({ queryKey: root })
 }

@@ -3,7 +3,10 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-use crate::{CapabilityDeclaration, ContractValidationError, ContractVersionRange, PluginVersion};
+use crate::{
+    CapabilityDeclaration, ContractValidationError, ContractVersionRange, PluginEventSubscription,
+    PluginVersion,
+};
 
 /// Extensible namespaced plugin ID; never a product platform enum.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -63,6 +66,9 @@ pub struct PluginManifest {
     pub plugin_version: PluginVersion,
     pub contract_range: ContractVersionRange,
     pub capabilities: Vec<CapabilityDeclaration>,
+    /// Optional subscriptions to host-owned, versioned events.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_subscriptions: Vec<PluginEventSubscription>,
     pub authentication_modes: Vec<String>,
     pub limits: ConnectorLimits,
     pub config_schema: Value,
@@ -150,6 +156,19 @@ pub enum PluginUiBlock {
         columns: Vec<PluginUiText>,
         rows: Vec<Vec<PluginUiText>>,
     },
+    List {
+        items: Vec<PluginUiText>,
+    },
+    Notice {
+        title: PluginUiText,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<PluginUiText>,
+        tone: PluginUiTone,
+    },
+    Progress {
+        label: PluginUiText,
+        percent: u8,
+    },
     InfoCard {
         title: PluginUiText,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -171,6 +190,7 @@ const MAX_PLUGIN_UI_VIEWS: usize = 8;
 const MAX_PLUGIN_UI_BLOCKS_PER_VIEW: usize = 24;
 const MAX_PLUGIN_UI_TABLE_COLUMNS: usize = 8;
 const MAX_PLUGIN_UI_TABLE_ROWS: usize = 16;
+const MAX_PLUGIN_UI_LIST_ITEMS: usize = 16;
 const MAX_PLUGIN_UI_VIEW_BYTES: usize = 8 * 1024;
 const MAX_PLUGIN_UI_TOTAL_BYTES: usize = 32 * 1024;
 
@@ -189,6 +209,15 @@ impl PluginUiBlock {
                         row.len() == columns.len() && row.iter().all(PluginUiText::validate)
                     })
             }
+            Self::List { items } => {
+                !items.is_empty()
+                    && items.len() <= MAX_PLUGIN_UI_LIST_ITEMS
+                    && items.iter().all(PluginUiText::validate)
+            }
+            Self::Notice {
+                title, description, ..
+            } => title.validate() && description.as_ref().is_none_or(PluginUiText::validate),
+            Self::Progress { label, percent } => label.validate() && *percent <= 100,
             Self::InfoCard { title, description } => {
                 title.validate() && description.as_ref().is_none_or(PluginUiText::validate)
             }
@@ -270,6 +299,15 @@ impl PluginManifest {
             if !ids.insert(&capability.id) {
                 return Err(ContractValidationError::DuplicateCapability);
             }
+        }
+        let mut event_kinds = BTreeSet::new();
+        if self.event_subscriptions.len() > 32
+            || self.event_subscriptions.iter().any(|subscription| {
+                !event_kinds.insert(&subscription.event_kind)
+                    || subscription.validate(&self.capabilities).is_err()
+            })
+        {
+            return Err(ContractValidationError::InvalidManifest);
         }
         if self.ui_contributions.len() > 16 {
             return Err(ContractValidationError::InvalidManifest);
@@ -403,6 +441,7 @@ mod tests {
                 input_schema: None,
                 output_schema: None,
             }],
+            event_subscriptions: Vec::new(),
             authentication_modes: vec!["bearer_token".to_owned()],
             limits: ConnectorLimits {
                 max_concurrency: 1,
@@ -511,6 +550,27 @@ mod tests {
                         zh: Some("今天".to_owned()),
                     }]],
                 },
+                PluginUiBlock::List {
+                    items: vec![PluginUiText {
+                        en: Some("First item".to_owned()),
+                        zh: Some("第一项".to_owned()),
+                    }],
+                },
+                PluginUiBlock::Notice {
+                    title: PluginUiText {
+                        en: Some("Notice".to_owned()),
+                        zh: Some("提示".to_owned()),
+                    },
+                    description: None,
+                    tone: PluginUiTone::Warning,
+                },
+                PluginUiBlock::Progress {
+                    label: PluginUiText {
+                        en: Some("Progress".to_owned()),
+                        zh: Some("进度".to_owned()),
+                    },
+                    percent: 75,
+                },
                 PluginUiBlock::InfoCard {
                     title: PluginUiText {
                         en: Some("Account".to_owned()),
@@ -566,6 +626,32 @@ mod tests {
         };
         assert_eq!(
             mismatched_table.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut empty_list = value.clone();
+        let list = empty_list.ui_views[0]
+            .blocks
+            .iter_mut()
+            .find(|block| matches!(block, PluginUiBlock::List { .. }))
+            .expect("list block exists");
+        *list = PluginUiBlock::List { items: Vec::new() };
+        assert_eq!(
+            empty_list.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut invalid_progress = value.clone();
+        let progress = invalid_progress.ui_views[0]
+            .blocks
+            .iter_mut()
+            .find(|block| matches!(block, PluginUiBlock::Progress { .. }))
+            .expect("progress block exists");
+        if let PluginUiBlock::Progress { percent, .. } = progress {
+            *percent = 101;
+        }
+        assert_eq!(
+            invalid_progress.validate(),
             Err(ContractValidationError::InvalidManifest)
         );
 

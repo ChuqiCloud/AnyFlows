@@ -16,8 +16,8 @@ use af_db::{
 use af_plugin_contract::{
     CapabilityId, CapabilityResult, PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId,
     PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
-    ProviderRequestTransformInput, ProviderRequestTransformOutput, RequestProcessingInput,
-    RequestProcessingOutput,
+    ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
+    RequestProcessingInput, RequestProcessingOutput, RequestProcessingStage,
 };
 use af_plugin_runtime::{
     CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError,
@@ -617,7 +617,7 @@ impl AdminPluginSidecarRuntime {
                 plugin_id,
                 generation,
                 invocation,
-                "request.processing.read",
+                REQUEST_PROCESSING_CAPABILITY,
                 1,
                 serde_json::to_value(&request)
                     .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
@@ -629,6 +629,43 @@ impl AdminPluginSidecarRuntime {
             .validate_for(stage)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         Ok(output)
+    }
+
+    /// Execute request-processing stages in order for one enabled deployment.
+    /// Each stage is validated independently; a reject/stop proposal ends the
+    /// pipeline so the host can apply the terminal decision immediately.
+    pub async fn process_request_pipeline(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        mut request: RequestProcessingInput,
+        stages: &[RequestProcessingStage],
+    ) -> Result<Vec<RequestProcessingOutput>, AdminPluginLifecycleError> {
+        let mut outputs = Vec::with_capacity(stages.len());
+        for stage in stages {
+            request.stage = *stage;
+            let output = self
+                .process_request_stage(
+                    repository,
+                    plugin_id,
+                    generation,
+                    invocation,
+                    request.clone(),
+                )
+                .await?;
+            let terminal = matches!(
+                output.action,
+                af_plugin_contract::RequestProcessingAction::Reject
+                    | af_plugin_contract::RequestProcessingAction::Stop
+            );
+            outputs.push(output);
+            if terminal {
+                break;
+            }
+        }
+        Ok(outputs)
     }
 
     /// Invoke a host capability with a request-scoped external read dispatcher.

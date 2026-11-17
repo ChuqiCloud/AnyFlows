@@ -2185,6 +2185,7 @@ mod tests {
                 input_schema: Some(json!({ "type": "object" })),
                 output_schema: Some(json!({ "type": "object" })),
             }],
+            event_subscriptions: Vec::new(),
             authentication_modes: vec!["none".to_owned()],
             limits: ConnectorLimits {
                 max_concurrency: 1,

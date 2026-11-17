@@ -181,10 +181,10 @@ where
         .is_some();
     if !approved
         || revoked
-        || !artifact_declares_event_capability(
+        || !artifact_subscribes_to_event(
             &artifact.manifest,
-            &input.capability_id,
-            input.capability_version,
+            input.event_kind.as_str(),
+            &input.payload,
         )
     {
         return Err(PluginEventDeliveryRepositoryError::Conflict);
@@ -293,10 +293,10 @@ where
             };
             if artifact.plugin_id != deployment.plugin_id
                 || artifact.source_kind != "local_process"
-                || !artifact_declares_event_capability(
+                || !artifact_subscribes_to_event(
                     &artifact.manifest,
-                    PluginEventKind::ChannelHealthChanged.required_capability(),
-                    1,
+                    PluginEventKind::ChannelHealthChanged.as_str(),
+                    &payload,
                 )
             {
                 continue;
@@ -414,10 +414,10 @@ where
             };
             if artifact.plugin_id != deployment.plugin_id
                 || artifact.source_kind != "local_process"
-                || !artifact_declares_event_capability(
+                || !artifact_subscribes_to_event(
                     &artifact.manifest,
-                    PluginEventKind::MerchantServiceChanged.required_capability(),
-                    1,
+                    PluginEventKind::MerchantServiceChanged.as_str(),
+                    &payload,
                 )
             {
                 continue;
@@ -481,6 +481,58 @@ impl ChannelHealthTransition {
             Self::Recovered => "recovered",
         }
     }
+}
+
+fn artifact_subscribes_to_event(manifest: &Value, event_kind: &str, payload: &Value) -> bool {
+    let Some(subscriptions) = manifest.get("eventSubscriptions") else {
+        // Keep legacy plugin packages subscribed through their exact event capability grant.
+        let Some((capability_id, capability_version)) = event_capability(event_kind) else {
+            return false;
+        };
+        return artifact_declares_event_capability(manifest, capability_id, capability_version);
+    };
+    let Ok(subscriptions) = subscriptions.as_array() else {
+        return false;
+    };
+    subscriptions.iter().any(|subscription| {
+        let Some((capability_id, capability_version)) = event_capability(event_kind) else {
+            return false;
+        };
+        subscription.get("eventKind").and_then(Value::as_str) == Some(event_kind)
+            && subscription.get("capabilityId").and_then(Value::as_str) == Some(capability_id)
+            && subscription
+                .get("capabilityVersion")
+                .and_then(Value::as_u64)
+                == Some(u64::from(capability_version))
+            && artifact_declares_event_capability(manifest, capability_id, capability_version)
+            && event_subscription_filters_match(subscription, payload)
+    })
+}
+
+fn event_capability(event_kind: &str) -> Option<(&'static str, u16)> {
+    match event_kind {
+        "channel.health.changed" => Some(("events.channel-health.changed.consume", 1)),
+        "merchant.service.changed" => Some(("events.merchant-service.changed.consume", 1)),
+        _ => None,
+    }
+}
+
+fn event_subscription_filters_match(subscription: &Value, payload: &Value) -> bool {
+    let Some(filters) = subscription.get("filters") else {
+        return true;
+    };
+    filters.as_object().is_some_and(|filters| {
+        filters.iter().all(|(field, accepted)| {
+            let Some(value) = payload.get(field).and_then(Value::as_str) else {
+                return false;
+            };
+            accepted.as_array().is_some_and(|values| {
+                values
+                    .iter()
+                    .any(|candidate| candidate.as_str() == Some(value))
+            })
+        })
+    })
 }
 
 fn artifact_declares_event_capability(manifest: &Value, capability_id: &str, version: u16) -> bool {
@@ -814,6 +866,45 @@ mod tests {
         );
         assert!(PluginEventKind::parse("*").is_err());
         assert!(PluginEventKind::parse("report.requested").is_err());
+    }
+
+    #[test]
+    fn event_subscriptions_apply_filters_and_preserve_legacy_packages() {
+        let manifest = json!({
+            "capabilities": [{
+                "id": "events.channel-health.changed.consume",
+                "version": 1,
+                "access": "read",
+                "sideEffect": "none"
+            }],
+            "eventSubscriptions": [{
+                "eventKind": "channel.health.changed",
+                "capabilityId": "events.channel-health.changed.consume",
+                "capabilityVersion": 1,
+                "filters": {"status": ["down"]}
+            }]
+        });
+        assert!(artifact_subscribes_to_event(
+            &manifest,
+            "channel.health.changed",
+            &json!({"status":"down"})
+        ));
+        assert!(!artifact_subscribes_to_event(
+            &manifest,
+            "channel.health.changed",
+            &json!({"status":"recovered"})
+        ));
+        let legacy_manifest = json!({"capabilities": [{
+            "id": "events.channel-health.changed.consume",
+            "version": 1,
+            "access": "read",
+            "sideEffect": "none"
+        }]});
+        assert!(artifact_subscribes_to_event(
+            &legacy_manifest,
+            "channel.health.changed",
+            &json!({"status":"recovered"})
+        ));
     }
 
     #[test]

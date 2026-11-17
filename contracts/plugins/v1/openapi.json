@@ -462,6 +462,159 @@
         ],
         "type": "object"
       },
+      "PluginEventDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilityId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "capabilityVersion": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "eventKind": {
+            "enum": [
+              "channel.health.changed",
+              "merchant.service.changed"
+            ]
+          },
+          "filterFields": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "payloadSchema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "eventKind",
+          "capabilityId",
+          "capabilityVersion",
+          "payloadSchema",
+          "filterFields"
+        ],
+        "type": "object"
+      },
+      "PluginEventSubscription": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "channel.health.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.channel-health.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                },
+                "filters": {
+                  "properties": {
+                    "status": {
+                      "items": {
+                        "enum": [
+                          "down",
+                          "recovered"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "merchant.service.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.merchant-service.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                },
+                "filters": {
+                  "properties": {
+                    "status": {
+                      "items": {
+                        "enum": [
+                          "active",
+                          "paused"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "capabilityId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "capabilityVersion": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "eventKind": {
+            "enum": [
+              "channel.health.changed",
+              "merchant.service.changed"
+            ]
+          },
+          "filters": {
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "items": {
+                  "enum": [
+                    "down",
+                    "recovered",
+                    "active",
+                    "paused"
+                  ]
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "eventKind",
+          "capabilityId",
+          "capabilityVersion"
+        ],
+        "type": "object"
+      },
       "PluginHostOperation": {
         "oneOf": [
           {
@@ -805,6 +958,13 @@
           "displayName": {
             "maxLength": 128,
             "type": "string"
+          },
+          "eventSubscriptions": {
+            "items": {
+              "$ref": "#/components/schemas/PluginEventSubscription"
+            },
+            "maxItems": 32,
+            "type": "array"
           },
           "limits": {
             "$ref": "#/components/schemas/ConnectorLimits"
@@ -1284,6 +1444,72 @@
               "type",
               "columns",
               "rows"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/PluginUiText"
+                },
+                "maxItems": 16,
+                "minItems": 1,
+                "type": "array"
+              },
+              "type": {
+                "const": "list"
+              }
+            },
+            "required": [
+              "type",
+              "items"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "title": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "tone": {
+                "$ref": "#/components/schemas/PluginUiTone"
+              },
+              "type": {
+                "const": "notice"
+              }
+            },
+            "required": [
+              "type",
+              "title",
+              "tone"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "$ref": "#/components/schemas/PluginUiText"
+              },
+              "percent": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "progress"
+              }
+            },
+            "required": [
+              "type",
+              "label",
+              "percent"
             ],
             "type": "object"
           },

@@ -29,6 +29,12 @@ pub(crate) fn free_form_object_schema() -> RefOr<Schema> {
         .into()
 }
 
+/// Generate an unconstrained JSON value schema for versioned plugin capability
+/// inputs and outputs. The runtime applies the capability-specific JSON Schema.
+pub(crate) fn free_form_json_schema() -> RefOr<Schema> {
+    ObjectBuilder::new().build().into()
+}
+
 /// 生成只允许写入、且允许任意属性的 JSON 对象 schema。
 pub(crate) fn sensitive_free_form_object_schema() -> RefOr<Schema> {
     ObjectBuilder::new()

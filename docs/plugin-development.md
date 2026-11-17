@@ -4,7 +4,9 @@
 
 ## 1. 先确认能力范围
 
-上传插件只能使用宿主已经接入的固定入口。插件清单中的 capability 只声明需求，不会自动创建页面、接口或后台任务。
+插件可以使用宿主固定业务入口，也可以声明自己的 namespaced 只读能力。清单不会自动创建页面、服务端路由或后台任务；自定义能力通过统一的宿主能力入口执行。
+
+“上传并安装”会自动授予清单中通过校验的自定义只读 capability，条件是同时提供有效的输入和输出 JSON Schema，且 `access` 为 `read`、`sideEffect` 为 `none`。这只代表插件获准响应宿主发起的通用能力调用，不会自动接入某个业务模块。`external_read`、写能力以及外部任务提交仍需管理员在完整权限审核中明确授权；任务提交还必须声明写副作用恢复语义。
 
 | 入口 | capability | 插件收到的数据 | 插件可以返回什么 |
 | --- | --- | --- | --- |
@@ -15,13 +17,28 @@
 | 渠道模型映射检查 | `channel.model_mapping.review.read`（v1） | 管理员选中的公开模型名和映射值 | 摘要、检查项和建议 |
 | 渠道健康事件 | `events.channel-health.changed.consume`（v1） | `eventKey`、状态变化和时间 | 有界的处理结果 |
 | 商户服务事件 | `events.merchant-service.changed.consume`（v1） | `eventKey`、服务 ID、版本、状态和时间 | 有界的处理结果 |
+| 自定义只读能力 | 清单中的 namespaced capability | 由 `inputSchema` 定义的 JSON 对象 | 由 `outputSchema` 定义的 JSON 对象；管理员可通过宿主通用入口调用 |
 | 已保存余额快照分析 | `account.balance.snapshot.review.read`（v1） | 本人最多 20 条余额快照 | 摘要、检查项和建议 |
 | 当前余额读取 | `account.balance.snapshot.live-review.read` + `external.account.balance.read`（均为 v1） | 用户本次同意后由宿主返回的当前余额投影 | 摘要、检查项和建议 |
 | 固定页面补充内容 | `uiViews` / `uiContributions` | 插件清单中的静态文本和指标 | 宿主组件渲染的卡片、徽标、指标或表格 |
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
-插件不能创建模型、渠道、价卡、菜单、路由、HTTP API、Webhook、计划任务或自定义页面。涉及新模块时，必须先由宿主增加固定入口、输入输出 Schema、权限和页面接线。
+插件不能自行注册服务端路由、模型、渠道、价卡、Webhook 或计划任务。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
+
+```http
+POST /api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke
+Content-Type: application/json
+
+{
+  "capability_version": 1,
+  "input": { "query": "example" }
+}
+```
+
+部署必须已启用、制品已批准、该能力版本已授权；宿主会再次校验 Schema、输入输出大小和部署代次。此接口只执行无副作用的只读能力，不替代外部读取、写入、任务提交或业务动作的专用宿主入口。
+
+固定业务页面仍只支持清单声明的宿主渲染视图。需要新业务页面、用户操作或可改变平台状态的功能时，宿主仍需提供对应的数据投影、权限边界和动作确认流程。
 
 ## 2. 宿主实际发送和接收的数据
 
@@ -299,7 +316,24 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | `uiContributions` | 插件管理页的静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
 
-`uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。
+`uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。`list` 最多 16 项，`notice` 使用 `tone` 标记提示级别，`progress` 使用 0–100 的 `percent`。需要更复杂的页面时，把数据拆成多个视图和组件组合，不要把前端代码塞进插件包。
+
+一个视图示例：
+
+```json
+{
+  "id": "service-status",
+  "schemaVersion": 1,
+  "slot": "merchant_service",
+  "blocks": [
+    { "type": "notice", "title": { "zh": "检查完成" }, "description": { "zh": "发现两项需要关注的配置。" }, "tone": "warning" },
+    { "type": "list", "items": [{ "zh": "模型映射完整" }, { "zh": "价格仍待确认" }] },
+    { "type": "progress", "label": { "zh": "检查进度" }, "percent": 75 }
+  ]
+}
+```
+
+槽位表示 AnyFlows 哪个页面可以展示视图；插件不能自行注册 URL 或菜单。平台要开放新页面时，需要在契约中增加槽位，并在对应页面接入宿主渲染器；组件只需扩展 Manifest 校验和宿主渲染器。这样插件可以自由组合已支持的展示内容，同时不需要执行第三方前端脚本。
 
 ## 8. Python 处理函数
 
@@ -345,6 +379,19 @@ def review_live_balance(capability_id, public_config, value, context):
 ### 持久事件
 
 渠道健康事件使用 `down` / `recovered`；商户服务事件使用 `active` / `paused`。输入包含稳定的 `eventKey`，重试时保持不变。插件输出会进入持久队列结果页，不会自动变成通知或业务写入。管理员结果接口需要对应的管理 PAT 权限。
+
+插件可以在清单中声明 `eventSubscriptions`，让宿主和管理界面直接知道它要接收哪些事件。例如：
+
+```json
+{
+  "eventKind": "channel.health.changed",
+  "capabilityId": "events.channel-health.changed.consume",
+  "capabilityVersion": 1,
+  "filters": { "status": ["down"] }
+}
+```
+
+当前内置事件目录可通过插件契约的 `plugin_event_catalog()` 查询，包含事件名、输入 Schema、能力名和可过滤字段。过滤条件由宿主在入队前执行；插件不会收到不符合条件的事件。清单中的事件必须存在于目录，并且对应 capability 必须同时声明为 `read` + `none`。新增宿主事件时，需要同步登记契约目录、数据库投递映射和安全投影，再增加业务 producer；不需要改持久队列表结构。
 
 ### 外部账户
 

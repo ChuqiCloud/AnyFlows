@@ -36,6 +36,14 @@
       }
     }
   ],
+  "eventSubscriptions": [
+    {
+      "eventKind": "merchant.service.changed",
+      "capabilityId": "events.merchant-service.changed.consume",
+      "capabilityVersion": 1,
+      "filters": { "status": ["active", "paused"] }
+    }
+  ],
   "authenticationModes": ["none"],
   "limits": {
     "maxConcurrency": 1,

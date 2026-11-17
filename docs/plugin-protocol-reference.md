@@ -66,7 +66,11 @@ example.afplugin
 | `uiContributions` | 插件管理页静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
 
+视图使用宿主组件渲染，支持 `text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。`list` 最多 16 项，`progress.percent` 必须在 0 到 100 之间；插件不能注入 HTML、CSS、脚本、链接或按钮。复杂内容应组合多个视图，保持数据和展示分离。
+
 `limits` 的实际范围：
+
+事件订阅使用清单中的 `eventSubscriptions`。`eventKind`、`capabilityId` 和版本必须来自宿主事件目录；`filters` 只允许目录声明的字段和值。当前事件目录包括 `channel.health.changed`（`down`、`recovered`）和 `merchant.service.changed`（`active`、`paused`）。宿主在写入持久队列前应用过滤条件，插件只会收到匹配的投影事件。
 
 | 字段 | 范围 |
 | --- | --- |
@@ -171,6 +175,7 @@ plugin_isolation = "auto"
 | `POST /artifacts/{artifact_id}/approve` | 审批制品。 |
 | `POST /artifacts/{artifact_id}/revoke` | 撤销制品并填写原因。 |
 | `GET /deployments` | 查看当前部署。 |
+| `POST /{plugin_id}/capabilities/{capability_id}/invoke` | 通过宿主通用入口调用已授权、带 Schema 的只读能力。 |
 | `POST /{plugin_id}/deployment` | 部署指定制品、配置和能力授权。 |
 | `GET /{plugin_id}/deployment/history` | 查看部署历史。 |
 | `POST /{plugin_id}/disable` | 停用部署。 |

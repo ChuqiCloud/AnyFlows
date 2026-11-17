@@ -75,9 +75,9 @@
     "signatureHint": "Your plugin does not need a signature. A matching configured publisher key verifies its signature; other packages can still be installed by an administrator.",
     "install": {
       "title": "Install plugin",
-      "description": "Choose a plugin package. The service reads its details and installs it without separate registration or approval. Only public model-catalog read capabilities are granted automatically.",
+      "description": "Choose a plugin package without separate registration. Schema-backed, read-only capabilities with no side effects are granted automatically; external reads and writes still require separate review.",
       "package": "Plugin package",
-      "packageHint": "Choose an .afplugin or ZIP package. Plugin details are read automatically; only catalog.models.read/search are enabled by default.",
+      "packageHint": "Choose an .afplugin or ZIP package. Safe custom read capabilities are granted automatically from their declarations.",
       "configure": "Optional configuration",
       "submit": "Install and enable",
       "installing": "Installing…",
@@ -86,7 +86,7 @@
         "packageType": "Choose an .afplugin or ZIP plugin package.",
         "configJson": "Configuration must be a valid JSON object.",
         "conflict": "The deployment changed while installing. Refresh and retry so the current version is preserved.",
-        "needsReview": "This plugin requests capabilities outside the installer's safe defaults. Use Advanced to review and grant the capabilities you need.",
+        "needsReview": "This plugin requests an external read, write, or capability without valid schemas. Use Advanced to review and grant it explicitly.",
         "tooLarge": "The plugin package exceeds the service's size limit. Check the package contents.",
         "invalidPackage": "The package or configuration did not pass validation. Check the package format, supported version, and required configuration.",
         "forbidden": "Your account does not have permission to install plugins.",
@@ -154,6 +154,15 @@
     "ui": {
       "section": "Plugin information",
       "scope": "Static text rendered by AnyFlows; this area does not run plugin code or actions."
+    },
+    "capabilityConsole": {
+      "title": "Invoke custom capability",
+      "description": "Invoke a granted, side-effect-free plugin capability. The manifest schemas and host still validate input and output; external reads, writes, and tasks use dedicated host entries.",
+      "capability": "Capability",
+      "run": "Run",
+      "running": "Running…",
+      "complete": "Completed",
+      "error": "Capability invocation failed. Check the input, deployment state, and plugin logs."
     },
     "events": {
       "title": "Plugin event results",
