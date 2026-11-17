@@ -532,16 +532,14 @@ impl PluginHostRequest {
             capability_version,
             task,
         } = &self.operation
-        {
-            if connection_id.is_empty()
+            && (connection_id.is_empty()
                 || connection_id.len() > 128
                 || !public_config.is_object()
                 || capability_id.is_empty()
                 || *capability_version == 0
-                || task.validate().is_err()
-            {
-                return Err(ContractValidationError::InvalidExternalValue);
-            }
+                || task.validate().is_err())
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
         }
         Ok(())
     }
