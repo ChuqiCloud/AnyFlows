@@ -474,7 +474,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(*order.lock().unwrap(), ["observer", "chat"]);
+        assert_eq!(order.lock().unwrap().as_slice(), &["observer", "chat"]);
     }
 }
 
