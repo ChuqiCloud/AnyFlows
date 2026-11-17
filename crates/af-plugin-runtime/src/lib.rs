@@ -17,8 +17,11 @@ use af_httpclient::{HeaderMap, HeaderValue, Method, PooledClient, StatusCode};
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityInvocation,
     CapabilityRequirement, CapabilityResult, ConnectorError, ConnectorErrorCode, ContractVersion,
-    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata, PluginId, PluginManifest,
-    PluginProxyRequest, PluginProxyResponse, PluginVersion, SideEffectClass,
+    ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
+    PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId, PluginManifest, PluginProxyRequest,
+    PluginProxyResponse, PluginVersion, ProviderRequestTransformInput,
+    ProviderRequestTransformOutput, RequestProcessingInput, RequestProcessingOutput,
+    RequestProcessingStage, SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -130,6 +133,16 @@ impl CapabilityExecutionContext {
     /// Remaining host-call budget, including deployment lookup or recovery.
     pub fn remaining_timeout(&self) -> Result<Duration, ConnectorOperationError> {
         operation_timeout_for_metadata(&self.metadata, 300_000)
+    }
+
+    #[must_use]
+    pub fn connection_id(&self) -> &str {
+        &self.connection_id
+    }
+
+    #[must_use]
+    pub const fn metadata(&self) -> &InvocationMetadata {
+        &self.metadata
     }
 }
 
@@ -877,9 +890,62 @@ impl ConnectorRegistry {
         Ok(CapabilityResult { output })
     }
 
+    pub async fn transform_provider_request(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        request: ProviderRequestTransformInput,
+    ) -> Result<ProviderRequestTransformOutput, ConnectorOperationError> {
+        request
+            .validate()
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+        let result = self
+            .invoke_capability(
+                negotiated,
+                invocation,
+                &CapabilityId::new(PROVIDER_REQUEST_TRANSFORM_CAPABILITY)
+                    .expect("static capability"),
+                CapabilityInvocation {
+                    capability_version: 1,
+                    input: serde_json::to_value(&request)
+                        .map_err(|_| ConnectorOperationError::InvalidInvocation)?,
+                },
+            )
+            .await?;
+        let output = serde_json::from_value::<ProviderRequestTransformOutput>(result.output)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        output
+            .validate_against(&request)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        Ok(output)
+    }
+
     pub fn plugin_ids(&self) -> impl Iterator<Item = &PluginId> {
         self.connectors.keys()
     }
+}
+
+pub fn validate_request_processing_input(
+    value: Value,
+) -> Result<RequestProcessingInput, ConnectorOperationError> {
+    let input = serde_json::from_value::<RequestProcessingInput>(value)
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    input
+        .validate()
+        .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+    Ok(input)
+}
+
+pub fn validate_request_processing_output(
+    value: Value,
+    stage: RequestProcessingStage,
+) -> Result<RequestProcessingOutput, ConnectorOperationError> {
+    let output = serde_json::from_value::<RequestProcessingOutput>(value)
+        .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+    output
+        .validate_for(stage)
+        .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+    Ok(output)
 }
 
 fn rate_limited_connector_error() -> ConnectorOperationError {

@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConnectorError, ContractValidationError};
+use crate::{ConnectorError, ContractValidationError, PluginTaskOperation, PluginTaskResult};
+
+pub const PROVIDER_REQUEST_TRANSFORM_CAPABILITY: &str = "provider.request.transform";
 
 /// Correlation and time budget supplied for one host-to-connector invocation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -34,6 +36,198 @@ impl CapabilityInvocation {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CapabilityResult {
     pub output: serde_json::Value,
+}
+
+/// A host-projected provider request passed to a request-transform plugin.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderRequestTransformInput {
+    pub protocol: String,
+    pub method: String,
+    pub path: String,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_model: Option<String>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    pub body: serde_json::Value,
+}
+
+impl ProviderRequestTransformInput {
+    pub fn validate(&self) -> Result<(), ContractValidationError> {
+        const METHODS: [&str; 5] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+        if self.protocol.is_empty()
+            || self.protocol.len() > 64
+            || !self
+                .protocol
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            || !METHODS.contains(&self.method.as_str())
+            || !valid_provider_path(&self.path)
+            || self.model.is_empty()
+            || self.model.len() > 256
+            || self.model.chars().any(char::is_control)
+            || self.upstream_model.as_ref().is_some_and(|model| {
+                model.is_empty() || model.len() > 256 || model.chars().any(char::is_control)
+            })
+            || self.headers.len() > 64
+            || self.headers.iter().any(|(name, value)| {
+                !valid_transform_header_name(name)
+                    || value.len() > 4096
+                    || value.bytes().any(|byte| byte.is_ascii_control())
+                    || protected_transform_header(name)
+            })
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderTransformAction {
+    Continue,
+    Reject,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderHeaderPatch {
+    #[serde(default)]
+    pub set: BTreeMap<String, String>,
+    #[serde(default)]
+    pub remove: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderTransformRejection {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderRequestTransformOutput {
+    pub action: ProviderTransformAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+    #[serde(default)]
+    pub headers: ProviderHeaderPatch,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejection: Option<ProviderTransformRejection>,
+}
+
+impl ProviderRequestTransformOutput {
+    pub fn validate_against(
+        &self,
+        input: &ProviderRequestTransformInput,
+    ) -> Result<(), ContractValidationError> {
+        if self
+            .path
+            .as_ref()
+            .is_some_and(|path| !valid_provider_path(path))
+            || self.headers.set.len() > 32
+            || self.headers.remove.len() > 32
+            || self.headers.set.iter().any(|(name, value)| {
+                !valid_transform_header_name(name)
+                    || value.len() > 4096
+                    || value.bytes().any(|byte| byte.is_ascii_control())
+                    || protected_transform_header(name)
+            })
+            || self
+                .headers
+                .remove
+                .iter()
+                .any(|name| !valid_transform_header_name(name) || protected_transform_header(name))
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        let protected = [
+            "model",
+            "stream",
+            "stream_options",
+            "n",
+            "size",
+            "quality",
+            "resolution",
+            "seconds",
+            "duration",
+            "service_tier",
+        ];
+        if let Some(body) = &self.body {
+            if let (Some(before), Some(after)) = (input.body.as_object(), body.as_object()) {
+                if protected
+                    .iter()
+                    .any(|key| before.get(*key) != after.get(*key))
+                {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+            } else if body != &input.body {
+                return Err(ContractValidationError::InvalidExternalValue);
+            }
+        }
+        match (&self.action, &self.rejection) {
+            (ProviderTransformAction::Continue, None) => Ok(()),
+            (ProviderTransformAction::Reject, Some(rejection))
+                if self.path.is_none()
+                    && self.body.is_none()
+                    && self.headers.set.is_empty()
+                    && self.headers.remove.is_empty()
+                    && valid_transform_rejection(rejection) =>
+            {
+                Ok(())
+            }
+            _ => Err(ContractValidationError::InvalidExternalValue),
+        }
+    }
+}
+
+fn valid_provider_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 2048
+        && value.starts_with('/')
+        && !value.starts_with("//")
+        && !value
+            .bytes()
+            .any(|byte| matches!(byte, b'?' | b'#' | b'\\') || byte.is_ascii_control())
+        && !value.split('/').any(|segment| segment == "..")
+}
+fn valid_transform_header_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+fn protected_transform_header(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "host"
+            | "content-length"
+            | "content-type"
+            | "content-encoding"
+            | "transfer-encoding"
+            | "x-api-key"
+            | "x-goog-api-key"
+            | "mj-api-secret"
+    )
+}
+fn valid_transform_rejection(value: &ProviderTransformRejection) -> bool {
+    !value.code.is_empty()
+        && value.code.len() <= 128
+        && value.code.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'_')
+        })
+        && !value.message.is_empty()
+        && value.message.len() <= 512
+        && !value.message.chars().any(char::is_control)
 }
 
 /// The only request shape a future host-managed external HTTP proxy may accept.
@@ -331,6 +525,22 @@ impl PluginHostRequest {
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
+        if let PluginHostOperation::InvokeTask {
+            connection_id,
+            public_config,
+            capability_id,
+            capability_version,
+            task,
+        } = &self.operation
+            && (connection_id.is_empty()
+                || connection_id.len() > 128
+                || !public_config.is_object()
+                || capability_id.is_empty()
+                || *capability_version == 0
+                || task.validate().is_err())
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
         Ok(())
     }
 }
@@ -352,6 +562,17 @@ pub enum PluginHostOperation {
         #[serde(rename = "capabilityVersion", alias = "capability_version")]
         capability_version: u16,
         input: serde_json::Value,
+    },
+    InvokeTask {
+        #[serde(rename = "connectionId", alias = "connection_id")]
+        connection_id: String,
+        #[serde(rename = "publicConfig", alias = "public_config")]
+        public_config: serde_json::Value,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(rename = "capabilityVersion", alias = "capability_version")]
+        capability_version: u16,
+        task: PluginTaskOperation,
     },
 }
 
@@ -375,6 +596,7 @@ pub enum PluginHostResult {
     Manifest(crate::PluginManifest),
     Health(ConnectorHealth),
     Capability(CapabilityResult),
+    Task(PluginTaskResult),
     Error(ConnectorError),
 }
 

@@ -10,7 +10,9 @@ mod capability;
 mod error;
 mod manifest;
 mod proposal;
+mod request_processing;
 mod schema;
+mod task;
 mod value;
 mod version;
 
@@ -24,13 +26,25 @@ pub use manifest::{
     PluginUiContribution, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView, PluginUiViewSlot,
 };
 pub use proposal::HostActionProposal;
+pub use request_processing::{
+    HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,
+    REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingEffect,
+    RequestProcessingFinding, RequestProcessingFindingStatus, RequestProcessingInput,
+    RequestProcessingOutput, RequestProcessingStage,
+};
 pub use schema::{openapi_document, schema_document};
+pub use task::{
+    MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskOperation,
+    PluginTaskResult, PluginTaskState, TaskContractError,
+};
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,
     ExternalAccountProfile, ExternalBalanceSnapshot, HostHttpMethod, HostHttpRequestProposal,
-    HostHttpResponseProjection, InvocationMetadata, PluginHostOperation, PluginHostRequest,
-    PluginHostResponse, PluginHostResult, PluginProxyError, PluginProxyErrorCode,
-    PluginProxyRequest, PluginProxyResponse, PluginProxyResult,
+    HostHttpResponseProjection, InvocationMetadata, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
+    PluginHostOperation, PluginHostRequest, PluginHostResponse, PluginHostResult, PluginProxyError,
+    PluginProxyErrorCode, PluginProxyRequest, PluginProxyResponse, PluginProxyResult,
+    ProviderHeaderPatch, ProviderRequestTransformInput, ProviderRequestTransformOutput,
+    ProviderTransformAction, ProviderTransformRejection,
 };
 pub use version::{ContractVersion, ContractVersionRange, PluginVersion};
 
