@@ -187,4 +187,4 @@ plugin_isolation = "auto"
 常见响应：`422 / plugin_lifecycle_capability_review_required` 表示包已保存但还要授权能力；`409 / plugin_lifecycle_conflict` 表示代次或当前状态发生冲突，应先刷新状态。完整参数以 [OpenAPI 文档](../web-next/openapi/openapi.json) 为准。
 ## 数据面扩展契约
 
-`invoke_task`、`provider.request.transform` 和 `request.processing.read` 已纳入 v1 Schema。任务插件的状态、进度、失败码和幂等键由宿主校验；Provider 转换不能选择上游主机或修改认证、模型计费字段；请求处理提案由宿主按阶段和管理员策略决定是否应用。在宿主执行的多阶段流水线中，`continue` 提案的 JSON/Header effect 会传递到下一阶段；路径不存在或命中保护字段时调用失败。当前这些入口是可复用的宿主运行时能力，尚未自动挂接到所有 Relay 协议路径。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。
+`invoke_task`、`provider.request.transform` 和 `request.processing.read` 已纳入 v1 Schema。任务插件的状态、进度、失败码和幂等键由宿主校验；Provider 转换不能选择上游主机或修改认证、模型计费字段。在实时模型流量中，目前只有 Chat 的 `ingress` 只读观察接入：传递脱敏请求摘要，只保留 finding 代码和状态，忽略拒绝与修改提案；调用超时或失败时继续模型请求。其他请求处理阶段以及 Provider 转换仍是可复用宿主运行时入口，尚未接入 Relay 发送路径。在显式执行的多阶段流水线中，`continue` 提案的 JSON/Header effect 会传递到下一阶段；路径不存在或命中保护字段时调用失败。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。

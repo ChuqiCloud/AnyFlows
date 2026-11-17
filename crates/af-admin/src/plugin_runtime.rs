@@ -14,8 +14,8 @@ use af_db::{
     PluginCatalogRepository, PluginDeploymentQuery, PluginDeploymentRecord,
 };
 use af_plugin_contract::{
-    CapabilityId, CapabilityResult, PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId,
-    PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
+    CapabilityId, CapabilityResult, InvocationMetadata, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
+    PluginId, PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
     ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
     RequestProcessingInput, RequestProcessingOutput, RequestProcessingPipelineResult,
     RequestProcessingStage,
@@ -630,6 +630,32 @@ impl AdminPluginSidecarRuntime {
             .validate_for(stage)
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
         Ok(output)
+    }
+
+    /// Run one read-only request observer with a host-defined short deadline.
+    /// The plugin's configuration is loaded from the current deployment by the
+    /// normal capability path; callers cannot supply configuration or grants.
+    pub async fn process_request_stage_with_deadline(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        request_id: &str,
+        deadline_unix_ms: u64,
+        request: RequestProcessingInput,
+    ) -> Result<RequestProcessingOutput, AdminPluginLifecycleError> {
+        let invocation = CapabilityExecutionContext::new(
+            "chat-observer".to_owned(),
+            InvocationMetadata {
+                request_id: request_id.to_owned(),
+                deadline_unix_ms,
+            },
+            serde_json::json!({}),
+            64 * 1024,
+        )
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        self.process_request_stage(repository, plugin_id, generation, &invocation, request)
+            .await
     }
 
     /// Execute request-processing stages in order for one enabled deployment.

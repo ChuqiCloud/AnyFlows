@@ -429,4 +429,6 @@ def review_live_balance(capability_id, public_config, value, context):
 
 `request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。
 
+当前已接入 Chat 模型请求的 `ingress` 只读观察阶段。已启用且精确获授该能力的本地插件会收到协议、模型、流式标记和消息/工具/附件数量，不会收到提示词、工具参数、原始 Header 或凭据。宿主只记录 finding 的代码和状态，忽略插件返回的拒绝、停止及所有修改提案；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。其余五个阶段以及 Responses、图像、音频和异步任务转发尚未接入实时请求链路。
+
 当宿主显式执行多个阶段时，`continue` 结果中的 `json_patch` 和 `header_patch` 会按顺序应用到下一阶段输入。JSON Patch 只支持 `add`、`replace`、`remove`；中间路径必须存在，`replace` 和 `remove` 的目标项也必须存在，`add` 可新增对象字段或插入数组项。缺失路径、根替换和受保护字段都会使整批提案失败，且不会留下部分修改。头部修改按不区分大小写的名称合并，认证、Cookie、Host、内容长度和协议控制头不能修改。插件只能影响这条插件处理流水线的快照，真实转发、路由、计费和结算仍由宿主决定。
