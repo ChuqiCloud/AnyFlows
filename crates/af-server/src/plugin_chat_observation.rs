@@ -229,13 +229,14 @@ impl DatabasePluginChatIngressObserver {
         }) else {
             return;
         };
+        let request_id = request.request_id.clone();
         let result = tokio::time::timeout(
             OBSERVER_PLUGIN_BUDGET,
             self.runtime.process_request_stage_with_deadline(
                 &self.repository,
                 &target.plugin_id,
                 target.generation,
-                &request.request_id,
+                &request_id,
                 deadline_unix_ms,
                 request,
             ),
