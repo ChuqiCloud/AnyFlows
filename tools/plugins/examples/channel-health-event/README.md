@@ -35,3 +35,13 @@ python tools/plugins/package-example.py dist/channel-health-event.afplugin --exa
 ## 修改规则
 
 在 `plugin.py` 的 `review_event` 中增加分析逻辑时，保持固定输入字段与固定输出结构，并继续对输入做本地校验。修改代码后增加 `pluginVersion`，重新打包并升级。不要在插件中实现 HTTP 客户端、Shell 命令或常驻任务；需要新事件类型时，应先由宿主定义数据投影和权限。
+
+## 本地测试
+
+事件输入样例在 `fixtures/input.json`：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/channel-health-event --manifest tools/plugins/examples/channel-health-event/manifest.json --capability events.channel-health.changed.consume --input tools/plugins/examples/channel-health-event/fixtures/input.json
+```
+
+输出必须包含 `summary`、`status` 和 `recommendation`。本地测试只模拟一次事件，不模拟队列重试。

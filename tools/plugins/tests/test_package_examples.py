@@ -162,6 +162,31 @@ class ExamplePackageTests(unittest.TestCase):
             [],
         )
 
+    def test_local_plugin_runner_completes_catalog_protocol_handshake(self):
+        runner = ROOT / "test-plugin.py"
+        catalog = ROOT / "examples" / "catalog"
+        fixture = catalog / "fixtures" / "input.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(runner),
+                "--root",
+                str(catalog),
+                "--manifest",
+                str(catalog / "manifest.json"),
+                "--capability",
+                "catalog.models.search",
+                "--input",
+                str(fixture),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn('"manifest": "ok"', result.stdout)
+        self.assertIn('"health": "ok"', result.stdout)
+        self.assertIn('"result": "capability"', result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

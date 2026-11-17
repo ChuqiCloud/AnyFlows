@@ -201,3 +201,13 @@ if not streaming_models:
 | 页面显示检查失败或版本冲突 | 刷新服务草稿后重试；服务内容在检查过程中发生变化时，宿主会丢弃旧版本结果 |
 
 如果更改了 `manifest.json`、`plugin.py` 或公开资源，要打一个新包并提升 `pluginVersion`。安装包发布内容不会自动同步到运行节点之外的 Python 包管理器。
+
+## 本地测试
+
+宿主输入在 `fixtures/input.json`，包含一个服务和一个公开模型。运行：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/merchant-service-review --manifest tools/plugins/examples/merchant-service-review/manifest.json --capability merchant.service.review.read --input tools/plugins/examples/merchant-service-review/fixtures/input.json
+```
+
+输出必须是 `summary` 和 `checks`。测试工具会先验证 `manifest`、`health`，再调用检查函数。

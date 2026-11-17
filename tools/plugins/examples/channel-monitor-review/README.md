@@ -118,3 +118,13 @@ channel-monitor-review/
 ```
 
 `package-example.py` 会临时复制这三个文件，再把标准库 SDK 加入目录后打包。SDK 只负责插件协议，检查规则都写在 `plugin.py`。
+
+## 本地测试
+
+输入样例在 `fixtures/input.json`。运行：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/channel-monitor-review --manifest tools/plugins/examples/channel-monitor-review/manifest.json --capability channel.monitor.events.review.read --input tools/plugins/examples/channel-monitor-review/fixtures/input.json
+```
+
+输出包含 `summary` 和 `checks`；如果清单授权了动作建议，还可以返回 `actionProposal`，但本地测试不会执行管理员确认。

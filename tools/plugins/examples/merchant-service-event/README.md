@@ -25,3 +25,12 @@ python tools/plugins/package-example.py dist/merchant-service-event.afplugin --e
 ## 修改示例
 
 保持输入输出 Schema 不变，只根据五个公开字段编写逻辑。不要添加 HTTP 请求、Shell 命令、商户查询或写入操作。需要新的事件字段时，先由宿主定义数据投影和权限。
+## 本地测试
+
+事件输入样例在 `fixtures/input.json`：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/merchant-service-event --manifest tools/plugins/examples/merchant-service-event/manifest.json --capability events.merchant-service.changed.consume --input tools/plugins/examples/merchant-service-event/fixtures/input.json
+```
+
+输出必须包含 `summary`、`status` 和 `recommendation`。本地测试不会写入 AnyFlows 数据库。
