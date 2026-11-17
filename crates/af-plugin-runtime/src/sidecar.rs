@@ -1267,6 +1267,7 @@ impl SidecarSession {
             session.stop().await;
             return Err(SidecarError::InvalidHandshake);
         };
+        let manifest = *manifest;
         if manifest.validate().is_err()
             || manifest.plugin_id != session.artifact.plugin_id
             || manifest.plugin_version != session.artifact.plugin_version

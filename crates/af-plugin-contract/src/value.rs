@@ -593,7 +593,7 @@ pub struct PluginHostResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum PluginHostResult {
-    Manifest(crate::PluginManifest),
+    Manifest(Box<crate::PluginManifest>),
     Health(ConnectorHealth),
     Capability(CapabilityResult),
     Task(PluginTaskResult),

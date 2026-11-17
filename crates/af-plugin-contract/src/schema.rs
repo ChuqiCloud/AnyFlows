@@ -895,7 +895,7 @@ mod tests {
             artifact_sha256: "a".repeat(64),
             deployment_generation: 4,
             request_id: "request-1".to_owned(),
-            result: PluginHostResult::Manifest(manifest.clone()),
+            result: PluginHostResult::Manifest(Box::new(manifest.clone())),
         };
         let proxy_request = PluginProxyRequest {
             protocol_version: 1,
