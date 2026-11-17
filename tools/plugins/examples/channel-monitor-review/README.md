@@ -117,4 +117,4 @@ channel-monitor-review/
 └── README.md      # 使用和修改说明
 ```
 
-`package-example.py` 会临时复制这三个文件，再把标准库 SDK 加入目录后打包。SDK 只负责插件协议；检查规则都在 `plugin.py`，不要求了解 AnyFlows Rust 源码。
+`package-example.py` 会临时复制这三个文件，再把标准库 SDK 加入目录后打包。SDK 只负责插件协议，检查规则都写在 `plugin.py`。
