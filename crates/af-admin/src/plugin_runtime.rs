@@ -16,8 +16,8 @@ use af_db::{
 use af_plugin_contract::{
     CapabilityId, CapabilityResult, PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId,
     PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
-    ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
-    RequestProcessingInput, RequestProcessingOutput, RequestProcessingStage,
+    ProviderRequestTransformInput, ProviderRequestTransformOutput, RequestProcessingInput,
+    RequestProcessingOutput,
 };
 use af_plugin_runtime::{
     CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError,
