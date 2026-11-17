@@ -350,6 +350,20 @@ fn record_observer_findings(target: &ObserverTarget, output: &RequestProcessingO
     // This stage is strictly observational. Ignore action, message and effects even when valid.
 }
 
+fn observer_capability_declared(capabilities: &Value) -> bool {
+    capabilities.as_array().is_some_and(|capabilities| {
+        capabilities.iter().any(|capability| {
+            capability.get("id").and_then(Value::as_str) == Some(REQUEST_PROCESSING_CAPABILITY)
+                && capability.get("version").and_then(Value::as_u64)
+                    == Some(u64::from(OBSERVER_CAPABILITY_VERSION))
+                && capability.get("access").and_then(Value::as_str) == Some("read")
+                && capability.get("sideEffect").and_then(Value::as_str) == Some("none")
+                && capability.get("inputSchema").is_some_and(Value::is_object)
+                && capability.get("outputSchema").is_some_and(Value::is_object)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex as StdMutex;
@@ -477,18 +491,4 @@ mod tests {
 
         assert_eq!(order.lock().unwrap().as_slice(), &["observer", "chat"]);
     }
-}
-
-fn observer_capability_declared(capabilities: &Value) -> bool {
-    capabilities.as_array().is_some_and(|capabilities| {
-        capabilities.iter().any(|capability| {
-            capability.get("id").and_then(Value::as_str) == Some(REQUEST_PROCESSING_CAPABILITY)
-                && capability.get("version").and_then(Value::as_u64)
-                    == Some(u64::from(OBSERVER_CAPABILITY_VERSION))
-                && capability.get("access").and_then(Value::as_str) == Some("read")
-                && capability.get("sideEffect").and_then(Value::as_str) == Some("none")
-                && capability.get("inputSchema").is_some_and(Value::is_object)
-                && capability.get("outputSchema").is_some_and(Value::is_object)
-        })
-    })
 }
