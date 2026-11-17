@@ -139,3 +139,13 @@ python tools/plugins/package-plugin.py my-channel-mapping-review my-channel-mapp
 ```
 
 通用打包命令的四个参数依次是：只包含要发布文件的目录、Manifest 文件路径、目录内入口路径、尚不存在的输出包路径。分发目录至少要有 `manifest.json`、`plugin.py` 和 `anyflows_plugin.py`。模型映射输入输出格式和能力 ID 属于宿主固定契约；若要改变字段，必须先由宿主发布新契约。
+
+## 本地测试
+
+输入样例包含两个公开模型和一条映射：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/channel-model-mapping-review --manifest tools/plugins/examples/channel-model-mapping-review/manifest.json --capability channel.model_mapping.review.read --input tools/plugins/examples/channel-model-mapping-review/fixtures/input.json
+```
+
+输出包含 `summary` 和 `checks`。插件只计算输入数据，不连接上游。

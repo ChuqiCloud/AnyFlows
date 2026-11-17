@@ -42,3 +42,12 @@ POST /api/account/external-accounts/{id}/plugin-review
 ## 修改示例
 
 保持输入只包含四个快照字段。不要添加 HTTP 请求、凭据、提供商 URL、账户查询或写入操作。需要分析其他账户数据时，先由宿主提供独立的固定 capability、字段投影、归属检查和授权流程。
+## 本地测试
+
+输入样例在 `fixtures/input.json`，只包含快照字段：
+
+```bash
+python tools/plugins/test-plugin.py --root tools/plugins/examples/account-balance-snapshot-review --manifest tools/plugins/examples/account-balance-snapshot-review/manifest.json --capability account.balance.snapshot.review.read --input tools/plugins/examples/account-balance-snapshot-review/fixtures/input.json
+```
+
+输出包含 `summary` 和 `checks`。本地测试不会访问外部账户。
