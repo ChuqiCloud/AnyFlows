@@ -281,7 +281,7 @@ impl RequestProcessingOutput {
 }
 
 fn validate_effects(effects: &[RequestProcessingEffect]) -> Result<(), ContractValidationError> {
-    let mut patch_operations = 0;
+    let mut patch_operations: usize = 0;
     if effects.len() > MAX_EFFECTS {
         return Err(ContractValidationError::InvalidExternalValue);
     }
