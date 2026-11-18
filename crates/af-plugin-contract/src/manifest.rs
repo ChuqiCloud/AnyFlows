@@ -787,7 +787,8 @@ mod tests {
         );
 
         let mut wrong_access = value.clone();
-        wrong_access.capabilities[2].access = CapabilityAccess::Read;
+        wrong_access.ui_pages[0].actions[0].capability_id =
+            CapabilityId::new("vendor.customer.lookup").unwrap();
         assert_eq!(
             wrong_access.validate(),
             Err(ContractValidationError::InvalidManifest)
