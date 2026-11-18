@@ -189,6 +189,7 @@ mod plugin_lifecycle_integration_tests;
 mod plugin_operations;
 mod plugin_package;
 mod plugin_runtime;
+mod plugin_storage_dispatcher;
 pub(crate) mod readonly_plugin_review;
 mod redemption;
 mod refund;
@@ -446,15 +447,17 @@ pub use plugin_lifecycle::{
     AdminPluginCapabilityActionResult, AdminPluginCapabilityGrant,
     AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
     AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
-    DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
-    MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand, PluginDeploymentCommand,
-    PluginEventDeliveryWorker, PluginPackageUpload,
+    AdminPluginRouteInvocationResult, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
+    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginEventDeliveryWorker,
+    PluginPackageUpload,
 };
 pub use plugin_operations::{
     AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,
     AdminPluginRuntimeState, AdminPluginUninstallResult,
 };
 pub use plugin_runtime::AdminPluginSidecarRuntime;
+pub use plugin_storage_dispatcher::DatabasePluginStorageDispatcher;
 pub use redemption::{
     AdminRedemptionAuditBatch, AdminRedemptionAuditPage, AdminRedemptionAuditQuery,
     AdminRedemptionAuditStatus, AdminRedemptionAuditSummary, AdminRedemptionBatch,

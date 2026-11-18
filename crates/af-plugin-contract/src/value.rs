@@ -341,7 +341,8 @@ impl HostHttpResponseProjection {
 /// `endpoint_id` from the installed manifest, checks the granted capability and
 /// invocation generation again, injects the linked account credential in memory,
 /// applies the endpoint's query allowlist and returns only a JSON projection.
-/// Current Sidecar protocol handlers do not yet execute this continuation.
+/// Sidecar protocol handlers execute this continuation only when the host
+/// explicitly supplies the matching request-scoped dispatcher.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginProxyRequest {

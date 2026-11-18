@@ -49,7 +49,8 @@ pub use routes::{PluginRoute, PluginRouteAudience, PluginRouteMethod};
 pub use schema::{openapi_document, schema_document};
 pub use storage::{
     MAX_PLUGIN_STORAGE_KEY_BYTES, MAX_PLUGIN_STORAGE_LIST_LIMIT, MAX_PLUGIN_STORAGE_VALUE_BYTES,
-    PluginStorageKey, PluginStorageOperation, PluginStorageValue,
+    PluginStorageEntry, PluginStorageKey, PluginStorageOperation, PluginStorageRequest,
+    PluginStorageResponse, PluginStorageResult, PluginStorageValue,
 };
 pub use task::{
     MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskOperation,

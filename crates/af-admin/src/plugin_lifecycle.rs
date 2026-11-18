@@ -22,7 +22,7 @@ use af_db::{
 use af_domain::PlatformPermission;
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata, PluginId,
-    PluginManifest, PluginTaskOperation, PluginTaskResult, SideEffectClass,
+    PluginManifest, PluginRouteMethod, PluginTaskOperation, PluginTaskResult, SideEffectClass,
 };
 use af_plugin_runtime::{
     VerifiedPluginArtifact, validate_capability_schemas, validate_public_plugin_configuration,
@@ -134,6 +134,18 @@ pub struct AdminPluginEventResultPage {
 #[serde(rename_all = "camelCase")]
 pub struct AdminPluginCapabilityInvocationResult {
     pub plugin_id: String,
+    pub deployment_generation: i64,
+    pub capability_id: String,
+    pub capability_version: u16,
+    pub output: Value,
+}
+
+/// Result returned by a manifest-declared administrator route.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginRouteInvocationResult {
+    pub plugin_id: String,
+    pub route_id: String,
     pub deployment_generation: i64,
     pub capability_id: String,
     pub capability_version: u16,
@@ -864,6 +876,149 @@ impl DatabaseAdminPluginLifecycleService {
             deployment_generation: deployment.generation,
             capability_id: capability.as_str().to_owned(),
             capability_version,
+            output: result.output,
+        })
+    }
+
+    /// Invoke a manifest-declared administrator route through the same
+    /// generation, capability and schema checks as other plugin operations.
+    /// The public route path is intentionally fixed by the host; the manifest
+    /// only selects the route ID and its bound capability.
+    pub async fn invoke_plugin_route(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        route_id: &str,
+        method: PluginRouteMethod,
+        input: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginRouteInvocationResult, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        let plugin_id_value = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if route_id.is_empty()
+            || route_id.len() > 64
+            || !route_id.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+            })
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        if serde_json::to_vec(&input)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
+            .len()
+            > 1024 * 1024
+        {
+            return Err(AdminPluginLifecycleError::PayloadTooLarge);
+        }
+        let deployment = self
+            .repository
+            .get_deployment(plugin_id_value.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let manifest: PluginManifest = serde_json::from_value(deployment.artifact.manifest.clone())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let route = manifest
+            .routes
+            .iter()
+            .find(|route| route.id == route_id)
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if route.method != method
+            || route.audience != af_plugin_contract::PluginRouteAudience::Admin
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let capability = manifest
+            .capabilities
+            .iter()
+            .find(|capability| {
+                capability.id == route.capability_id
+                    && capability.version == route.capability_version
+            })
+            .ok_or(AdminPluginLifecycleError::Forbidden)?;
+        if !deployment
+            .granted_capabilities
+            .iter()
+            .any(|grant| grant.id == capability.id.as_str() && grant.version == capability.version)
+            || capability.input_schema.is_none()
+            || capability.output_schema.is_none()
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let now_ms = time::OffsetDateTime::now_utc()
+            .unix_timestamp_nanos()
+            .checked_div(1_000_000)
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or(AdminPluginLifecycleError::Internal)?;
+        let deadline_unix_ms = now_ms
+            .checked_add(u64::from(route.timeout_ms))
+            .ok_or(AdminPluginLifecycleError::Internal)?;
+        let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
+            format!("admin-route:{}:{}", plugin_id_value.as_str(), route_id),
+            InvocationMetadata {
+                request_id: request_id.to_owned(),
+                deadline_unix_ms,
+            },
+            deployment.config.clone(),
+            route.max_body_bytes,
+        )
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let invoked = runtime
+            .invoke_route(
+                &self.repository,
+                plugin_id_value.as_str(),
+                deployment.generation,
+                &invocation,
+                route_id,
+                capability.id.as_str(),
+                capability.version,
+                input,
+            )
+            .await;
+        let audit = audit_entry(
+            principal,
+            request_id,
+            "/api/admin/plugins/{pluginId}/routes/{routeId}",
+            "invoke_plugin_route",
+            "plugin_route",
+            Some(format!("{plugin_id}:{route_id}")),
+            if invoked.is_ok() {
+                PlatformAuditOutcome::Succeeded
+            } else {
+                PlatformAuditOutcome::Failed
+            },
+            None,
+            None,
+        )?;
+        self.audit.record(audit).await.map_err(map_audit_error)?;
+        let result = invoked?;
+        let latest = self
+            .repository
+            .get_deployment(plugin_id_value.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != deployment.generation {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        Ok(AdminPluginRouteInvocationResult {
+            plugin_id: plugin_id_value.as_str().to_owned(),
+            route_id: route_id.to_owned(),
+            deployment_generation: deployment.generation,
+            capability_id: capability.id.as_str().to_owned(),
+            capability_version: capability.version,
             output: result.output,
         })
     }

@@ -24,7 +24,7 @@
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
-插件不能注册任意服务端路由、模型、渠道、价卡、Webhook 或计划任务。需要 HTTP 入口时，只能使用清单中的 `routes` 声明式路由；路由仍由宿主固定前缀、认证和能力授权统一管理。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
+插件不能注册任意服务端路由、模型、渠道、价卡、Webhook 或计划任务。需要 HTTP 入口时，只能使用清单中的 `routes` 声明式路由；当前已接入管理员路由入口，普通用户入口沿用同一契约后续开放。路由仍由宿主固定前缀、认证和能力授权统一管理。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
 
 ```http
 POST /api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke
@@ -387,7 +387,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 ### 插件路由
 
-需要让用户或管理员通过 HTTP 调用插件自有业务时，在清单中声明 `routes`。宿主会把它们固定映射到 `/api/plugins/{plugin_id}/{path}`，插件只收到路由绑定能力的 JSON 输入，返回值必须符合该能力的 `outputSchema`。路由不能声明完整 URL、查询串、脚本或任意宿主路径。
+需要让管理员通过 HTTP 调用插件自有业务时，在清单中声明 `routes`。当前宿主入口为 `/api/admin/plugins/{plugin_id}/routes/{route_id}`，请求方法和 JSON 输入会按清单中的路由声明校验，再转交绑定能力；插件只收到路由绑定能力的 JSON 输入，返回值必须符合该能力的 `outputSchema`。路由不能声明完整 URL、查询串、脚本或任意宿主路径。
 
 ```json
 {
@@ -407,11 +407,13 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 }
 ```
 
-`GET` 只能绑定 `access=read` 能力；`POST`、`PUT`、`PATCH` 和 `DELETE` 必须绑定写能力，并继续遵守现有幂等、确认和授权规则。用户路由只接受普通用户 PAT 或登录会话，管理员路由还需要管理员权限。宿主负责认证、限流、请求体大小、超时、审计和节点转发；插件不能选择上游主机、读取认证头、修改钱包或访问数据库。多节点部署由宿主把同一请求转发到当前就绪的插件代次。
+`GET` 只能绑定 `access=read` 能力；`POST`、`PUT`、`PATCH` 和 `DELETE` 必须绑定写能力，并继续遵守现有幂等、确认和授权规则。当前管理员入口只接受管理员会话或管理员 PAT。宿主负责认证、限流、请求体大小、超时、审计和节点代次校验；插件不能选择上游主机、读取认证头、修改钱包或访问数据库。
 
 ### 插件状态存储
 
 插件可以通过 `PluginStorageOperation` 使用宿主提供的命名空间 JSON 存储。每个插件只能读写自己的键空间，键最长 128 字节，值最长 64 KiB，可设置过期时间；支持 `get`、`put`、`delete` 和带前缀的 `list`。状态适合保存同步游标、Webhook 去重键和任务辅助状态，不适合保存凭据、钱包事实或宿主任务记录。宿主负责事务、并发、过期清理和多节点共享，插件不能执行 SQL 或获取数据库连接。
+
+Python SDK 在能力处理函数中提供 `context.storage(operation)`。它通过当前 Sidecar 调用的关联帧访问宿主存储，宿主会重新校验插件 ID、generation、键和值大小；插件不能伪造其他插件的命名空间。存储不可用时返回固定错误码，插件不应把存储当作计费或资金事实来源。
 
 ## 8. Python 处理函数
 

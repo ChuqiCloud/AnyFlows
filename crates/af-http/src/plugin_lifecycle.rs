@@ -8,10 +8,10 @@ use af_admin::{
     AdminPluginCapabilityActionResult, AdminPluginCapabilityGrant,
     AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
     AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
-    DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
-    MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand,
-    PluginCatalogExtensionQuery, PluginDeploymentCommand, PluginPackageUpload,
-    SessionAuthentication, SessionAuthenticator,
+    AdminPluginRouteInvocationResult, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
+    PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
+    PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -663,6 +663,12 @@ pub fn build_plugin_lifecycle_router(
         .route_layer(middleware::from_fn(authorize_management_admin));
     Router::new()
         .merge(admin)
+        .route(
+            "/api/admin/plugins/{plugin_id}/routes/{route_id}",
+            get(invoke_plugin_route_get)
+                .post(invoke_plugin_route_post)
+                .put(invoke_plugin_route_put),
+        )
         .route("/api/account/plugin-models/sources", get(catalog_sources))
         .route(
             "/api/account/plugin-models/{plugin_id}",
@@ -672,6 +678,86 @@ pub fn build_plugin_lifecycle_router(
         .layer(middleware::from_fn(ensure_request_id))
         .layer(middleware::from_fn(add_no_store))
         .with_state(PluginLifecycleHttpState { service })
+}
+
+async fn invoke_plugin_route_get(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_plugin_contract::PluginRouteMethod::Get,
+        Value::Object(serde_json::Map::new()),
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_plugin_route_post(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_plugin_contract::PluginRouteMethod::Post,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_plugin_route_put(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_plugin_contract::PluginRouteMethod::Put,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_plugin_route_inner(
+    state: PluginLifecycleHttpState,
+    authentication: SessionAuthentication,
+    plugin_id: String,
+    route_id: String,
+    method: af_plugin_contract::PluginRouteMethod,
+    input: Value,
+    request_id: RequestId,
+) -> Result<Response, ManagementError> {
+    let result: AdminPluginRouteInvocationResult = state
+        .service
+        .invoke_plugin_route(
+            authentication.principal(),
+            &plugin_id,
+            &route_id,
+            method,
+            input,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(result))
 }
 
 async fn runtime_overview(

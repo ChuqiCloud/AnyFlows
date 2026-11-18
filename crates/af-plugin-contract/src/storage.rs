@@ -104,3 +104,130 @@ impl PluginStorageOperation {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginStorageEntry {
+    pub key: String,
+    pub value: PluginStorageValue,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum PluginStorageResult {
+    Value(Option<PluginStorageValue>),
+    Entries(Vec<PluginStorageEntry>),
+    Error { code: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginStorageRequest {
+    pub protocol_version: u16,
+    pub plugin_id: crate::PluginId,
+    pub plugin_version: crate::PluginVersion,
+    pub artifact_sha256: String,
+    pub deployment_generation: u64,
+    pub request_id: String,
+    pub storage_request_id: String,
+    pub operation: PluginStorageOperation,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginStorageResponse {
+    pub protocol_version: u16,
+    pub plugin_id: crate::PluginId,
+    pub plugin_version: crate::PluginVersion,
+    pub artifact_sha256: String,
+    pub deployment_generation: u64,
+    pub request_id: String,
+    pub storage_request_id: String,
+    pub result: PluginStorageResult,
+}
+
+impl PluginStorageRequest {
+    pub fn validate(&self, now_unix_ms: u64) -> Result<(), ContractValidationError> {
+        if self.protocol_version != 1
+            || self.artifact_sha256.len() != 64
+            || !self
+                .artifact_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            || self.deployment_generation == 0
+            || self.request_id.is_empty()
+            || self.request_id.len() > 128
+            || self.storage_request_id.is_empty()
+            || self.storage_request_id.len() > 64
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        self.operation.validate(now_unix_ms)
+    }
+}
+
+impl PluginStorageResponse {
+    pub fn validate(&self, max_value_bytes: usize) -> Result<(), ContractValidationError> {
+        if self.protocol_version != 1
+            || self.artifact_sha256.len() != 64
+            || !self
+                .artifact_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            || self.deployment_generation == 0
+            || self.request_id.is_empty()
+            || self.request_id.len() > 128
+            || self.storage_request_id.is_empty()
+            || self.storage_request_id.len() > 64
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        match &self.result {
+            PluginStorageResult::Value(value) => {
+                if let Some(value) = value {
+                    if serde_json::to_vec(&value.value)
+                        .map_err(|_| ContractValidationError::InvalidExternalValue)?
+                        .len()
+                        > max_value_bytes
+                    {
+                        return Err(ContractValidationError::InvalidExternalValue);
+                    }
+                }
+            }
+            PluginStorageResult::Entries(entries) => {
+                if entries.len() > MAX_PLUGIN_STORAGE_LIST_LIMIT as usize {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+                for entry in entries {
+                    PluginStorageKey {
+                        key: entry.key.clone(),
+                    }
+                    .validate()?;
+                    entry.value.validate(0)?;
+                }
+            }
+            PluginStorageResult::Error { code } => {
+                if code.is_empty() || code.len() > 64 || code.chars().any(char::is_whitespace) {
+                    return Err(ContractValidationError::InvalidExternalValue);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn matches_request(&self, request: &PluginStorageRequest) -> bool {
+        self.protocol_version == request.protocol_version
+            && self.plugin_id == request.plugin_id
+            && self.plugin_version == request.plugin_version
+            && self.artifact_sha256 == request.artifact_sha256
+            && self.deployment_generation == request.deployment_generation
+            && self.request_id == request.request_id
+            && self.storage_request_id == request.storage_request_id
+    }
+}

@@ -13,7 +13,7 @@ use std::{
 use crate::sidecar_isolation::spawn_windows_sidecar;
 use crate::{
     CapabilityContext, CapabilityExecutionContext, CapabilityHandler, ConnectorRegistration,
-    PlatformConnector, PluginProxyDispatcher,
+    PlatformConnector, PluginProxyDispatcher, PluginStorageDispatcher,
     schema::CompiledJsonSchema,
     sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy, prepare_sidecar_launch},
 };
@@ -22,8 +22,9 @@ use af_plugin_contract::{
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
     InvocationMetadata, PROVIDER_LIFECYCLE_CAPABILITY, PluginHostOperation, PluginHostRequest,
     PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProviderOperation,
-    PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginTaskOperation,
-    PluginTaskResult, PluginVersion, SideEffectClass,
+    PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginStorageRequest,
+    PluginStorageResponse, PluginStorageResult, PluginTaskOperation, PluginTaskResult,
+    PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -794,6 +795,7 @@ struct SidecarProcess {
 
 enum SidecarOutputFrame {
     ProxyRequest(PluginProxyRequest),
+    StorageRequest(PluginStorageRequest),
     Response(PluginHostResponse),
 }
 
@@ -1368,6 +1370,7 @@ impl SidecarSession {
             capability_version,
             input,
             None,
+            None,
             false,
         )
         .await
@@ -1381,6 +1384,7 @@ impl SidecarSession {
         capability_version: u16,
         input: Value,
         proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
         allow_external_write: bool,
     ) -> Result<CapabilityResult, SidecarError> {
         self.ensure_generation(deployment_generation)?;
@@ -1448,7 +1452,7 @@ impl SidecarSession {
         )
         .map_err(|_| SidecarError::FrameTooLarge)?;
         match self
-            .exchange(
+            .exchange_with_dispatchers(
                 PluginHostOperation::InvokeCapability {
                     connection_id: invocation.connection_id().to_owned(),
                     public_config: self.public_config.clone(),
@@ -1459,6 +1463,7 @@ impl SidecarSession {
                 self.limits.request_timeout,
                 Some(invocation.metadata()),
                 proxy_dispatcher,
+                storage_dispatcher,
             )
             .await?
         {
@@ -1510,6 +1515,40 @@ impl SidecarSession {
                 capability_id,
                 capability_version,
                 input,
+            )
+            .await?;
+        crate::ensure_json_payload_within_limit(
+            &result.output,
+            invocation.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        Ok(result)
+    }
+
+    /// Invoke a capability while allowing the plugin to use its own bounded
+    /// namespaced storage through a host-owned callback.
+    pub async fn invoke_host_capability_with_storage(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+        storage_dispatcher: Arc<dyn PluginStorageDispatcher>,
+    ) -> Result<CapabilityResult, SidecarError> {
+        let context = CapabilityContext::from_execution_context(invocation);
+        crate::ensure_json_payload_within_limit(&input, invocation.max_response_bytes as usize)
+            .map_err(|_| SidecarError::FrameTooLarge)?;
+        let result = self
+            .invoke_internal(
+                deployment_generation,
+                &context,
+                capability_id,
+                capability_version,
+                input,
+                None,
+                Some(storage_dispatcher),
+                false,
             )
             .await?;
         crate::ensure_json_payload_within_limit(
@@ -1828,6 +1867,7 @@ impl SidecarSession {
                 capability_version,
                 input,
                 proxy_dispatcher,
+                None,
                 false,
             )
             .await?;
@@ -1861,6 +1901,7 @@ impl SidecarSession {
                 capability_version,
                 input,
                 None,
+                None,
                 true,
             )
             .await?;
@@ -1883,6 +1924,24 @@ impl SidecarSession {
         requested_timeout: Duration,
         metadata: Option<&InvocationMetadata>,
         proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+    ) -> Result<PluginHostResult, SidecarError> {
+        self.exchange_with_dispatchers(
+            operation,
+            requested_timeout,
+            metadata,
+            proxy_dispatcher,
+            None,
+        )
+        .await
+    }
+
+    async fn exchange_with_dispatchers(
+        &self,
+        operation: PluginHostOperation,
+        requested_timeout: Duration,
+        metadata: Option<&InvocationMetadata>,
+        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     ) -> Result<PluginHostResult, SidecarError> {
         let deployment_generation = self.deployment_generation;
         if deployment_generation == 0 {
@@ -2043,6 +2102,50 @@ impl SidecarSession {
                             .await
                             .map_err(|_| SidecarError::ProcessExited)?;
                     }
+                    SidecarOutputFrame::StorageRequest(storage_request) => {
+                        storage_request
+                            .validate(now_unix_millis().unwrap_or_default())
+                            .map_err(|_| SidecarError::ProtocolViolation)?;
+                        if storage_request.protocol_version != request.protocol_version
+                            || storage_request.plugin_id != request.plugin_id
+                            || storage_request.plugin_version != request.plugin_version
+                            || storage_request.artifact_sha256 != request.artifact_sha256
+                            || storage_request.deployment_generation
+                                != request.deployment_generation
+                            || storage_request.request_id != request.request_id
+                        {
+                            return Err(SidecarError::ProtocolViolation);
+                        }
+                        let dispatcher = storage_dispatcher
+                            .as_ref()
+                            .ok_or(SidecarError::CapabilityNotGranted)?;
+                        let storage_response = dispatcher.dispatch(storage_request.clone()).await;
+                        if !storage_response.matches_request(&storage_request)
+                            || storage_response
+                                .validate(self.manifest.limits.max_response_bytes as usize)
+                                .is_err()
+                        {
+                            return Err(SidecarError::ProtocolViolation);
+                        }
+                        let mut storage_frame = serde_json::to_vec(&storage_response)
+                            .map_err(|_| SidecarError::ProtocolViolation)?;
+                        if storage_frame.len() + 1 > self.limits.max_frame_bytes {
+                            return Err(SidecarError::FrameTooLarge);
+                        }
+                        storage_frame.push(b'\n');
+                        exchange_guard
+                            .process
+                            .stdin
+                            .write_all(&storage_frame)
+                            .await
+                            .map_err(|_| SidecarError::ProcessExited)?;
+                        exchange_guard
+                            .process
+                            .stdin
+                            .flush()
+                            .await
+                            .map_err(|_| SidecarError::ProcessExited)?;
+                    }
                     SidecarOutputFrame::Response(response) => {
                         if response.protocol_version != SIDE_CAR_PROTOCOL_VERSION
                             || response.request_id != request_id
@@ -2080,8 +2183,11 @@ impl SidecarSession {
         if let Ok(response) = serde_json::from_slice::<PluginHostResponse>(frame) {
             return Ok(SidecarOutputFrame::Response(response));
         }
-        serde_json::from_slice::<PluginProxyRequest>(frame)
-            .map(SidecarOutputFrame::ProxyRequest)
+        if let Ok(proxy) = serde_json::from_slice::<PluginProxyRequest>(frame) {
+            return Ok(SidecarOutputFrame::ProxyRequest(proxy));
+        }
+        serde_json::from_slice::<PluginStorageRequest>(frame)
+            .map(SidecarOutputFrame::StorageRequest)
             .map_err(|_| SidecarError::ProtocolViolation)
     }
 

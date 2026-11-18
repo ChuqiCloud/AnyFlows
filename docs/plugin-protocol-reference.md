@@ -177,6 +177,7 @@ plugin_isolation = "auto"
 | `POST /artifacts/{artifact_id}/revoke` | 撤销制品并填写原因。 |
 | `GET /deployments` | 查看当前部署。 |
 | `POST /{plugin_id}/capabilities/{capability_id}/invoke` | 通过宿主通用入口调用已授权、带 Schema 的只读能力。写能力只能从页面动作的提案确认流程进入。 |
+| `GET|POST|PUT /{plugin_id}/routes/{route_id}` | 调用清单中声明的管理员路由；宿主按路由方法、能力授权、输入输出 Schema 和部署代次校验。 |
 | `POST /{plugin_id}/deployment` | 部署指定制品、配置和能力授权。 |
 | `GET /{plugin_id}/deployment/history` | 查看部署历史。 |
 | `POST /{plugin_id}/disable` | 停用部署。 |

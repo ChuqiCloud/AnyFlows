@@ -23,7 +23,7 @@ class PluginError(Exception):
         if code not in {
             "invalid_configuration", "unsupported", "authentication_required", "forbidden",
             "rate_limited", "temporarily_unavailable", "conflict", "upstream_failure",
-            "invalid_response",
+            "invalid_response", "invalid_key", "not_found", "storage_unavailable",
         }:
             raise ValueError("unsupported connector error code")
         self.code = code
@@ -55,6 +55,7 @@ class PluginInvocationContext:
         self._source = source
         self._target = target
         self._proxy_count = 0
+        self._storage_count = 0
 
     def proxy_read(
         self,
@@ -185,6 +186,77 @@ class PluginInvocationContext:
         if self._json_size(payload) > self._max_response_bytes:
             raise ProtocolError("proxy projection exceeds capability limit")
         return payload
+
+    def storage(self, operation: dict[str, Any]) -> Any:
+        """Use the plugin's host-owned namespace storage for this invocation.
+
+        The host binds the namespace to the current plugin deployment. The
+        operation contains only a relative key and a bounded JSON value; it
+        never carries a table name, SQL, database handle, or another plugin ID.
+        """
+        if self._source is None or self._target is None:
+            raise PluginError("unsupported")
+        if not isinstance(operation, dict) or operation.get("operation") not in {
+            "get", "put", "delete", "list"
+        }:
+            raise PluginError("invalid_configuration")
+        self._storage_count += 1
+        if self._storage_count > 16:
+            raise PluginError("rate_limited")
+        storage_request = {
+            "protocolVersion": self._request["protocolVersion"],
+            "pluginId": self._request["pluginId"],
+            "pluginVersion": self._request["pluginVersion"],
+            "artifactSha256": self._request["artifactSha256"],
+            "deploymentGeneration": self._request["deploymentGeneration"],
+            "requestId": self._request["requestId"],
+            "storageRequestId": f"storage-{self._storage_count}",
+            "operation": copy.deepcopy(operation),
+        }
+        if self._json_size(storage_request) + 1 > self._max_frame_bytes:
+            raise PluginError("invalid_response")
+        self._target.write(
+            json.dumps(storage_request, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+            + b"\n"
+        )
+        self._target.flush()
+        frame = self._source.readline(self._max_frame_bytes + 1)
+        if len(frame) > self._max_frame_bytes or not frame.endswith(b"\n"):
+            raise ProtocolError("invalid storage continuation frame")
+        try:
+            response = json.loads(
+                frame.decode("utf-8"),
+                parse_constant=self._invalid_number,
+                object_pairs_hook=self._unique_object,
+            )
+        except (UnicodeError, ValueError, TypeError) as error:
+            raise ProtocolError("invalid storage continuation frame") from error
+        expected_keys = {
+            "protocolVersion", "pluginId", "pluginVersion", "artifactSha256",
+            "deploymentGeneration", "requestId", "storageRequestId", "result",
+        }
+        if (
+            not isinstance(response, dict)
+            or set(response) != expected_keys
+            or any(response.get(key) != storage_request[key] for key in (
+                "protocolVersion", "pluginId", "pluginVersion", "artifactSha256",
+                "deploymentGeneration", "requestId", "storageRequestId",
+            ))
+            or not isinstance(response["result"], dict)
+            or set(response["result"]) != {"kind", "value"}
+        ):
+            raise ProtocolError("storage continuation correlation mismatch")
+        result = response["result"]
+        if result["kind"] == "error":
+            value = result["value"]
+            if not isinstance(value, dict) or set(value) != {"code"} or not isinstance(value.get("code"), str):
+                raise ProtocolError("invalid storage continuation error")
+            raise PluginError(value["code"])
+        if result["kind"] not in {"value", "entries"}:
+            raise ProtocolError("invalid storage continuation result")
+        if self._json_size(result["value"]) > self._max_response_bytes:
+            raise ProtocolError("storage result exceeds capability limit")
+        return result["value"]
 
     @staticmethod
     def _json_size(value: Any) -> int:
