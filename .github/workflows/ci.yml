@@ -515,7 +515,8 @@ jobs:
           if corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint; then
             exit 0
           fi
-          corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} api:generate
+          corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} exec openapi-ts --no-log-file
+          node "${{ matrix.frontend }}/scripts/normalize-generated-api.mjs"
           git diff -- "${{ matrix.frontend }}/src/lib/api/generated"
           exit 1
 
