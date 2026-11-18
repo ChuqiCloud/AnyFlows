@@ -298,10 +298,10 @@ export function usePluginCapabilityActionProposal() {
 
 export function useConfirmPluginCapabilityAction() {
   return useMutation({
-    mutationFn: async ({ proposalKey, confirmationKey }: { proposalKey: string; confirmationKey: string }) => {
+    mutationFn: async ({ proposalKey, confirmationKey, input }: { proposalKey: string; confirmationKey: string; input: unknown }) => {
       const result = await apiClient.post<PluginCapabilityActionResult>({
         url: `/api/admin/plugins/capability-actions/${encodeURIComponent(proposalKey)}/confirm`,
-        body: { confirmation_key: confirmationKey },
+        body: { confirmation_key: confirmationKey, input },
         security: [
           { key: 'bearerAuth', scheme: 'bearer', type: 'http' },
           { key: 'personalAccessTokenBearer', scheme: 'bearer', type: 'http' },

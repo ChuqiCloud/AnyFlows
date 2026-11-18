@@ -184,7 +184,7 @@ function PluginPageActions({ deployment, page, locale }: { deployment: PluginDep
   }
   const executeProposal = () => {
     if (!proposalKey || !confirmationKey || confirm.isPending) return
-    confirm.mutate({ proposalKey, confirmationKey }, {
+    confirm.mutate({ proposalKey, confirmationKey, input: parsed.value }, {
       onSuccess: (result) => {
         setResultStatus(result.outcomeCode ? `${result.status}:${result.outcomeCode}` : result.status)
         setModalOpen(false)

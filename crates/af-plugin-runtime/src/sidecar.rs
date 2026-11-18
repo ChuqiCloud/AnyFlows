@@ -1864,16 +1864,17 @@ impl SidecarSession {
         let mut effective_manifest = self.manifest.clone();
         effective_manifest.capabilities.retain(|capability| {
             self.granted_capabilities.get(&capability.id) == Some(&capability.version)
+                && capability.access == CapabilityAccess::Read
         });
-        if effective_manifest.capabilities.is_empty() {
-            return Err(SidecarError::CapabilityNotGranted);
-        }
         let connector: Arc<dyn PlatformConnector> = Arc::new(SidecarPlatformConnector {
             manifest: effective_manifest,
         });
         let mut registration = ConnectorRegistration::new(connector);
         for capability in &self.manifest.capabilities {
             if self.granted_capabilities.get(&capability.id) != Some(&capability.version) {
+                continue;
+            }
+            if capability.access != CapabilityAccess::Read {
                 continue;
             }
             let side_effect_is_supported = capability.side_effect == SideEffectClass::None

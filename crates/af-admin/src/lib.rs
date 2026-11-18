@@ -442,7 +442,8 @@ pub use plugin_catalog_extension::{
 };
 pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
-    AdminPluginArtifactRevocation, AdminPluginCapabilityGrant,
+    AdminPluginArtifactRevocation, AdminPluginCapabilityActionProposal,
+    AdminPluginCapabilityActionResult, AdminPluginCapabilityGrant,
     AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
     AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
     DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,

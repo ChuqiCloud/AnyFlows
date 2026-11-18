@@ -56,8 +56,8 @@ function capabilities(artifact: PluginArtifactResponse) {
 
 function grantableCapabilities(artifact: PluginArtifactResponse) {
   return capabilities(artifact).filter((item) =>
-    item.access === 'read'
-      && item.sideEffect === 'none'
+    ((item.access === 'read' && item.sideEffect === 'none')
+      || (item.access === 'write' && item.sideEffect === 'external_write'))
       && item.id !== 'external.account.profile.read'
       && item.id !== 'external.account.balance.read',
   )

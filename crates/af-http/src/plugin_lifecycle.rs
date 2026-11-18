@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
-    AdminPluginArtifactRevocation, AdminPluginCapabilityGrant,
+    AdminPluginArtifactRevocation, AdminPluginCapabilityActionProposal,
+    AdminPluginCapabilityActionResult, AdminPluginCapabilityGrant,
     AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
     AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
     DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
@@ -134,6 +135,67 @@ pub(crate) struct PluginCapabilityInvocationRequest {
     capability_version: u16,
     #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
     input: Value,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PluginCapabilityActionProposalRequest {
+    #[schema(min_length = 3, max_length = 128)]
+    capability_id: String,
+    #[schema(minimum = 1, maximum = 65535)]
+    capability_version: u16,
+    #[schema(min_length = 1, max_length = 128)]
+    idempotency_key: String,
+    #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
+    input: Value,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PluginCapabilityActionConfirmRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    confirmation_key: String,
+    #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
+    input: Value,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginCapabilityActionProposalResponse)]
+pub(crate) struct PluginCapabilityActionProposalResponse {
+    proposal_key: String,
+    expires_at: i64,
+    status: String,
+}
+
+impl From<AdminPluginCapabilityActionProposal> for PluginCapabilityActionProposalResponse {
+    fn from(value: AdminPluginCapabilityActionProposal) -> Self {
+        Self {
+            proposal_key: value.proposal_key,
+            expires_at: value.expires_at,
+            status: value.status,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginCapabilityActionResult)]
+pub(crate) struct PluginCapabilityActionResultResponse {
+    proposal_key: String,
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    outcome_code: Option<String>,
+}
+
+impl From<AdminPluginCapabilityActionResult> for PluginCapabilityActionResultResponse {
+    fn from(value: AdminPluginCapabilityActionResult) -> Self {
+        Self {
+            proposal_key: value.proposal_key,
+            status: value.status,
+            outcome_code: value.outcome_code,
+        }
+    }
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -559,6 +621,14 @@ pub fn build_plugin_lifecycle_router(
             "/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke",
             post(invoke_capability).layer(DefaultBodyLimit::max(512 * 1024)),
         )
+        .route(
+            "/api/admin/plugins/{plugin_id}/capability-actions",
+            post(propose_capability_action).layer(DefaultBodyLimit::max(512 * 1024)),
+        )
+        .route(
+            "/api/admin/plugins/capability-actions/{proposal_key}/confirm",
+            post(confirm_capability_action).layer(DefaultBodyLimit::max(512 * 1024)),
+        )
         .route("/api/admin/plugins/events/results", get(list_event_results))
         .route(
             "/api/admin/plugins/artifacts/{artifact_id}/approve",
@@ -925,6 +995,56 @@ async fn invoke_capability(
         .await
         .map_err(map_service_error)?;
     Ok(no_store_json(PluginCapabilityInvocationResponse::from(
+        result,
+    )))
+}
+
+async fn propose_capability_action(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginCapabilityActionProposalRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .propose_capability_action(
+            authentication.principal(),
+            &plugin_id,
+            &request.capability_id,
+            request.capability_version,
+            &request.idempotency_key,
+            request.input,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginCapabilityActionProposalResponse::from(
+        result,
+    )))
+}
+
+async fn confirm_capability_action(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(proposal_key): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginCapabilityActionConfirmRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .confirm_capability_action(
+            authentication.principal(),
+            &proposal_key,
+            &request.confirmation_key,
+            request.input,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginCapabilityActionResultResponse::from(
         result,
     )))
 }

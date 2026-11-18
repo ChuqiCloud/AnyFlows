@@ -298,13 +298,16 @@ impl PluginCapabilityActionRepository {
             return Err(PluginCapabilityActionRepositoryError::Invariant);
         }
         match timeout(self.operation_timeout, async {
+            let transaction = self.pool.connection().begin().await.map_err(map_db)?;
             let row = plugin_capability_actions::Entity::find()
                 .filter(plugin_capability_actions::Column::ProposalKey.eq(proposal_key))
-                .one(self.pool.connection())
+                .lock_exclusive()
+                .one(&transaction)
                 .await
                 .map_err(map_db)?
                 .ok_or(PluginCapabilityActionRepositoryError::NotFound)?;
             if row.status != STATUS_EXECUTING {
+                transaction.rollback().await.map_err(map_db)?;
                 return Err(PluginCapabilityActionRepositoryError::Conflict);
             }
             let mut update: plugin_capability_actions::ActiveModel = row.into();
@@ -313,12 +316,9 @@ impl PluginCapabilityActionRepository {
                 _ => STATUS_UNKNOWN,
             });
             update.outcome_code = Set(Some(outcome_code.to_owned()));
-            record(
-                update
-                    .update(self.pool.connection())
-                    .await
-                    .map_err(map_db)?,
-            )
+            let updated = update.update(&transaction).await.map_err(map_db)?;
+            transaction.commit().await.map_err(map_db)?;
+            record(updated)
         })
         .await
         {
