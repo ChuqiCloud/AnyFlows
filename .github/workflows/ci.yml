@@ -511,7 +511,13 @@ jobs:
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} audit --audit-level=low
 
       - name: Lint frontend
-        run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint
+        run: |
+          if corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} lint; then
+            exit 0
+          fi
+          corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} api:generate
+          git diff -- "${{ matrix.frontend }}/src/lib/api/generated"
+          exit 1
 
       - name: Build frontend
         run: corepack pnpm@10.33.0 --dir ${{ matrix.frontend }} build
