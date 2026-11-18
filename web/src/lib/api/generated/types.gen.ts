@@ -2834,6 +2834,26 @@ export type PluginArtifactRevocationResponse = {
 export type PluginArtifactRevokeRequest = {
     reason: string;
 };
+export type PluginCapabilityActionConfirmRequest = {
+    confirmation_key: string;
+    input: unknown;
+};
+export type PluginCapabilityActionProposalRequest = {
+    capability_id: string;
+    capability_version: number;
+    idempotency_key: string;
+    input: unknown;
+};
+export type PluginCapabilityActionProposalResponse = {
+    proposalKey: string;
+    expiresAt: number;
+    status: string;
+};
+export type PluginCapabilityActionResult = {
+    proposalKey: string;
+    status: string;
+    outcomeCode?: string | null;
+};
 export type PluginCapabilityGrantRequest = {
     id: string;
     version: number;
@@ -2841,6 +2861,17 @@ export type PluginCapabilityGrantRequest = {
 export type PluginCapabilityGrantResponse = {
     id: string;
     version: number;
+};
+export type PluginCapabilityInvocationRequest = {
+    capability_version: number;
+    input: unknown;
+};
+export type PluginCapabilityInvocationResponse = {
+    pluginId: string;
+    deploymentGeneration: number;
+    capabilityId: string;
+    capabilityVersion: number;
+    output: unknown;
 };
 export type PluginCatalogModelPageResponse = {
     source: PluginCatalogSourceResponse;
@@ -11814,6 +11845,70 @@ export type ListAdminPluginDeploymentsResponses = {
     200: PluginDeploymentPageResponse;
 };
 export type ListAdminPluginDeploymentsResponse = ListAdminPluginDeploymentsResponses[keyof ListAdminPluginDeploymentsResponses];
+export type InvokeAdminPluginCapabilityData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        capability_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke';
+};
+export type InvokeAdminPluginCapabilityErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginCapabilityError = InvokeAdminPluginCapabilityErrors[keyof InvokeAdminPluginCapabilityErrors];
+export type InvokeAdminPluginCapabilityResponses = {
+    200: PluginCapabilityInvocationResponse;
+};
+export type InvokeAdminPluginCapabilityResponse = InvokeAdminPluginCapabilityResponses[keyof InvokeAdminPluginCapabilityResponses];
+export type ProposeAdminPluginCapabilityActionData = {
+    body: PluginCapabilityActionProposalRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/capability-actions';
+};
+export type ProposeAdminPluginCapabilityActionErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type ProposeAdminPluginCapabilityActionError = ProposeAdminPluginCapabilityActionErrors[keyof ProposeAdminPluginCapabilityActionErrors];
+export type ProposeAdminPluginCapabilityActionResponses = {
+    200: PluginCapabilityActionProposalResponse;
+};
+export type ProposeAdminPluginCapabilityActionResponse = ProposeAdminPluginCapabilityActionResponses[keyof ProposeAdminPluginCapabilityActionResponses];
+export type ConfirmAdminPluginCapabilityActionData = {
+    body: PluginCapabilityActionConfirmRequest;
+    path: {
+        proposal_key: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/capability-actions/{proposal_key}/confirm';
+};
+export type ConfirmAdminPluginCapabilityActionErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type ConfirmAdminPluginCapabilityActionError = ConfirmAdminPluginCapabilityActionErrors[keyof ConfirmAdminPluginCapabilityActionErrors];
+export type ConfirmAdminPluginCapabilityActionResponses = {
+    200: PluginCapabilityActionResult;
+};
+export type ConfirmAdminPluginCapabilityActionResponse = ConfirmAdminPluginCapabilityActionResponses[keyof ConfirmAdminPluginCapabilityActionResponses];
 export type ListAdminPluginEventResultsData = {
     body?: never;
     path?: never;

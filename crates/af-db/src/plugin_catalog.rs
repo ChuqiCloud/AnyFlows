@@ -399,6 +399,11 @@ pub struct PluginCatalogRepository {
 }
 
 impl PluginCatalogRepository {
+    #[must_use]
+    pub fn capability_action_repository(&self) -> crate::PluginCapabilityActionRepository {
+        crate::PluginCapabilityActionRepository::new(self.pool.clone())
+    }
+
     /// Shared plugin distribution state uses the same database and transaction
     /// dialect as the durable catalog without exposing its raw pool to callers.
     #[must_use]

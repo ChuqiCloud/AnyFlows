@@ -1367,6 +1367,7 @@ impl SidecarSession {
             capability_version,
             input,
             None,
+            false,
         )
         .await
     }
@@ -1379,6 +1380,7 @@ impl SidecarSession {
         capability_version: u16,
         input: Value,
         proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+        allow_external_write: bool,
     ) -> Result<CapabilityResult, SidecarError> {
         self.ensure_generation(deployment_generation)?;
         if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
@@ -1396,13 +1398,25 @@ impl SidecarSession {
             return Err(SidecarError::SensitivePayload);
         }
         let capability_policy_matches = match declaration.side_effect {
-            SideEffectClass::None => true,
+            SideEffectClass::None => !allow_external_write,
             SideEffectClass::ExternalRead => {
-                proxy_dispatcher.is_some() && is_external_read_capability(capability_id.as_str())
+                !allow_external_write
+                    && proxy_dispatcher.is_some()
+                    && is_external_read_capability(capability_id.as_str())
             }
-            SideEffectClass::ExternalWrite => false,
+            SideEffectClass::ExternalWrite => {
+                allow_external_write
+                    && declaration
+                        .write_semantics
+                        .is_some_and(|semantics| semantics.native_idempotency_key)
+            }
         };
-        if declaration.access != CapabilityAccess::Read
+        let expected_access = if allow_external_write {
+            CapabilityAccess::Write
+        } else {
+            CapabilityAccess::Read
+        };
+        if declaration.access != expected_access
             || !capability_policy_matches
             || declaration.version != capability_version
             || declaration.input_schema.is_none()
@@ -1621,6 +1635,40 @@ impl SidecarSession {
                 capability_version,
                 input,
                 proxy_dispatcher,
+                false,
+            )
+            .await?;
+        crate::ensure_json_payload_within_limit(
+            &result.output,
+            invocation.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        Ok(result)
+    }
+
+    /// Invoke an explicitly granted, idempotent external-write capability.
+    /// The normal capability entry point never enables this path; callers must
+    /// have completed the host's proposal and confirmation checks first.
+    pub async fn invoke_host_external_write(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+    ) -> Result<CapabilityResult, SidecarError> {
+        let context = CapabilityContext::from_execution_context(invocation);
+        crate::ensure_json_payload_within_limit(&input, invocation.max_response_bytes as usize)
+            .map_err(|_| SidecarError::FrameTooLarge)?;
+        let result = self
+            .invoke_internal(
+                deployment_generation,
+                &context,
+                capability_id,
+                capability_version,
+                input,
+                None,
+                true,
             )
             .await?;
         crate::ensure_json_payload_within_limit(
@@ -1864,16 +1912,17 @@ impl SidecarSession {
         let mut effective_manifest = self.manifest.clone();
         effective_manifest.capabilities.retain(|capability| {
             self.granted_capabilities.get(&capability.id) == Some(&capability.version)
+                && capability.access == CapabilityAccess::Read
         });
-        if effective_manifest.capabilities.is_empty() {
-            return Err(SidecarError::CapabilityNotGranted);
-        }
         let connector: Arc<dyn PlatformConnector> = Arc::new(SidecarPlatformConnector {
             manifest: effective_manifest,
         });
         let mut registration = ConnectorRegistration::new(connector);
         for capability in &self.manifest.capabilities {
             if self.granted_capabilities.get(&capability.id) != Some(&capability.version) {
+                continue;
+            }
+            if capability.access != CapabilityAccess::Read {
                 continue;
             }
             let side_effect_is_supported = capability.side_effect == SideEffectClass::None
