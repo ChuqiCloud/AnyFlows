@@ -691,7 +691,7 @@ async fn invoke_plugin_route_get(
         authentication,
         plugin_id,
         route_id,
-        af_plugin_contract::PluginRouteMethod::Get,
+        af_admin::PluginRouteMethod::Get,
         Value::Object(serde_json::Map::new()),
         request_id,
     )
@@ -710,7 +710,7 @@ async fn invoke_plugin_route_post(
         authentication,
         plugin_id,
         route_id,
-        af_plugin_contract::PluginRouteMethod::Post,
+        af_admin::PluginRouteMethod::Post,
         input,
         request_id,
     )
@@ -729,7 +729,7 @@ async fn invoke_plugin_route_put(
         authentication,
         plugin_id,
         route_id,
-        af_plugin_contract::PluginRouteMethod::Put,
+        af_admin::PluginRouteMethod::Put,
         input,
         request_id,
     )
@@ -741,7 +741,7 @@ async fn invoke_plugin_route_inner(
     authentication: SessionAuthentication,
     plugin_id: String,
     route_id: String,
-    method: af_plugin_contract::PluginRouteMethod,
+    method: af_admin::PluginRouteMethod,
     input: Value,
     request_id: RequestId,
 ) -> Result<Response, ManagementError> {

@@ -23,8 +23,7 @@ use af_plugin_contract::{
     InvocationMetadata, PROVIDER_LIFECYCLE_CAPABILITY, PluginHostOperation, PluginHostRequest,
     PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProviderOperation,
     PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginStorageRequest,
-    PluginStorageResponse, PluginStorageResult, PluginTaskOperation, PluginTaskResult,
-    PluginVersion, SideEffectClass,
+    PluginTaskOperation, PluginTaskResult, PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};

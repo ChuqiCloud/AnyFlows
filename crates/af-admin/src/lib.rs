@@ -237,6 +237,7 @@ pub use af_db::{
     CredentialProxyScheme, CredentialSelectionStrategy, DatabaseTimestamp, NetworkSettingsMode,
     RelayChannelSettings, RelayChannelSettingsPatch,
 };
+pub use af_plugin_contract::PluginRouteMethod;
 pub use announcement::{
     AnnouncementAudience, AnnouncementFuture, AnnouncementListFuture, AnnouncementService,
     AnnouncementServiceError, AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand,
