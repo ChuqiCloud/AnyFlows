@@ -189,14 +189,13 @@ impl PluginStorageResponse {
         }
         match &self.result {
             PluginStorageResult::Value(value) => {
-                if let Some(value) = value {
-                    if serde_json::to_vec(&value.value)
+                if let Some(value) = value
+                    && serde_json::to_vec(&value.value)
                         .map_err(|_| ContractValidationError::InvalidExternalValue)?
                         .len()
                         > max_value_bytes
-                    {
-                        return Err(ContractValidationError::InvalidExternalValue);
-                    }
+                {
+                    return Err(ContractValidationError::InvalidExternalValue);
                 }
             }
             PluginStorageResult::Entries(entries) => {
