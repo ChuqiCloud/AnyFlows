@@ -164,7 +164,23 @@
       "invalidInput": "请输入有效的 JSON。",
       "invokeError": "插件读取失败，请检查授权、输入和插件运行状态。",
       "outputTooLarge": "结果超过页面显示上限，请调整查询条件后重试。",
-      "unavailable": "页面不可用：插件已停用、授权已撤销，或页面配置无效。"
+        "unavailable": "页面不可用：插件已停用、授权已撤销，或页面配置无效。",
+        "actions": {
+          "title": "插件操作",
+          "description": "操作会先创建待确认提案，确认后才会执行。执行结果由宿主返回。",
+          "select": "选择操作",
+          "invalidInput": "请输入有效的 JSON。",
+          "proposalError": "无法创建操作提案，请检查授权、输入和插件状态。",
+          "confirmError": "操作未完成，可能已过期、撤销或执行结果未知。请先查看状态。",
+          "pending": "提案状态：{{status}}",
+          "completed": "执行状态：{{status}}",
+          "review": "审核并确认",
+          "proposing": "创建提案中…",
+          "confirmTitle": "确认执行：{{action}}",
+          "confirmDescription": "确认后宿主将按当前部署和授权执行此操作。请核对输入内容。",
+          "confirm": "确认执行",
+          "executing": "执行中…"
+        }
     },
     "capabilityConsole": {
       "title": "调用自定义能力",

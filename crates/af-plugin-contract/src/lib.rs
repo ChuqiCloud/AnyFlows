@@ -27,7 +27,7 @@ pub use event::{
     plugin_event_definition,
 };
 pub use manifest::{
-    ConnectorLimits, PluginId, PluginManifest, PluginUiBlock, PluginUiComponent,
+    ConnectorLimits, PluginId, PluginManifest, PluginUiAction, PluginUiBlock, PluginUiComponent,
     PluginUiContribution, PluginUiPage, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView,
     PluginUiViewSlot,
 };

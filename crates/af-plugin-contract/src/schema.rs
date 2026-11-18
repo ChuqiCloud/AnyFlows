@@ -29,6 +29,7 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/PluginHostProtocol" },
             { "$ref": "#/$defs/PluginUiView" },
             { "$ref": "#/$defs/PluginUiPage" },
+            { "$ref": "#/$defs/PluginUiAction" },
             { "$ref": "#/$defs/PluginUiBlock" }
         ],
         "$defs": {
@@ -184,6 +185,21 @@ pub fn schema_document() -> Value {
                 }
             },
             "PluginUiPage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "schemaVersion", "title", "capabilityId", "capabilityVersion"],
+                "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$", "minLength": 1, "maxLength": 64 },
+                    "schemaVersion": { "const": 1 },
+                    "title": { "$ref": "#/$defs/PluginUiText" },
+                    "description": { "$ref": "#/$defs/PluginUiText" },
+                    "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "input": {},
+                    "actions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiAction" } }
+                }
+            },
+            "PluginUiAction": {
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["id", "schemaVersion", "title", "capabilityId", "capabilityVersion"],

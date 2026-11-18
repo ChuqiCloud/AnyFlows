@@ -255,6 +255,7 @@ mod playground_share_tests;
 mod plugin_action_proposals;
 #[cfg(test)]
 mod plugin_action_proposals_integration_tests;
+mod plugin_capability_actions;
 mod plugin_catalog;
 #[cfg(test)]
 mod plugin_catalog_tests;
@@ -267,6 +268,10 @@ mod plugin_event_delivery_tests;
 pub use plugin_action_proposals::{
     PluginActionProposalCreate, PluginActionProposalRecord, PluginActionProposalRepository,
     PluginActionProposalRepositoryError, PluginActionProposalStatus,
+};
+pub use plugin_capability_actions::{
+    PluginCapabilityActionCreate, PluginCapabilityActionRecord, PluginCapabilityActionRepository,
+    PluginCapabilityActionRepositoryError, PluginCapabilityActionStatus,
 };
 pub use plugin_event_delivery::{
     MAX_PLUGIN_EVENT_RESULT_PAGE_SIZE, PluginEventDeliveryClaimOutcome,

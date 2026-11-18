@@ -164,7 +164,23 @@
       "invalidInput": "Enter valid JSON.",
       "invokeError": "The plugin request failed. Check its grant, input, and runtime status.",
       "outputTooLarge": "The result exceeds the page display limit. Narrow the query and try again.",
-      "unavailable": "This page is unavailable because the plugin is disabled, its grant was revoked, or its page configuration is invalid."
+        "unavailable": "This page is unavailable because the plugin is disabled, its grant was revoked, or its page configuration is invalid.",
+        "actions": {
+          "title": "Plugin actions",
+          "description": "Actions create a proposal first and run only after confirmation. The host returns the execution result.",
+          "select": "Select action",
+          "invalidInput": "Enter valid JSON.",
+          "proposalError": "The action proposal could not be created. Check the grant, input, and plugin status.",
+          "confirmError": "The action did not complete. It may have expired, been revoked, or reached an unknown outcome. Check its status before retrying.",
+          "pending": "Proposal status: {{status}}",
+          "completed": "Execution status: {{status}}",
+          "review": "Review and confirm",
+          "proposing": "Creating proposal…",
+          "confirmTitle": "Confirm: {{action}}",
+          "confirmDescription": "After confirmation, the host executes this action against the current deployment and grant. Review the input first.",
+          "confirm": "Confirm execution",
+          "executing": "Executing…"
+        }
     },
     "capabilityConsole": {
       "title": "Invoke custom capability",
