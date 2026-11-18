@@ -457,6 +457,10 @@ impl AdminPluginSidecarRuntime {
         .await
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件运行时入口同时携带仓储、部署、能力、请求上下文和请求级存储回调"
+    )]
     pub async fn invoke_capability_with_storage(
         &self,
         repository: &PluginCatalogRepository,
@@ -483,6 +487,10 @@ impl AdminPluginSidecarRuntime {
         .await
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件路由入口同时携带仓储、部署、路由、能力和请求上下文"
+    )]
     pub async fn invoke_route(
         &self,
         repository: &PluginCatalogRepository,
