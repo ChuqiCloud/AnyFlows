@@ -1330,7 +1330,13 @@
           "$ref": "#/$defs/PluginUiText"
         }
       },
-      "required": ["id", "schemaVersion", "title", "capabilityId", "capabilityVersion"],
+      "required": [
+        "id",
+        "schemaVersion",
+        "title",
+        "capabilityId",
+        "capabilityVersion"
+      ],
       "type": "object"
     },
     "PluginUiBlock": {
@@ -1549,6 +1555,13 @@
     "PluginUiPage": {
       "additionalProperties": false,
       "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/PluginUiAction"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
         "capabilityId": {
           "maxLength": 128,
           "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
@@ -1569,13 +1582,6 @@
           "type": "string"
         },
         "input": {},
-        "actions": {
-          "items": {
-            "$ref": "#/$defs/PluginUiAction"
-          },
-          "maxItems": 16,
-          "type": "array"
-        },
         "schemaVersion": {
           "const": 1
         },
