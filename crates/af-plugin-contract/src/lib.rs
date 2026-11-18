@@ -8,6 +8,7 @@
 
 mod capability;
 mod error;
+mod event;
 mod manifest;
 mod proposal;
 mod request_processing;
@@ -21,16 +22,21 @@ pub use capability::{
     ExternalWriteSemantics, ResultLookupSupport, SideEffectClass,
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
+pub use event::{
+    PluginEventDefinition, PluginEventFilterField, PluginEventSubscription, plugin_event_catalog,
+    plugin_event_definition,
+};
 pub use manifest::{
     ConnectorLimits, PluginId, PluginManifest, PluginUiBlock, PluginUiComponent,
-    PluginUiContribution, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView, PluginUiViewSlot,
+    PluginUiContribution, PluginUiPage, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView,
+    PluginUiViewSlot,
 };
 pub use proposal::HostActionProposal;
 pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,
     REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingEffect,
     RequestProcessingFinding, RequestProcessingFindingStatus, RequestProcessingInput,
-    RequestProcessingOutput, RequestProcessingStage,
+    RequestProcessingOutput, RequestProcessingPipelineResult, RequestProcessingStage,
 };
 pub use schema::{openapi_document, schema_document};
 pub use task::{

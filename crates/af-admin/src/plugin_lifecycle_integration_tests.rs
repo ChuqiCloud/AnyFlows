@@ -20,9 +20,9 @@ use serde_json::json;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 use crate::{
-    AdminPluginCapabilityGrant, AdminPluginLifecycleError, AdminPluginSidecarRuntime,
-    DatabaseAdminPluginLifecycleService, DatabasePlatformAuditService, PluginCatalogExtensionQuery,
-    PluginDeploymentCommand, PluginEventDeliveryWorker, SessionPrincipal, SessionRole,
+    AdminPluginLifecycleError, AdminPluginSidecarRuntime, DatabaseAdminPluginLifecycleService,
+    DatabasePlatformAuditService, PluginCatalogExtensionQuery, PluginEventDeliveryWorker,
+    SessionPrincipal, SessionRole,
 };
 
 const PLUGIN_ID: &str = "org.anyflows.example-catalog";
@@ -271,49 +271,19 @@ async fn event_delivery_uses_the_active_deployment_public_configuration()
         .begin_package_upload(fixture.operator, "event-config-upload")
         .await?;
     upload.write_chunk(&event_config_package()?).await?;
-    assert!(matches!(
-        fixture
-            .first
-            .install_package(
-                fixture.operator,
-                upload,
-                json!({"marker":"event-config"}),
-                None,
-                "event-config-install",
-            )
-            .await,
-        Err(AdminPluginLifecycleError::CapabilityReviewRequired)
-    ));
-
-    let artifact_page = fixture
-        .first
-        .list_artifacts(fixture.operator, None, 20)
-        .await?;
-    let artifact = artifact_page
-        .artifacts()
-        .iter()
-        .find(|artifact| artifact.plugin_id() == EVENT_PLUGIN_ID)
-        .ok_or("event artifact was not registered")?;
-    assert!(artifact.approval().is_some());
-    let config = json!({"marker":"event-config"});
     let deployment = fixture
         .first
-        .deploy(
+        .install_package(
             fixture.operator,
-            PluginDeploymentCommand::new(
-                EVENT_PLUGIN_ID.to_owned(),
-                artifact.digest().to_owned(),
-                None,
-                true,
-                vec![AdminPluginCapabilityGrant::new(
-                    "events.channel-health.changed.consume".to_owned(),
-                    1,
-                )?],
-                config,
-            )?,
-            "event-config-deploy",
+            upload,
+            json!({"marker":"event-config"}),
+            None,
+            "event-config-install",
         )
         .await?;
+    assert!(deployment.granted_capabilities().iter().any(|grant| {
+        grant.id() == "events.channel-health.changed.consume" && grant.version() == 1
+    }));
 
     let now = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
     let event = PluginEventDeliveryCreate {

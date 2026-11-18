@@ -3,7 +3,10 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-use crate::{CapabilityDeclaration, ContractValidationError, ContractVersionRange, PluginVersion};
+use crate::{
+    CapabilityAccess, CapabilityDeclaration, CapabilityId, ContractValidationError,
+    ContractVersionRange, PluginEventSubscription, PluginVersion, SideEffectClass,
+};
 
 /// Extensible namespaced plugin ID; never a product platform enum.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
@@ -63,6 +66,9 @@ pub struct PluginManifest {
     pub plugin_version: PluginVersion,
     pub contract_range: ContractVersionRange,
     pub capabilities: Vec<CapabilityDeclaration>,
+    /// Optional subscriptions to host-owned, versioned events.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_subscriptions: Vec<PluginEventSubscription>,
     pub authentication_modes: Vec<String>,
     pub limits: ConnectorLimits,
     pub config_schema: Value,
@@ -72,6 +78,26 @@ pub struct PluginManifest {
     /// Optional versioned static views rendered only with host-owned components.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui_views: Vec<PluginUiView>,
+    /// Optional administrator pages rendered by the host and bound to a declared read-only capability.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ui_pages: Vec<PluginUiPage>,
+}
+
+/// A host-routed administrator page with a fixed input for one read-only capability.
+/// Plugins can choose a title and a capability binding, but never a URL or executable UI code.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUiPage {
+    pub id: String,
+    pub schema_version: u16,
+    pub title: PluginUiText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<PluginUiText>,
+    pub capability_id: CapabilityId,
+    pub capability_version: u16,
+    /// Optional JSON input sent through the host's normal capability schema validation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<Value>,
 }
 
 /// A bounded declarative card rendered with host-owned components and translations.
@@ -150,6 +176,19 @@ pub enum PluginUiBlock {
         columns: Vec<PluginUiText>,
         rows: Vec<Vec<PluginUiText>>,
     },
+    List {
+        items: Vec<PluginUiText>,
+    },
+    Notice {
+        title: PluginUiText,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<PluginUiText>,
+        tone: PluginUiTone,
+    },
+    Progress {
+        label: PluginUiText,
+        percent: u8,
+    },
     InfoCard {
         title: PluginUiText,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -168,10 +207,13 @@ pub enum PluginUiTone {
 }
 
 const MAX_PLUGIN_UI_VIEWS: usize = 8;
+const MAX_PLUGIN_UI_PAGES: usize = 32;
 const MAX_PLUGIN_UI_BLOCKS_PER_VIEW: usize = 24;
 const MAX_PLUGIN_UI_TABLE_COLUMNS: usize = 8;
 const MAX_PLUGIN_UI_TABLE_ROWS: usize = 16;
+const MAX_PLUGIN_UI_LIST_ITEMS: usize = 16;
 const MAX_PLUGIN_UI_VIEW_BYTES: usize = 8 * 1024;
+const MAX_PLUGIN_UI_PAGE_BYTES: usize = 8 * 1024;
 const MAX_PLUGIN_UI_TOTAL_BYTES: usize = 32 * 1024;
 
 impl PluginUiBlock {
@@ -189,6 +231,15 @@ impl PluginUiBlock {
                         row.len() == columns.len() && row.iter().all(PluginUiText::validate)
                     })
             }
+            Self::List { items } => {
+                !items.is_empty()
+                    && items.len() <= MAX_PLUGIN_UI_LIST_ITEMS
+                    && items.iter().all(PluginUiText::validate)
+            }
+            Self::Notice {
+                title, description, ..
+            } => title.validate() && description.as_ref().is_none_or(PluginUiText::validate),
+            Self::Progress { label, percent } => label.validate() && *percent <= 100,
             Self::InfoCard { title, description } => {
                 title.validate() && description.as_ref().is_none_or(PluginUiText::validate)
             }
@@ -271,6 +322,15 @@ impl PluginManifest {
                 return Err(ContractValidationError::DuplicateCapability);
             }
         }
+        let mut event_kinds = BTreeSet::new();
+        if self.event_subscriptions.len() > 32
+            || self.event_subscriptions.iter().any(|subscription| {
+                !event_kinds.insert(&subscription.event_kind)
+                    || subscription.validate(&self.capabilities).is_err()
+            })
+        {
+            return Err(ContractValidationError::InvalidManifest);
+        }
         if self.ui_contributions.len() > 16 {
             return Err(ContractValidationError::InvalidManifest);
         }
@@ -327,6 +387,53 @@ impl PluginManifest {
                 .filter(|size| *size <= MAX_PLUGIN_UI_TOTAL_BYTES)
                 .ok_or(ContractValidationError::InvalidManifest)?;
             if !contribution_ids.insert(&view.id) {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+        }
+        if self.ui_pages.len() > MAX_PLUGIN_UI_PAGES {
+            return Err(ContractValidationError::InvalidManifest);
+        }
+        let mut total_ui_bytes = total_view_bytes;
+        for page in &self.ui_pages {
+            let capability_available = self.capabilities.iter().any(|capability| {
+                capability.id == page.capability_id
+                    && capability.version == page.capability_version
+                    && capability.access == CapabilityAccess::Read
+                    && capability.side_effect == SideEffectClass::None
+                    && capability.input_schema.is_some()
+                    && capability.output_schema.is_some()
+            });
+            if !capability_available {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+            if !valid_ui_id(&page.id)
+                || page.schema_version != 1
+                || page.capability_version == 0
+                || !contribution_ids.insert(&page.id)
+                || !page.title.validate()
+                || page
+                    .description
+                    .as_ref()
+                    .is_some_and(|description| !description.validate())
+            {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+            let page_bytes = serde_json::to_vec(page)
+                .map_err(|_| ContractValidationError::InvalidManifest)?
+                .len();
+            if page_bytes > MAX_PLUGIN_UI_PAGE_BYTES {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+            total_ui_bytes = total_ui_bytes
+                .checked_add(page_bytes)
+                .filter(|size| *size <= MAX_PLUGIN_UI_TOTAL_BYTES)
+                .ok_or(ContractValidationError::InvalidManifest)?;
+            if let Some(input) = &page.input
+                && serde_json::to_vec(input)
+                    .map_err(|_| ContractValidationError::InvalidManifest)?
+                    .len()
+                    > MAX_PLUGIN_UI_PAGE_BYTES
+            {
                 return Err(ContractValidationError::InvalidManifest);
             }
         }
@@ -403,6 +510,7 @@ mod tests {
                 input_schema: None,
                 output_schema: None,
             }],
+            event_subscriptions: Vec::new(),
             authentication_modes: vec!["bearer_token".to_owned()],
             limits: ConnectorLimits {
                 max_concurrency: 1,
@@ -413,7 +521,142 @@ mod tests {
             config_schema,
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
+            ui_pages: Vec::new(),
         }
+    }
+
+    fn ui_page(id: &str, capability_id: &str, version: u16) -> PluginUiPage {
+        PluginUiPage {
+            id: id.to_owned(),
+            schema_version: 1,
+            title: PluginUiText {
+                en: Some("Lookup details".to_owned()),
+                zh: Some("查询详情".to_owned()),
+            },
+            description: None,
+            capability_id: CapabilityId::new(capability_id).unwrap(),
+            capability_version: version,
+            input: Some(serde_json::json!({"query": "ready"})),
+        }
+    }
+
+    fn add_custom_read_capability(value: &mut PluginManifest) {
+        value.capabilities.push(CapabilityDeclaration {
+            id: CapabilityId::new("vendor.customer.lookup").unwrap(),
+            version: 1,
+            access: CapabilityAccess::Read,
+            side_effect: SideEffectClass::None,
+            write_semantics: None,
+            input_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": false
+            })),
+            output_schema: Some(serde_json::json!({"type": "object"})),
+        });
+    }
+
+    #[test]
+    fn manifest_supports_bounded_administrator_pages_bound_to_declared_read_only_capabilities() {
+        let mut value = manifest(serde_json::json!({ "type": "object" }));
+        add_custom_read_capability(&mut value);
+        value
+            .ui_pages
+            .push(ui_page("customer-lookup", "vendor.customer.lookup", 1));
+        assert!(value.validate().is_ok());
+
+        let mut old_wire =
+            serde_json::to_value(manifest(serde_json::json!({ "type": "object" }))).unwrap();
+        old_wire.as_object_mut().unwrap().remove("uiPages");
+        let old: PluginManifest = serde_json::from_value(old_wire).unwrap();
+        assert!(old.ui_pages.is_empty());
+        assert!(old.validate().is_ok());
+
+        let mut missing_capability = value.clone();
+        missing_capability.ui_pages[0].capability_id =
+            CapabilityId::new("vendor.customer.missing").unwrap();
+        assert_eq!(
+            missing_capability.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut wrong_version = value.clone();
+        wrong_version.ui_pages[0].capability_version = 2;
+        assert_eq!(
+            wrong_version.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut unsupported_page_schema = value.clone();
+        unsupported_page_schema.ui_pages[0].schema_version = 2;
+        assert_eq!(
+            unsupported_page_schema.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut write_capability = value.clone();
+        write_capability.capabilities[1].access = CapabilityAccess::Write;
+        assert_eq!(
+            write_capability.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut side_effectful_capability = value.clone();
+        side_effectful_capability.capabilities[1].side_effect = SideEffectClass::ExternalRead;
+        assert_eq!(
+            side_effectful_capability.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut untyped_capability = value.clone();
+        untyped_capability.capabilities[1].input_schema = None;
+        untyped_capability.capabilities[1].output_schema = None;
+        assert_eq!(
+            untyped_capability.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut duplicate_id = value.clone();
+        duplicate_id.ui_contributions.push(PluginUiContribution {
+            id: "customer-lookup".to_owned(),
+            slot: PluginUiSlot::PluginManagement,
+            component: PluginUiComponent::InfoCard,
+            title: PluginUiText {
+                en: Some("Lookup".to_owned()),
+                zh: None,
+            },
+            description: None,
+        });
+        assert_eq!(
+            duplicate_id.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut invalid_text = value.clone();
+        invalid_text.ui_pages[0].title.en = Some("https://example.invalid".to_owned());
+        assert_eq!(
+            invalid_text.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut oversized_input = value;
+        oversized_input.ui_pages[0].input =
+            Some(Value::String("x".repeat(MAX_PLUGIN_UI_PAGE_BYTES)));
+        assert_eq!(
+            oversized_input.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut too_many_pages = manifest(serde_json::json!({ "type": "object" }));
+        add_custom_read_capability(&mut too_many_pages);
+        too_many_pages.ui_pages = (0..=MAX_PLUGIN_UI_PAGES)
+            .map(|index| ui_page(&format!("page-{index}"), "vendor.customer.lookup", 1))
+            .collect();
+        assert_eq!(
+            too_many_pages.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
     }
 
     #[test]
@@ -511,6 +754,27 @@ mod tests {
                         zh: Some("今天".to_owned()),
                     }]],
                 },
+                PluginUiBlock::List {
+                    items: vec![PluginUiText {
+                        en: Some("First item".to_owned()),
+                        zh: Some("第一项".to_owned()),
+                    }],
+                },
+                PluginUiBlock::Notice {
+                    title: PluginUiText {
+                        en: Some("Notice".to_owned()),
+                        zh: Some("提示".to_owned()),
+                    },
+                    description: None,
+                    tone: PluginUiTone::Warning,
+                },
+                PluginUiBlock::Progress {
+                    label: PluginUiText {
+                        en: Some("Progress".to_owned()),
+                        zh: Some("进度".to_owned()),
+                    },
+                    percent: 75,
+                },
                 PluginUiBlock::InfoCard {
                     title: PluginUiText {
                         en: Some("Account".to_owned()),
@@ -566,6 +830,32 @@ mod tests {
         };
         assert_eq!(
             mismatched_table.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut empty_list = value.clone();
+        let list = empty_list.ui_views[0]
+            .blocks
+            .iter_mut()
+            .find(|block| matches!(block, PluginUiBlock::List { .. }))
+            .expect("list block exists");
+        *list = PluginUiBlock::List { items: Vec::new() };
+        assert_eq!(
+            empty_list.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut invalid_progress = value.clone();
+        let progress = invalid_progress.ui_views[0]
+            .blocks
+            .iter_mut()
+            .find(|block| matches!(block, PluginUiBlock::Progress { .. }))
+            .expect("progress block exists");
+        if let PluginUiBlock::Progress { percent, .. } = progress {
+            *percent = 101;
+        }
+        assert_eq!(
+            invalid_progress.validate(),
             Err(ContractValidationError::InvalidManifest)
         );
 

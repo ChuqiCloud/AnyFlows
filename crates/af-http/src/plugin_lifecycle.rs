@@ -4,12 +4,13 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
-    AdminPluginArtifactRevocation, AdminPluginCapabilityGrant, AdminPluginDeployment,
-    AdminPluginDeploymentPage, AdminPluginEventResult, AdminPluginEventResultPage,
-    AdminPluginLifecycleError, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
-    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
-    PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
-    PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
+    AdminPluginArtifactRevocation, AdminPluginCapabilityGrant,
+    AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
+    AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
+    DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
+    MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand,
+    PluginCatalogExtensionQuery, PluginDeploymentCommand, PluginPackageUpload,
+    SessionAuthentication, SessionAuthenticator,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -123,6 +124,16 @@ pub(crate) struct PluginCapabilityGrantRequest {
     id: String,
     #[schema(minimum = 1, maximum = 65535)]
     version: u16,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PluginCapabilityInvocationRequest)]
+pub(crate) struct PluginCapabilityInvocationRequest {
+    #[schema(minimum = 1, maximum = 65535)]
+    capability_version: u16,
+    #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
+    input: Value,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -272,6 +283,30 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
 pub(crate) struct PluginCapabilityGrantResponse {
     id: String,
     version: u16,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginCapabilityInvocationResponse)]
+pub(crate) struct PluginCapabilityInvocationResponse {
+    plugin_id: String,
+    deployment_generation: i64,
+    capability_id: String,
+    capability_version: u16,
+    #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
+    output: Value,
+}
+
+impl From<AdminPluginCapabilityInvocationResult> for PluginCapabilityInvocationResponse {
+    fn from(value: AdminPluginCapabilityInvocationResult) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+            deployment_generation: value.deployment_generation,
+            capability_id: value.capability_id,
+            capability_version: value.capability_version,
+            output: value.output,
+        }
+    }
 }
 
 impl From<&AdminPluginCapabilityGrant> for PluginCapabilityGrantResponse {
@@ -520,6 +555,10 @@ pub fn build_plugin_lifecycle_router(
             get(list_artifacts).post(register_artifact),
         )
         .route("/api/admin/plugins/deployments", get(list_deployments))
+        .route(
+            "/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke",
+            post(invoke_capability).layer(DefaultBodyLimit::max(512 * 1024)),
+        )
         .route("/api/admin/plugins/events/results", get(list_event_results))
         .route(
             "/api/admin/plugins/artifacts/{artifact_id}/approve",
@@ -865,6 +904,31 @@ async fn list_deployments(
     Ok(no_store_json(PluginDeploymentPageResponse::from(page)))
 }
 
+async fn invoke_capability(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam((plugin_id, capability_id)): PathParam<(String, String)>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginCapabilityInvocationRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .invoke_custom_capability(
+            authentication.principal(),
+            &plugin_id,
+            &capability_id,
+            request.capability_version,
+            request.input,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginCapabilityInvocationResponse::from(
+        result,
+    )))
+}
+
 async fn list_event_results(
     State(state): State<PluginLifecycleHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
@@ -1155,6 +1219,10 @@ mod tests {
                 get(|| async { StatusCode::OK }),
             )
             .route(
+                "/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke",
+                post(|| async { StatusCode::OK }),
+            )
+            .route(
                 "/api/admin/plugins/{plugin_id}/uninstall",
                 post(|| async { StatusCode::OK }),
             )
@@ -1184,6 +1252,10 @@ mod tests {
         for (method, path) in [
             ("GET", "/api/admin/plugins/runtime"),
             ("GET", "/api/admin/plugins/events/results"),
+            (
+                "POST",
+                "/api/admin/plugins/org.example.test/capabilities/vendor.custom.lookup/invoke",
+            ),
             ("POST", "/api/admin/plugins/org.example.catalog/uninstall"),
             ("POST", "/api/admin/plugins/artifacts/1/cleanup"),
         ] {
@@ -1244,6 +1316,10 @@ mod tests {
         let policies = [
             ("GET", "/api/admin/plugins/runtime"),
             ("GET", "/api/admin/plugins/events/results"),
+            (
+                "POST",
+                "/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke",
+            ),
             ("POST", "/api/admin/plugins/{plugin_id}/uninstall"),
             ("POST", "/api/admin/plugins/artifacts/{artifact_id}/cleanup"),
         ]
@@ -1291,6 +1367,42 @@ mod tests {
         assert!(result.get("payload").is_none());
         assert!(result.get("pluginUrl").is_none());
         assert!(result.get("credential").is_none());
+    }
+
+    #[test]
+    fn plugin_custom_capability_preserves_all_json_value_shapes() {
+        let request_schema = serde_json::to_value(
+            <PluginCapabilityInvocationRequest as utoipa::PartialSchema>::schema(),
+        )
+        .unwrap();
+        let response_schema = serde_json::to_value(
+            <PluginCapabilityInvocationResponse as utoipa::PartialSchema>::schema(),
+        )
+        .unwrap();
+        assert_eq!(request_schema["properties"]["input"], json!({}));
+        assert_eq!(response_schema["properties"]["output"], json!({}));
+        for value in [
+            json!([]),
+            json!("value"),
+            json!(0),
+            json!(false),
+            Value::Null,
+        ] {
+            let request = serde_json::from_value::<PluginCapabilityInvocationRequest>(json!({
+                "capability_version": 1,
+                "input": value.clone(),
+            }))
+            .unwrap();
+            assert_eq!(request.input, value);
+            let response = PluginCapabilityInvocationResponse {
+                plugin_id: "org.example.custom".to_owned(),
+                deployment_generation: 1,
+                capability_id: "vendor.custom.lookup".to_owned(),
+                capability_version: 1,
+                output: value.clone(),
+            };
+            assert_eq!(serde_json::to_value(response).unwrap()["output"], value);
+        }
     }
 
     #[test]

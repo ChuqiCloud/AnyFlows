@@ -65,8 +65,13 @@ example.afplugin
 | `limits` | 插件自身的并发、超时、输出和分页上限。宿主可以进一步收紧。 |
 | `uiContributions` | 插件管理页静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
+| `uiPages` | 管理员扩展页，最多 32 项；每页绑定已声明的只读、无副作用能力。 |
+
+视图使用宿主组件渲染，支持 `text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。`list` 最多 16 项，`progress.percent` 必须在 0 到 100 之间；插件不能注入 HTML、CSS、脚本、链接或按钮。复杂内容应组合多个视图，保持数据和展示分离。
 
 `limits` 的实际范围：
+
+事件订阅使用清单中的 `eventSubscriptions`。`eventKind`、`capabilityId` 和版本必须来自宿主事件目录；`filters` 只允许目录声明的字段和值。当前事件目录包括 `channel.health.changed`（`down`、`recovered`）和 `merchant.service.changed`（`active`、`paused`）。宿主在写入持久队列前应用过滤条件，插件只会收到匹配的投影事件。
 
 | 字段 | 范围 |
 | --- | --- |
@@ -171,6 +176,7 @@ plugin_isolation = "auto"
 | `POST /artifacts/{artifact_id}/approve` | 审批制品。 |
 | `POST /artifacts/{artifact_id}/revoke` | 撤销制品并填写原因。 |
 | `GET /deployments` | 查看当前部署。 |
+| `POST /{plugin_id}/capabilities/{capability_id}/invoke` | 通过宿主通用入口调用已授权、带 Schema 的只读能力。 |
 | `POST /{plugin_id}/deployment` | 部署指定制品、配置和能力授权。 |
 | `GET /{plugin_id}/deployment/history` | 查看部署历史。 |
 | `POST /{plugin_id}/disable` | 停用部署。 |
@@ -182,4 +188,4 @@ plugin_isolation = "auto"
 常见响应：`422 / plugin_lifecycle_capability_review_required` 表示包已保存但还要授权能力；`409 / plugin_lifecycle_conflict` 表示代次或当前状态发生冲突，应先刷新状态。完整参数以 [OpenAPI 文档](../web-next/openapi/openapi.json) 为准。
 ## 数据面扩展契约
 
-`invoke_task`、`provider.request.transform` 和 `request.processing.read` 已纳入 v1 Schema。任务插件的状态、进度、失败码和幂等键由宿主校验；Provider 转换不能选择上游主机或修改认证、模型计费字段；请求处理提案由宿主按阶段和管理员策略决定是否应用。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。
+`invoke_task`、`provider.request.transform` 和 `request.processing.read` 已纳入 v1 Schema。任务插件的状态、进度、失败码和幂等键由宿主校验；Provider 转换不能选择上游主机或修改认证、模型计费字段。在实时模型流量中，目前只有 Chat 的 `ingress` 只读观察接入：传递脱敏请求摘要，只保留 finding 代码和状态，忽略拒绝与修改提案；调用超时或失败时继续模型请求。其他请求处理阶段以及 Provider 转换仍是可复用宿主运行时入口，尚未接入 Relay 发送路径。在显式执行的多阶段流水线中，`continue` 提案的 JSON/Header effect 会传递到下一阶段；路径不存在或命中保护字段时调用失败。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。

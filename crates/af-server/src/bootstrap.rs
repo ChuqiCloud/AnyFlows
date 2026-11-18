@@ -2486,6 +2486,22 @@ impl Bootstrap<BillingReady> {
                     .expect("插件隔离策略已在应用配置校验阶段验证"),
                 )
             });
+        let chat: Arc<dyn ChatService> = match plugin_sidecar_runtime.as_ref() {
+            Some(runtime) => Arc::new(
+                crate::plugin_chat_observation::PluginObservedChatService::new(
+                    chat,
+                    Arc::new(
+                        crate::plugin_chat_observation::DatabasePluginChatIngressObserver::new(
+                            af_db::PluginCatalogRepository::new(
+                                infrastructure.infrastructure.database.clone(),
+                            ),
+                            Arc::clone(runtime),
+                        ),
+                    ),
+                ),
+            ),
+            None => chat,
+        };
         Bootstrap {
             config,
             shutdown_timeout,

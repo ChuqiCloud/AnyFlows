@@ -10,6 +10,7 @@ use crate::{
         PluginArtifactPageResponse, PluginArtifactRegistrationRequest, PluginArtifactResponse,
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
         PluginCapabilityGrantRequest, PluginCapabilityGrantResponse,
+        PluginCapabilityInvocationRequest, PluginCapabilityInvocationResponse,
         PluginCatalogModelPageResponse, PluginCatalogModelResponse,
         PluginCatalogSourcePageResponse, PluginCatalogSourceResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
@@ -75,6 +76,31 @@ fn list_admin_plugin_artifacts() {}
     security(("bearerAuth" = []))
 )]
 fn list_admin_plugin_deployments() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke",
+    operation_id = "invokeAdminPluginCapability",
+    tag = "插件生命周期",
+    summary = "调用插件自定义的已授权只读能力",
+    description = "只允许调用清单中声明了输入输出 Schema、access=read、sideEffect=none 且已授予当前部署的能力。外部读取、写入、任务提交和凭据访问仍走专用宿主入口。",
+    params(
+        ("plugin_id" = String, Path),
+        ("capability_id" = String, Path)
+    ),
+    request_body = PluginCapabilityInvocationRequest,
+    responses(
+        (status = 200, description = "插件能力输出", body = PluginCapabilityInvocationResponse),
+        (status = 400, description = "能力标识、版本或输入无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户、插件部署或能力授权不满足要求", body = ManagementErrorBody),
+        (status = 404, description = "插件部署不存在", body = ManagementErrorBody),
+        (status = 409, description = "插件部署代次在调用期间发生变化", body = ManagementErrorBody),
+        (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_capability() {}
 
 #[utoipa::path(
     get,
@@ -343,6 +369,7 @@ fn list_plugin_catalog_models() {}
         install_admin_plugin_package,
         list_admin_plugin_artifacts,
         list_admin_plugin_deployments,
+        invoke_admin_plugin_capability,
         list_admin_plugin_event_results,
         list_admin_plugin_deployment_history,
         register_admin_plugin_artifact,
@@ -368,6 +395,8 @@ fn list_plugin_catalog_models() {}
         PluginArtifactRevokeRequest,
         PluginCapabilityGrantRequest,
         PluginCapabilityGrantResponse,
+        PluginCapabilityInvocationRequest,
+        PluginCapabilityInvocationResponse,
         PluginDeploymentDisableRequest,
         PluginDeploymentPageResponse,
         PluginDeploymentRequest,

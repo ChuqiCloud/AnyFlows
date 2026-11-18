@@ -51,6 +51,19 @@ pub fn validate_plugin_configuration(
     CompiledJsonSchema::compile(schema)?.validate(configuration)
 }
 
+/// Validate both sides of a generic capability contract with the same bounded
+/// JSON Schema implementation used during runtime invocation. Keeping this
+/// check public lets installation and review paths make the same decision as
+/// the sidecar runtime before granting a capability.
+pub fn validate_capability_schemas(
+    input_schema: &Value,
+    output_schema: &Value,
+) -> Result<(), ContractValidationError> {
+    CompiledJsonSchema::compile(input_schema)?;
+    CompiledJsonSchema::compile(output_schema)?;
+    Ok(())
+}
+
 /// Restrict schema patterns to Rust's linear-time regex subset before the
 /// validator compiles them, avoiding unbounded backtracking from manifests.
 fn schema_patterns_are_bounded(schema: &Value) -> bool {

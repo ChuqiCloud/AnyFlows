@@ -20,8 +20,9 @@ use af_plugin_contract::{
     ExternalAccountProfile, ExternalBalanceSnapshot, InvocationMetadata,
     PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId, PluginManifest, PluginProxyRequest,
     PluginProxyResponse, PluginVersion, ProviderRequestTransformInput,
-    ProviderRequestTransformOutput, RequestProcessingInput, RequestProcessingOutput,
-    RequestProcessingStage, SideEffectClass,
+    ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY, RequestProcessingInput,
+    RequestProcessingOutput, RequestProcessingPipelineResult, RequestProcessingStage,
+    SideEffectClass,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -35,7 +36,7 @@ mod sidecar_isolation;
 mod sub2api;
 
 use crate::schema::CompiledJsonSchema;
-pub use crate::schema::validate_plugin_configuration;
+pub use crate::schema::{validate_capability_schemas, validate_plugin_configuration};
 
 pub use new_api::{NewApiConnector, new_api_registration};
 pub use sidecar::{
@@ -920,6 +921,100 @@ impl ConnectorRegistry {
         Ok(output)
     }
 
+    /// Run a negotiated request-processing hook and validate its bounded
+    /// proposal before it reaches the relay. The hook is deliberately generic:
+    /// plugins may implement any of the six contract stages without adding a
+    /// host-side Rust type for each new use case.
+    pub async fn process_request_stage(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        request: RequestProcessingInput,
+    ) -> Result<RequestProcessingOutput, ConnectorOperationError> {
+        let stage = request.stage;
+        request
+            .validate()
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+        let result = self
+            .invoke_capability(
+                negotiated,
+                invocation,
+                &CapabilityId::new(REQUEST_PROCESSING_CAPABILITY).expect("static capability"),
+                CapabilityInvocation {
+                    capability_version: 1,
+                    input: serde_json::to_value(&request)
+                        .map_err(|_| ConnectorOperationError::InvalidInvocation)?,
+                },
+            )
+            .await?;
+        let output = serde_json::from_value::<RequestProcessingOutput>(result.output)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        output
+            .validate_for(stage)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        Ok(output)
+    }
+
+    /// Execute several request stages in order and stop at the first terminal
+    /// proposal. Existing callers receive every validated output; use
+    /// `process_request_pipeline_with_state` when the final patched snapshot
+    /// is also needed.
+    pub async fn process_request_pipeline(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        request: RequestProcessingInput,
+        stages: &[RequestProcessingStage],
+    ) -> Result<Vec<RequestProcessingOutput>, ConnectorOperationError> {
+        Ok(self
+            .process_request_pipeline_with_state(negotiated, invocation, request, stages)
+            .await?
+            .outputs)
+    }
+
+    /// Execute stages and return both the validated outputs and the request
+    /// snapshot after all non-terminal effects have been applied. The original
+    /// pipeline method remains available for callers that only need outputs.
+    pub async fn process_request_pipeline_with_state(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        mut request: RequestProcessingInput,
+        stages: &[RequestProcessingStage],
+    ) -> Result<RequestProcessingPipelineResult, ConnectorOperationError> {
+        request
+            .validate()
+            .map_err(|_| ConnectorOperationError::InvalidInvocation)?;
+        if stages.is_empty() {
+            return Ok(RequestProcessingPipelineResult {
+                request,
+                outputs: Vec::new(),
+            });
+        }
+        let mut outputs = Vec::with_capacity(stages.len());
+        for stage in stages {
+            request.stage = *stage;
+            let output = self
+                .process_request_stage(negotiated, invocation, request.clone())
+                .await?;
+            let terminal = matches!(
+                output.action,
+                af_plugin_contract::RequestProcessingAction::Reject
+                    | af_plugin_contract::RequestProcessingAction::Stop
+            );
+            if !terminal {
+                request
+                    .apply_effects(&output.effects)
+                    .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+            }
+            outputs.push(output);
+            if terminal {
+                break;
+            }
+        }
+        Ok(RequestProcessingPipelineResult { request, outputs })
+    }
+
     pub fn plugin_ids(&self) -> impl Iterator<Item = &PluginId> {
         self.connectors.keys()
     }
@@ -1468,6 +1563,7 @@ mod tests {
                     "additionalProperties": false
                 })),
             }],
+            event_subscriptions: Vec::new(),
             authentication_modes: vec!["none".to_owned()],
             limits: ConnectorLimits {
                 max_concurrency: 2,
@@ -1483,6 +1579,7 @@ mod tests {
             }),
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
+            ui_pages: Vec::new(),
         };
         ConnectorRegistration::new(Arc::new(GenericConnector { manifest })).with_capability_handler(
             Arc::new(EchoCapability {
@@ -1578,6 +1675,7 @@ mod tests {
                 )
                 .unwrap(),
                 capabilities,
+                event_subscriptions: Vec::new(),
                 authentication_modes: vec!["api_key".to_owned()],
                 limits: ConnectorLimits {
                     max_concurrency: 8,
@@ -1593,6 +1691,7 @@ mod tests {
                 }),
                 ui_contributions: Vec::new(),
                 ui_views: Vec::new(),
+                ui_pages: Vec::new(),
             },
             invalid_balance,
         });
@@ -1936,6 +2035,7 @@ mod tests {
                     input_schema: None,
                     output_schema: None,
                 }],
+                event_subscriptions: Vec::new(),
                 authentication_modes: vec!["api_key".to_owned()],
                 limits: ConnectorLimits {
                     max_concurrency: 8,
@@ -1946,6 +2046,7 @@ mod tests {
                 config_schema: serde_json::json!({ "type": "object" }),
                 ui_contributions: Vec::new(),
                 ui_views: Vec::new(),
+                ui_pages: Vec::new(),
             },
             invalid_balance: false,
         }));

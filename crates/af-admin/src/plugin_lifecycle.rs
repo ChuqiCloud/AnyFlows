@@ -20,8 +20,13 @@ use af_db::{
     PluginEventFailureKind,
 };
 use af_domain::PlatformPermission;
-use af_plugin_contract::{InvocationMetadata, PluginManifest};
-use af_plugin_runtime::{VerifiedPluginArtifact, validate_public_plugin_configuration};
+use af_plugin_contract::{
+    CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata, PluginId,
+    PluginManifest, SideEffectClass,
+};
+use af_plugin_runtime::{
+    VerifiedPluginArtifact, validate_capability_schemas, validate_public_plugin_configuration,
+};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -35,15 +40,32 @@ use crate::{
 
 pub const DEFAULT_PLUGIN_CATALOG_PAGE_SIZE: u32 = 50;
 const PLUGIN_PERMISSION: PlatformPermission = PlatformPermission::PluginsManage;
-const SIMPLE_INSTALL_DEFAULT_CAPABILITIES: &[&str] =
-    &["catalog.models.read", "catalog.models.search"];
 const PLUGIN_EVENT_CALL_BUDGET: Duration = Duration::from_secs(5);
+const PLUGIN_CUSTOM_CAPABILITY_CALL_BUDGET: Duration = Duration::from_secs(30);
+const PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES: u32 = 1024 * 1024;
+const PLUGIN_CUSTOM_CAPABILITY_MAX_CONCURRENCY: usize = 16;
 const PLUGIN_EVENT_MAX_BYTES: u32 = 32 * 1024;
 const PLUGIN_EVENT_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const PLUGIN_EVENT_BATCH_SIZE: usize = 8;
 const MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES: usize = 256;
 pub const MAX_PLUGIN_PACKAGE_UPLOAD_BYTES: usize = 128 * 1024 * 1024;
 const STALE_PLUGIN_UPLOAD_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// A capability is eligible for the one-step installer only when its verified
+/// declaration is schema-bound, read-only, and has no external side effect.
+/// This semantic check deliberately applies to any namespaced capability ID;
+/// external reads and writes remain on the explicit review path.
+fn simple_install_capability(capability: &CapabilityDeclaration) -> bool {
+    capability.validate().is_ok()
+        && capability.access == CapabilityAccess::Read
+        && capability.side_effect == SideEffectClass::None
+        && capability.input_schema.as_ref().is_some_and(|input| {
+            capability
+                .output_schema
+                .as_ref()
+                .is_some_and(|output| validate_capability_schemas(input, output).is_ok())
+        })
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +88,18 @@ pub struct AdminPluginEventResult {
 pub struct AdminPluginEventResultPage {
     pub results: Vec<AdminPluginEventResult>,
     pub next_before_id: Option<i64>,
+}
+
+/// Result from invoking a plugin-defined read capability through the generic
+/// administrator extension entry point.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginCapabilityInvocationResult {
+    pub plugin_id: String,
+    pub deployment_generation: i64,
+    pub capability_id: String,
+    pub capability_version: u16,
+    pub output: Value,
 }
 
 /// A bounded upload in host-owned storage. Dropping it removes unfinished data.
@@ -622,6 +656,7 @@ pub struct DatabaseAdminPluginLifecycleService {
     audit: Arc<dyn PlatformAuditService>,
     sidecar_runtime: Option<Arc<AdminPluginSidecarRuntime>>,
     event_delivery_repository: Option<PluginEventDeliveryRepository>,
+    custom_capability_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission,
 }
 
@@ -656,6 +691,9 @@ impl DatabaseAdminPluginLifecycleService {
             audit,
             sidecar_runtime: None,
             event_delivery_repository: None,
+            custom_capability_slots: Arc::new(tokio::sync::Semaphore::new(
+                PLUGIN_CUSTOM_CAPABILITY_MAX_CONCURRENCY,
+            )),
             catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission::default(),
         }
     }
@@ -680,6 +718,116 @@ impl DatabaseAdminPluginLifecycleService {
     #[must_use]
     pub fn capability_runtime(&self) -> Option<Arc<AdminPluginSidecarRuntime>> {
         self.sidecar_runtime.clone()
+    }
+
+    /// Invoke a plugin-defined, explicitly granted read-only capability. This
+    /// generic entry point lets an admin use new plugin features without a new
+    /// platform-specific Rust handler for every capability ID.
+    pub async fn invoke_custom_capability(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        input: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginCapabilityInvocationResult, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        let plugin_id_value = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability = CapabilityId::new(capability_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if capability_version == 0
+            || serde_json::to_vec(&input)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
+                .len()
+                > 256 * 1024
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let _permit = self
+            .custom_capability_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let deployment = self
+            .repository
+            .get_deployment(plugin_id_value.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !custom_capability_is_callable(&deployment, capability.as_str(), capability_version) {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let now_ms = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let deadline_unix_ms = u64::try_from(now_ms)
+            .ok()
+            .and_then(|now| {
+                now.checked_add(
+                    u64::try_from(PLUGIN_CUSTOM_CAPABILITY_CALL_BUDGET.as_millis()).ok()?,
+                )
+            })
+            .ok_or(AdminPluginLifecycleError::Internal)?;
+        let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
+            format!("admin-extension:{}", plugin_id_value.as_str()),
+            InvocationMetadata {
+                request_id: request_id.to_owned(),
+                deadline_unix_ms,
+            },
+            deployment.config.clone(),
+            PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
+        )
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let invoked = runtime
+            .invoke_capability(
+                &self.repository,
+                plugin_id_value.as_str(),
+                deployment.generation,
+                &invocation,
+                capability.as_str(),
+                capability_version,
+                input,
+            )
+            .await;
+        let audit = audit_entry(
+            principal,
+            request_id,
+            "/api/admin/plugins/{pluginId}/capabilities/{capabilityId}/invoke",
+            "invoke_custom_capability",
+            "plugin_capability",
+            Some(format!("{plugin_id}:{capability_id}:{capability_version}")),
+            if invoked.is_ok() {
+                PlatformAuditOutcome::Succeeded
+            } else {
+                PlatformAuditOutcome::Failed
+            },
+            None,
+            None,
+        )?;
+        self.audit.record(audit).await.map_err(map_audit_error)?;
+        let result = invoked?;
+        let latest = self
+            .repository
+            .get_deployment(plugin_id_value.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !custom_capability_is_callable(&latest, capability.as_str(), capability_version)
+            || latest.generation != deployment.generation
+        {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        Ok(AdminPluginCapabilityInvocationResult {
+            plugin_id: plugin_id_value.as_str().to_owned(),
+            deployment_generation: deployment.generation,
+            capability_id: capability.as_str().to_owned(),
+            capability_version,
+            output: result.output,
+        })
     }
 
     pub(crate) async fn audit_host_action(
@@ -929,16 +1077,16 @@ impl DatabaseAdminPluginLifecycleService {
         }
         let manifest: PluginManifest = serde_json::from_value(imported.manifest.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        manifest
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         validate_public_plugin_configuration(&manifest.config_schema, &config)
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_count = manifest.capabilities.len();
         let grants = manifest
             .capabilities
             .iter()
-            .filter(|capability| {
-                capability.access == af_plugin_contract::CapabilityAccess::Read
-                    && capability.side_effect == af_plugin_contract::SideEffectClass::None
-                    && SIMPLE_INSTALL_DEFAULT_CAPABILITIES.contains(&capability.id.as_str())
-            })
+            .filter(|capability| simple_install_capability(capability))
             .map(|capability| {
                 AdminPluginCapabilityGrant::new(
                     capability.id.as_str().to_owned(),
@@ -946,10 +1094,7 @@ impl DatabaseAdminPluginLifecycleService {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let requires_capability_review = grants.is_empty()
-            || manifest.capabilities.iter().any(|capability| {
-                !SIMPLE_INSTALL_DEFAULT_CAPABILITIES.contains(&capability.id.as_str())
-            });
+        let requires_capability_review = grants.is_empty() || grants.len() != capability_count;
         let current = self
             .repository
             .get_deployment(&imported.plugin_id)
@@ -1087,16 +1232,11 @@ impl DatabaseAdminPluginLifecycleService {
         &self,
         lease: &PluginEventDeliveryLease,
     ) -> Result<Value, PluginEventFailureKind> {
-        let event_capability_matches = matches!(
-            (lease.event_kind(), lease.capability_id()),
-            (
-                "channel.health.changed",
-                "events.channel-health.changed.consume"
-            ) | (
-                "merchant.service.changed",
-                "events.merchant-service.changed.consume"
-            )
-        );
+        let event_capability_matches =
+            af_plugin_contract::plugin_event_definition(lease.event_kind()).is_some_and(|event| {
+                event.capability_id == lease.capability_id()
+                    && event.capability_version == lease.capability_version()
+            });
         if !event_capability_matches || lease.expires_at() <= plugin_event_now_unix_seconds() {
             return Err(PluginEventFailureKind::Permanent);
         }
@@ -2150,6 +2290,32 @@ fn event_deployment_matches(
         })
 }
 
+fn custom_capability_is_callable(
+    deployment: &PluginDeploymentRecord,
+    capability_id: &str,
+    capability_version: u16,
+) -> bool {
+    if !deployment.enabled
+        || deployment.artifact.approval.is_none()
+        || deployment.artifact.revocation.is_some()
+        || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+        || !deployment
+            .granted_capabilities
+            .iter()
+            .any(|grant| grant.id == capability_id && grant.version == capability_version)
+    {
+        return false;
+    }
+    serde_json::from_value::<PluginManifest>(deployment.artifact.manifest.clone())
+        .ok()
+        .and_then(|manifest| {
+            manifest.capabilities.into_iter().find(|capability| {
+                capability.id.as_str() == capability_id && capability.version == capability_version
+            })
+        })
+        .is_some_and(|capability| simple_install_capability(&capability))
+}
+
 fn plugin_event_now_unix_seconds() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp().max(1)
 }
@@ -2288,6 +2454,66 @@ fn map_audit_error(error: PlatformAuditError) -> AdminPluginLifecycleError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn capability(
+        id: &str,
+        access: CapabilityAccess,
+        side_effect: SideEffectClass,
+        schemas: bool,
+    ) -> CapabilityDeclaration {
+        CapabilityDeclaration {
+            id: af_plugin_contract::CapabilityId::new(id).unwrap(),
+            version: 1,
+            access,
+            side_effect,
+            write_semantics: (side_effect == SideEffectClass::ExternalWrite).then_some(
+                af_plugin_contract::ExternalWriteSemantics {
+                    native_idempotency_key: true,
+                    result_lookup: af_plugin_contract::ResultLookupSupport::ByRequestId,
+                    reconciliation: true,
+                },
+            ),
+            input_schema: schemas.then(|| json!({"type":"object"})),
+            output_schema: schemas.then(|| json!({"type":"object"})),
+        }
+    }
+
+    #[test]
+    fn simple_installer_grants_only_schema_bound_read_only_capabilities() {
+        assert!(simple_install_capability(&capability(
+            "vendor.custom.lookup",
+            CapabilityAccess::Read,
+            SideEffectClass::None,
+            true,
+        )));
+        assert!(!simple_install_capability(&capability(
+            "vendor.external.profile",
+            CapabilityAccess::Read,
+            SideEffectClass::ExternalRead,
+            true,
+        )));
+        assert!(!simple_install_capability(&capability(
+            "vendor.custom.action",
+            CapabilityAccess::Write,
+            SideEffectClass::ExternalWrite,
+            true,
+        )));
+        assert!(!simple_install_capability(&capability(
+            "vendor.custom.untyped",
+            CapabilityAccess::Read,
+            SideEffectClass::None,
+            false,
+        )));
+
+        let mut invalid_schema = capability(
+            "vendor.custom.invalid-schema",
+            CapabilityAccess::Read,
+            SideEffectClass::None,
+            true,
+        );
+        invalid_schema.input_schema = Some(json!({"type":"unsupported-json-schema-type"}));
+        assert!(!simple_install_capability(&invalid_schema));
+    }
 
     #[test]
     fn artifact_projection_never_serializes_storage_reference_or_signature() {

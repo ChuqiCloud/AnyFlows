@@ -81,6 +81,14 @@
       }
     }
   ],
+  "eventSubscriptions": [
+    {
+      "eventKind": "channel.health.changed",
+      "capabilityId": "events.channel-health.changed.consume",
+      "capabilityVersion": 1,
+      "filters": { "status": ["down", "recovered"] }
+    }
+  ],
   "authenticationModes": [
     "none"
   ],
