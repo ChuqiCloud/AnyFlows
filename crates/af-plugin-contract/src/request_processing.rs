@@ -315,8 +315,8 @@ impl RequestProcessingOutput {
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
-        if ((!stage.allows_effects() && !self.effects.is_empty())
-            || (!stage.allows_terminal_action() && self.is_terminal()))
+        if (!stage.allows_effects() && !self.effects.is_empty())
+            || (!stage.allows_terminal_action() && self.is_terminal())
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
