@@ -627,7 +627,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Gitea runners do not use the GitHub rust-cache action. Allow the first
+    # workspace compilation to finish before running the focused regressions.
+    timeout-minutes: 90
     env:
       # 多代码生成单元降低大型测试 crate 的编译峰值，链接器按需重读符号表以换取更低内存。
       RUSTFLAGS: "-C link-arg=-Wl,--no-keep-memory"
@@ -1255,7 +1257,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.redis == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # This job builds both af-cache and the af-server HTTP smoke binary from
+    # scratch when the Gitea cache is unavailable.
+    timeout-minutes: 60
     steps:
       - name: Configure checkout endpoint
         if: ${{ github.server_url != 'https://github.com' && vars.SOURCE_BASE_URL != '' }}
