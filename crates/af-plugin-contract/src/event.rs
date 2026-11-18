@@ -149,8 +149,152 @@ pub fn plugin_event_catalog() -> &'static [PluginEventDefinition] {
                     allowed_values: vec!["active".to_owned(), "paused".to_owned()],
                 }],
             },
+            event_definition(
+                "model.catalog.changed",
+                "events.model-catalog.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","modelId","revision","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "modelId":{"type":"string","minLength":1,"maxLength":128},
+                        "revision":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["added","updated","removed"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["added", "updated", "removed"],
+            ),
+            event_definition(
+                "channel.config.changed",
+                "events.channel-config.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","channelId","revision","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "channelId":{"type":"integer","minimum":1},
+                        "revision":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["created","updated","disabled","deleted"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["created", "updated", "disabled", "deleted"],
+            ),
+            event_definition(
+                "channel.credential.changed",
+                "events.channel-credential.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","channelId","revision","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "channelId":{"type":"integer","minimum":1},
+                        "revision":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["configured","rotated","invalid","revoked"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["configured", "rotated", "invalid", "revoked"],
+            ),
+            event_definition(
+                "model.pricing.changed",
+                "events.model-pricing.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","modelId","revision","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "modelId":{"type":"string","minLength":1,"maxLength":128},
+                        "revision":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["published","updated","retired"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["published", "updated", "retired"],
+            ),
+            event_definition(
+                "external.account.balance.changed",
+                "events.external-account-balance.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","accountRef","revision","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "accountRef":{"type":"string","minLength":1,"maxLength":128},
+                        "revision":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["observed","increased","decreased","unavailable"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["observed", "increased", "decreased", "unavailable"],
+            ),
+            event_definition(
+                "plugin.deployment.changed",
+                "events.plugin-deployment.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","pluginId","generation","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "pluginId":{"type":"string","minLength":1,"maxLength":128},
+                        "generation":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["installed","ready","disabled","failed"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["installed", "ready", "disabled", "failed"],
+            ),
+            event_definition(
+                "plugin.task.changed",
+                "events.plugin-task.changed.consume",
+                json!({
+                    "type":"object", "additionalProperties":false,
+                    "required":["eventKey","taskRef","revision","status","observedAt"],
+                    "properties":{
+                        "eventKey":{"type":"string","minLength":1,"maxLength":128},
+                        "taskRef":{"type":"string","minLength":1,"maxLength":128},
+                        "revision":{"type":"integer","minimum":1},
+                        "status":{"type":"string","enum":["submitted","queued","running","succeeded","failed","cancelled"]},
+                        "observedAt":{"type":"integer","minimum":1}
+                    }
+                }),
+                &["status"],
+                &["submitted", "queued", "running", "succeeded", "failed", "cancelled"],
+            ),
         ]
     })
+}
+
+fn event_definition(
+    event_kind: &str,
+    capability_id: &str,
+    payload_schema: Value,
+    filter_names: &[&str],
+    allowed_values: &[&str],
+) -> PluginEventDefinition {
+    PluginEventDefinition {
+        event_kind: event_kind.to_owned(),
+        capability_id: capability_id.to_owned(),
+        capability_version: 1,
+        payload_schema,
+        filter_fields: filter_names
+            .iter()
+            .map(|name| PluginEventFilterField {
+                name: (*name).to_owned(),
+                allowed_values: allowed_values
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+            })
+            .collect(),
+    }
 }
 
 /// Find a registered event by its stable wire name.
@@ -190,7 +334,7 @@ mod tests {
     #[test]
     fn event_catalog_exposes_schemas_and_matching_filters() {
         let catalog = plugin_event_catalog();
-        assert_eq!(catalog.len(), 2);
+        assert!(catalog.len() >= 9);
         let subscription = PluginEventSubscription {
             event_kind: "channel.health.changed".to_owned(),
             capability_id: CapabilityId::new("events.channel-health.changed.consume").unwrap(),

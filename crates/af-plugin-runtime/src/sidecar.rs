@@ -20,9 +20,10 @@ use crate::{
 use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
-    InvocationMetadata, PluginHostOperation, PluginHostRequest, PluginHostResponse,
-    PluginHostResult, PluginId, PluginManifest, PluginProxyRequest, PluginProxyResult,
-    PluginTaskOperation, PluginTaskResult, PluginVersion, SideEffectClass,
+    InvocationMetadata, PROVIDER_LIFECYCLE_CAPABILITY, PluginHostOperation, PluginHostRequest,
+    PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProviderOperation,
+    PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginTaskOperation,
+    PluginTaskResult, PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -1519,6 +1520,97 @@ impl SidecarSession {
         Ok(result)
     }
 
+    /// Invoke a manifest-declared route through the same bounded capability
+    /// channel. The HTTP host owns the route prefix and caller authorization;
+    /// the sidecar only receives the route identity and validated JSON input.
+    pub async fn invoke_host_route(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+    ) -> Result<CapabilityResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if route_id.is_empty()
+            || route_id.len() > 64
+            || !route_id.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+            })
+            || self.granted_capabilities.get(capability_id) != Some(&capability_version)
+        {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        let route = self
+            .manifest
+            .routes
+            .iter()
+            .find(|route| route.id == route_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        if route.capability_id != *capability_id || route.capability_version != capability_version {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        let input_validator = declaration
+            .input_schema
+            .as_ref()
+            .ok_or(SidecarError::CapabilityNotDeclared)
+            .and_then(|schema| {
+                CompiledJsonSchema::compile(schema).map_err(|_| SidecarError::InvalidHandshake)
+            })?;
+        input_validator
+            .validate(&input)
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        crate::ensure_json_payload_within_limit(&input, u32::from(route.max_body_bytes) as usize)
+            .map_err(|_| SidecarError::FrameTooLarge)?;
+        let result = self
+            .exchange(
+                PluginHostOperation::PluginRoute {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    route_id: route_id.to_owned(),
+                    input,
+                },
+                Duration::from_millis(u64::from(route.timeout_ms)),
+                Some(invocation.metadata()),
+                None,
+            )
+            .await?;
+        match result {
+            PluginHostResult::Capability(result) => {
+                crate::ensure_json_payload_within_limit(
+                    &result.output,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
+                if contains_sensitive_fields(&result.output) {
+                    self.stop().await;
+                    return Err(SidecarError::SensitivePayload);
+                }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&result.output)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
     /// Invoke the task adapter while retaining task identity, credentials and
     /// settlement state in the host.
     pub async fn invoke_host_task(
@@ -1541,8 +1633,11 @@ impl SidecarSession {
             .iter()
             .find(|capability| capability.id == *capability_id)
             .ok_or(SidecarError::CapabilityNotDeclared)?;
-        let submit = matches!(&task, PluginTaskOperation::Submit { .. });
-        if (submit
+        let mutating = matches!(
+            &task,
+            PluginTaskOperation::Submit { .. } | PluginTaskOperation::Cancel { .. }
+        );
+        if (mutating
             && (declaration.access != CapabilityAccess::Write
                 || declaration.side_effect != SideEffectClass::ExternalWrite
                 || declaration.write_semantics.is_none()))
@@ -1583,6 +1678,104 @@ impl SidecarSession {
             .await?
         {
             PluginHostResult::Task(result) => {
+                result
+                    .validate()
+                    .map_err(|_| SidecarError::ProtocolViolation)?;
+                let value =
+                    serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
+                crate::ensure_json_payload_within_limit(
+                    &value,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
+                if contains_sensitive_fields(&value) {
+                    self.stop().await;
+                    return Err(SidecarError::SensitivePayload);
+                }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&value)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
+    /// Invoke a provider lifecycle adapter. The adapter receives only the
+    /// host-projected operation; credentials, upstream host selection and all
+    /// network I/O remain owned by the host.
+    pub async fn invoke_host_provider(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    ) -> Result<PluginProviderResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        provider
+            .validate()
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        if capability_id.as_str() != PROVIDER_LIFECYCLE_CAPABILITY
+            || declaration.version != capability_version
+            || declaration.access != CapabilityAccess::Read
+            || !matches!(
+                declaration.side_effect,
+                SideEffectClass::None | SideEffectClass::ExternalRead
+            )
+        {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let provider_value =
+            serde_json::to_value(&provider).map_err(|_| SidecarError::InvalidConfiguration)?;
+        if contains_sensitive_fields(&self.public_config)
+            || contains_sensitive_fields(&provider_value)
+        {
+            return Err(SidecarError::SensitivePayload);
+        }
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            CompiledJsonSchema::compile(schema)
+                .map_err(|_| SidecarError::InvalidHandshake)?
+                .validate(&provider_value)
+                .map_err(|_| SidecarError::InvalidConfiguration)?;
+        }
+        crate::ensure_json_payload_within_limit(
+            &provider_value,
+            self.manifest.limits.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        match self
+            .exchange(
+                PluginHostOperation::InvokeProvider {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    provider,
+                },
+                self.limits.request_timeout,
+                Some(invocation.metadata()),
+                None,
+            )
+            .await?
+        {
+            PluginHostResult::Provider(result) => {
                 result
                     .validate()
                     .map_err(|_| SidecarError::ProtocolViolation)?;
@@ -2247,6 +2440,7 @@ mod tests {
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
             ui_pages: Vec::new(),
+            routes: Vec::new(),
         }
     }
 

@@ -11,8 +11,11 @@ mod error;
 mod event;
 mod manifest;
 mod proposal;
+mod provider;
 mod request_processing;
+mod routes;
 mod schema;
+mod storage;
 mod task;
 mod value;
 mod version;
@@ -32,13 +35,22 @@ pub use manifest::{
     PluginUiViewSlot,
 };
 pub use proposal::HostActionProposal;
+pub use provider::{
+    PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass, PluginProviderModel,
+    PluginProviderOperation, PluginProviderResult, ProviderContractError,
+};
 pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,
     REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingEffect,
     RequestProcessingFinding, RequestProcessingFindingStatus, RequestProcessingInput,
     RequestProcessingOutput, RequestProcessingPipelineResult, RequestProcessingStage,
 };
+pub use routes::{PluginRoute, PluginRouteAudience, PluginRouteMethod};
 pub use schema::{openapi_document, schema_document};
+pub use storage::{
+    MAX_PLUGIN_STORAGE_KEY_BYTES, MAX_PLUGIN_STORAGE_LIST_LIMIT, MAX_PLUGIN_STORAGE_VALUE_BYTES,
+    PluginStorageKey, PluginStorageOperation, PluginStorageValue,
+};
 pub use task::{
     MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskOperation,
     PluginTaskResult, PluginTaskState, TaskContractError,

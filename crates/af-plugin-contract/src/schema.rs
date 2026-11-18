@@ -30,7 +30,9 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/PluginUiView" },
             { "$ref": "#/$defs/PluginUiPage" },
             { "$ref": "#/$defs/PluginUiAction" },
-            { "$ref": "#/$defs/PluginUiBlock" }
+            { "$ref": "#/$defs/PluginUiBlock" },
+            { "$ref": "#/$defs/PluginRoute" },
+            { "$ref": "#/$defs/PluginStorageOperation" }
         ],
         "$defs": {
             "ContractVersion": {
@@ -110,25 +112,58 @@ pub fn schema_document() -> Value {
                     "configSchema": { "type": "object" },
                     "uiContributions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiContribution" } },
                     "uiViews": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiView" } },
-                    "uiPages": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/PluginUiPage" } }
+                    "uiPages": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/PluginUiPage" } },
+                    "routes": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/PluginRoute" } }
                 }
             },
+            "PluginRoute": {
+                "type": "object", "additionalProperties": false,
+                "required": ["id", "schemaVersion", "method", "path", "audience", "capabilityId", "capabilityVersion"],
+                "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$", "maxLength": 64 },
+                    "schemaVersion": { "type": "integer", "const": 1 },
+                    "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+                    "path": { "type": "string", "pattern": "^/[A-Za-z0-9._/-]+$", "maxLength": 160 },
+                    "audience": { "enum": ["user", "admin"] },
+                    "capabilityId": { "type": "string", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "maxBodyBytes": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 262144 },
+                    "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000, "default": 30000 }
+                }
+            },
+            "PluginStorageOperation": {
+                "oneOf": [
+                    { "type": "object", "additionalProperties": false, "required": ["operation", "key"], "properties": { "operation": { "const": "get" }, "key": { "$ref": "#/$defs/PluginStorageKey" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["operation", "key", "value"], "properties": { "operation": { "const": "put" }, "key": { "$ref": "#/$defs/PluginStorageKey" }, "value": { "$ref": "#/$defs/PluginStorageValue" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["operation", "key"], "properties": { "operation": { "const": "delete" }, "key": { "$ref": "#/$defs/PluginStorageKey" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["operation", "limit"], "properties": { "operation": { "const": "list" }, "prefix": { "type": "string", "maxLength": 128 }, "limit": { "type": "integer", "minimum": 1, "maximum": 100 } } }
+                ]
+            },
+            "PluginStorageKey": { "type": "object", "additionalProperties": false, "required": ["key"], "properties": { "key": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._/-]+$" } } },
+            "PluginStorageValue": { "type": "object", "additionalProperties": false, "required": ["value"], "properties": { "value": {}, "expiresAtUnixMs": { "type": "integer", "minimum": 1 } } },
             "PluginEventSubscription": {
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["eventKind", "capabilityId", "capabilityVersion"],
                 "properties": {
-                    "eventKind": { "enum": ["channel.health.changed", "merchant.service.changed"] },
+                    "eventKind": { "enum": ["channel.health.changed", "merchant.service.changed", "model.catalog.changed", "channel.config.changed", "channel.credential.changed", "model.pricing.changed", "external.account.balance.changed", "plugin.deployment.changed", "plugin.task.changed"] },
                     "capabilityId": { "type": "string", "maxLength": 128 },
                     "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
                     "filters": {
                         "type": "object", "additionalProperties": false,
-                        "properties": { "status": { "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["down", "recovered", "active", "paused"] } } }
+                        "properties": { "status": { "type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$" } } }
                     }
                 },
                 "allOf": [
                     { "if": { "properties": { "eventKind": { "const": "channel.health.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.channel-health.changed.consume" }, "capabilityVersion": { "const": 1 }, "filters": { "properties": { "status": { "items": { "enum": ["down", "recovered"] } } } } } } },
-                    { "if": { "properties": { "eventKind": { "const": "merchant.service.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.merchant-service.changed.consume" }, "capabilityVersion": { "const": 1 }, "filters": { "properties": { "status": { "items": { "enum": ["active", "paused"] } } } } } } }
+                    { "if": { "properties": { "eventKind": { "const": "merchant.service.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.merchant-service.changed.consume" }, "capabilityVersion": { "const": 1 }, "filters": { "properties": { "status": { "items": { "enum": ["active", "paused"] } } } } } } },
+                    { "if": { "properties": { "eventKind": { "const": "model.catalog.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.model-catalog.changed.consume" }, "capabilityVersion": { "const": 1 } } } },
+                    { "if": { "properties": { "eventKind": { "const": "channel.config.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.channel-config.changed.consume" }, "capabilityVersion": { "const": 1 } } } },
+                    { "if": { "properties": { "eventKind": { "const": "channel.credential.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.channel-credential.changed.consume" }, "capabilityVersion": { "const": 1 } } } },
+                    { "if": { "properties": { "eventKind": { "const": "model.pricing.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.model-pricing.changed.consume" }, "capabilityVersion": { "const": 1 } } } },
+                    { "if": { "properties": { "eventKind": { "const": "external.account.balance.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.external-account-balance.changed.consume" }, "capabilityVersion": { "const": 1 } } } },
+                    { "if": { "properties": { "eventKind": { "const": "plugin.deployment.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.plugin-deployment.changed.consume" }, "capabilityVersion": { "const": 1 } } } },
+                    { "if": { "properties": { "eventKind": { "const": "plugin.task.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.plugin-task.changed.consume" }, "capabilityVersion": { "const": 1 } } } }
                 ]
             },
             "PluginEventDefinition": {
@@ -136,7 +171,7 @@ pub fn schema_document() -> Value {
                 "additionalProperties": false,
                 "required": ["eventKind", "capabilityId", "capabilityVersion", "payloadSchema", "filterFields"],
                 "properties": {
-                    "eventKind": { "enum": ["channel.health.changed", "merchant.service.changed"] },
+                    "eventKind": { "enum": ["channel.health.changed", "merchant.service.changed", "model.catalog.changed", "channel.config.changed", "channel.credential.changed", "model.pricing.changed", "external.account.balance.changed", "plugin.deployment.changed", "plugin.task.changed"] },
                     "capabilityId": { "type": "string", "maxLength": 128 },
                     "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
                     "payloadSchema": { "type": "object" },
@@ -367,6 +402,15 @@ pub fn schema_document() -> Value {
                     },
                     {
                         "type": "object", "additionalProperties": false,
+                        "required": ["kind", "task_id"],
+                        "properties": {
+                            "kind": { "const": "cancel" },
+                            "task_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+                            "reason": { "type": "string", "minLength": 1, "maxLength": 256 }
+                        }
+                    },
+                    {
+                        "type": "object", "additionalProperties": false,
                         "required": ["kind", "task_id", "response"],
                         "properties": {
                             "kind": { "const": "result" },
@@ -403,9 +447,11 @@ pub fn schema_document() -> Value {
                                 "type": "object", "additionalProperties": false,
                                 "required": ["state"],
                                 "properties": {
-                                    "state": { "enum": ["submitted", "queued", "running", "succeeded", "failed"] },
+                                    "state": { "enum": ["submitted", "queued", "running", "succeeded", "failed", "cancelled"] },
                                     "progress_basis_points": { "type": "integer", "minimum": 0, "maximum": 10000 },
-                                    "failure_code": { "type": "string", "minLength": 1, "maxLength": 128 }
+                                    "failure_code": { "type": "string", "minLength": 1, "maxLength": 128 },
+                                    "retryable": { "type": "boolean" },
+                                    "retry_after_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 }
                                 }
                             }
                         }
@@ -457,6 +503,33 @@ pub fn schema_document() -> Value {
                             "task": { "$ref": "#/$defs/PluginTaskOperation" }
                         }
                     }
+                    ,{
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "provider"],
+                        "properties": {
+                            "operation": { "const": "invoke_provider" },
+                            "connectionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                            "publicConfig": { "type": "object" },
+                            "capabilityId": { "type": "string", "maxLength": 128 },
+                            "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                            "provider": { "type": "object" }
+                        }
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "routeId", "input"],
+                        "properties": {
+                            "operation": { "const": "plugin_route" },
+                            "connectionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                            "publicConfig": { "type": "object" },
+                            "capabilityId": { "type": "string", "maxLength": 128 },
+                            "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                            "routeId": { "type": "string", "minLength": 1, "maxLength": 64 },
+                            "input": {}
+                        }
+                    }
                 ]
             },
             "PluginHostRequest": {
@@ -480,6 +553,7 @@ pub fn schema_document() -> Value {
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "health" }, "value": { "$ref": "#/$defs/ConnectorHealth" } } },
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "capability" }, "value": { "$ref": "#/$defs/CapabilityResult" } } },
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "task" }, "value": { "$ref": "#/$defs/PluginTaskResult" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "provider" }, "value": { "type": "object" } } },
                     { "type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": { "kind": { "const": "error" }, "value": { "$ref": "#/$defs/ConnectorError" } } }
                 ]
             },
@@ -561,7 +635,7 @@ pub fn schema_document() -> Value {
                     "encoding": { "const": "utf-8-json" },
                     "framing": { "const": "one-json-object-per-line" },
                     "maxFrameBytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
-                    "operations": { "const": ["manifest", "health", "invoke_capability", "invoke_task"] }
+                    "operations": { "const": ["manifest", "health", "invoke_capability", "invoke_task", "invoke_provider", "plugin_route"] }
                 }
             },
             "ConnectorLimits": {
@@ -870,6 +944,7 @@ mod tests {
                 }],
             }],
             ui_pages: Vec::new(),
+            routes: Vec::new(),
         };
         let account = ExternalAccountProfile {
             subject: "opaque-123".to_owned(),

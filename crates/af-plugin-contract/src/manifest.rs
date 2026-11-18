@@ -81,6 +81,9 @@ pub struct PluginManifest {
     /// Optional administrator pages rendered by the host and bound to a declared read-only capability.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ui_pages: Vec<PluginUiPage>,
+    /// Optional HTTP entry points served below the host-owned plugin prefix.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<crate::PluginRoute>,
 }
 
 /// A host-routed administrator page with a fixed input for one read-only capability.
@@ -503,6 +506,7 @@ impl PluginManifest {
                 return Err(ContractValidationError::InvalidManifest);
             }
         }
+        crate::routes::validate_routes(self)?;
         Ok(())
     }
 }
@@ -588,6 +592,7 @@ mod tests {
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
             ui_pages: Vec::new(),
+            routes: Vec::new(),
         }
     }
 

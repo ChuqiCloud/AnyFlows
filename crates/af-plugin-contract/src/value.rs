@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConnectorError, ContractValidationError, PluginTaskOperation, PluginTaskResult};
+use crate::{
+    ConnectorError, ContractValidationError, PluginProviderOperation, PluginProviderResult,
+    PluginTaskOperation, PluginTaskResult,
+};
 
 pub const PROVIDER_REQUEST_TRANSFORM_CAPABILITY: &str = "provider.request.transform";
 
@@ -122,6 +125,41 @@ pub struct ProviderRequestTransformOutput {
 }
 
 impl ProviderRequestTransformOutput {
+    /// Apply a validated provider transformation in the host process.
+    ///
+    /// A rejection is terminal and never mutates the outbound request. The
+    /// host still owns the upstream URL, credentials, model selection and
+    /// billing fields; this method only applies the bounded path, JSON body
+    /// and ordinary header changes declared by the plugin contract.
+    pub fn apply_to(
+        &self,
+        input: &mut ProviderRequestTransformInput,
+    ) -> Result<bool, ContractValidationError> {
+        self.validate_against(input)?;
+        if matches!(self.action, ProviderTransformAction::Reject) {
+            return Ok(false);
+        }
+        if let Some(path) = &self.path {
+            input.path.clone_from(path);
+        }
+        if let Some(body) = &self.body {
+            input.body.clone_from(body);
+        }
+        for name in &self.headers.remove {
+            input
+                .headers
+                .retain(|current, _| !current.eq_ignore_ascii_case(name));
+        }
+        for (name, value) in &self.headers.set {
+            input
+                .headers
+                .retain(|current, _| !current.eq_ignore_ascii_case(name));
+            input.headers.insert(name.clone(), value.clone());
+        }
+        input.validate()?;
+        Ok(true)
+    }
+
     pub fn validate_against(
         &self,
         input: &ProviderRequestTransformInput,
@@ -541,6 +579,46 @@ impl PluginHostRequest {
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
+        if let PluginHostOperation::InvokeProvider {
+            connection_id,
+            public_config,
+            capability_id,
+            capability_version,
+            provider,
+        } = &self.operation
+            && (connection_id.is_empty()
+                || connection_id.len() > 128
+                || !public_config.is_object()
+                || capability_id.is_empty()
+                || *capability_version == 0
+                || provider.validate().is_err())
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
+        if let PluginHostOperation::PluginRoute {
+            connection_id,
+            public_config,
+            capability_id,
+            capability_version,
+            route_id,
+            input,
+        } = &self.operation
+            && (connection_id.is_empty()
+                || connection_id.len() > 128
+                || !public_config.is_object()
+                || capability_id.is_empty()
+                || *capability_version == 0
+                || route_id.is_empty()
+                || route_id.len() > 64
+                || !route_id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'-' | b'_')
+                })
+                || serde_json::to_vec(input).map_or(true, |encoded| encoded.len() > 1024 * 1024))
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
         Ok(())
     }
 }
@@ -574,6 +652,29 @@ pub enum PluginHostOperation {
         capability_version: u16,
         task: PluginTaskOperation,
     },
+    InvokeProvider {
+        #[serde(rename = "connectionId", alias = "connection_id")]
+        connection_id: String,
+        #[serde(rename = "publicConfig", alias = "public_config")]
+        public_config: serde_json::Value,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(rename = "capabilityVersion", alias = "capability_version")]
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    },
+    PluginRoute {
+        #[serde(rename = "connectionId", alias = "connection_id")]
+        connection_id: String,
+        #[serde(rename = "publicConfig", alias = "public_config")]
+        public_config: serde_json::Value,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(rename = "capabilityVersion", alias = "capability_version")]
+        capability_version: u16,
+        route_id: String,
+        input: serde_json::Value,
+    },
 }
 
 /// Response frame for the language-neutral newline-delimited sidecar protocol.
@@ -597,6 +698,7 @@ pub enum PluginHostResult {
     Health(ConnectorHealth),
     Capability(CapabilityResult),
     Task(PluginTaskResult),
+    Provider(PluginProviderResult),
     Error(ConnectorError),
 }
 
@@ -720,6 +822,62 @@ mod tests {
         PluginHostResult, PluginProxyError, PluginProxyErrorCode, PluginProxyRequest,
         PluginProxyResponse, PluginProxyResult,
     };
+
+    #[test]
+    fn provider_transform_applies_only_bounded_fields() {
+        let mut input = super::ProviderRequestTransformInput {
+            protocol: "openai".to_owned(),
+            method: "POST".to_owned(),
+            path: "/v1/chat/completions".to_owned(),
+            model: "gpt-test".to_owned(),
+            upstream_model: Some("provider-model".to_owned()),
+            headers: BTreeMap::from([("x-tenant".to_owned(), "old".to_owned())]),
+            body: serde_json::json!({"metadata":{"tenant":"old"},"model":"gpt-test"}),
+        };
+        let output = super::ProviderRequestTransformOutput {
+            action: super::ProviderTransformAction::Continue,
+            path: Some("/v1/chat/completions".to_owned()),
+            body: Some(serde_json::json!({
+                "metadata":{"tenant":"new"},
+                "model":"gpt-test"
+            })),
+            headers: super::ProviderHeaderPatch {
+                set: BTreeMap::from([("x-tenant".to_owned(), "new".to_owned())]),
+                remove: Vec::new(),
+            },
+            rejection: None,
+        };
+        assert!(output.apply_to(&mut input).unwrap());
+        assert_eq!(input.body["metadata"]["tenant"], "new");
+        assert_eq!(input.headers["x-tenant"], "new");
+        assert_eq!(input.model, "gpt-test");
+    }
+
+    #[test]
+    fn provider_transform_rejection_does_not_apply_changes() {
+        let mut input = super::ProviderRequestTransformInput {
+            protocol: "openai".to_owned(),
+            method: "POST".to_owned(),
+            path: "/v1/chat/completions".to_owned(),
+            model: "gpt-test".to_owned(),
+            upstream_model: None,
+            headers: BTreeMap::new(),
+            body: serde_json::json!({"metadata":{}}),
+        };
+        let original = input.clone();
+        let output = super::ProviderRequestTransformOutput {
+            action: super::ProviderTransformAction::Reject,
+            path: None,
+            body: None,
+            headers: Default::default(),
+            rejection: Some(super::ProviderTransformRejection {
+                code: "provider.blocked".to_owned(),
+                message: "blocked".to_owned(),
+            }),
+        };
+        assert!(!output.apply_to(&mut input).unwrap());
+        assert_eq!(input, original);
+    }
 
     fn catalogue_request() -> PluginHostRequest {
         PluginHostRequest {

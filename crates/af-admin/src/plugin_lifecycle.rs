@@ -1054,9 +1054,8 @@ impl DatabaseAdminPluginLifecycleService {
                         .await
                         .map(|result| match result {
                             PluginTaskResult::Submitted { .. } => "submitted",
-                            PluginTaskResult::Status { .. } | PluginTaskResult::Result { .. } => {
-                                "completed"
-                            }
+                            PluginTaskResult::Status { .. } => "status",
+                            PluginTaskResult::Result { .. } => "completed",
                         })
                         .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)
                 } else {

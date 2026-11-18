@@ -477,7 +477,14 @@
           "eventKind": {
             "enum": [
               "channel.health.changed",
-              "merchant.service.changed"
+              "merchant.service.changed",
+              "model.catalog.changed",
+              "channel.config.changed",
+              "channel.credential.changed",
+              "model.pricing.changed",
+              "external.account.balance.changed",
+              "plugin.deployment.changed",
+              "plugin.task.changed"
             ]
           },
           "filterFields": {
@@ -569,6 +576,160 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "model.catalog.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.model-catalog.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "channel.config.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.channel-config.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "channel.credential.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.channel-credential.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "model.pricing.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.model-pricing.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "external.account.balance.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.external-account-balance.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "plugin.deployment.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.plugin-deployment.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "eventKind": {
+                  "const": "plugin.task.changed"
+                }
+              },
+              "required": [
+                "eventKind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "capabilityId": {
+                  "const": "events.plugin-task.changed.consume"
+                },
+                "capabilityVersion": {
+                  "const": 1
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -584,7 +745,14 @@
           "eventKind": {
             "enum": [
               "channel.health.changed",
-              "merchant.service.changed"
+              "merchant.service.changed",
+              "model.catalog.changed",
+              "channel.config.changed",
+              "channel.credential.changed",
+              "model.pricing.changed",
+              "external.account.balance.changed",
+              "plugin.deployment.changed",
+              "plugin.task.changed"
             ]
           },
           "filters": {
@@ -592,14 +760,10 @@
             "properties": {
               "status": {
                 "items": {
-                  "enum": [
-                    "down",
-                    "recovered",
-                    "active",
-                    "paused"
-                  ]
+                  "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+                  "type": "string"
                 },
-                "maxItems": 2,
+                "maxItems": 6,
                 "minItems": 1,
                 "type": "array",
                 "uniqueItems": true
@@ -716,6 +880,84 @@
               "task"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "capabilityId": {
+                "maxLength": 128,
+                "type": "string"
+              },
+              "capabilityVersion": {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "connectionId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "operation": {
+                "const": "invoke_provider"
+              },
+              "provider": {
+                "type": "object"
+              },
+              "publicConfig": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "operation",
+              "connectionId",
+              "publicConfig",
+              "capabilityId",
+              "capabilityVersion",
+              "provider"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "capabilityId": {
+                "maxLength": 128,
+                "type": "string"
+              },
+              "capabilityVersion": {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "connectionId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "input": {},
+              "operation": {
+                "const": "plugin_route"
+              },
+              "publicConfig": {
+                "type": "object"
+              },
+              "routeId": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "connectionId",
+              "publicConfig",
+              "capabilityId",
+              "capabilityVersion",
+              "routeId",
+              "input"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -738,7 +980,9 @@
               "manifest",
               "health",
               "invoke_capability",
-              "invoke_task"
+              "invoke_task",
+              "invoke_provider",
+              "plugin_route"
             ]
           }
         },
@@ -913,6 +1157,22 @@
             "additionalProperties": false,
             "properties": {
               "kind": {
+                "const": "provider"
+              },
+              "value": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
                 "const": "error"
               },
               "value": {
@@ -976,6 +1236,13 @@
           },
           "pluginVersion": {
             "$ref": "#/components/schemas/PluginVersion"
+          },
+          "routes": {
+            "items": {
+              "$ref": "#/components/schemas/PluginRoute"
+            },
+            "maxItems": 64,
+            "type": "array"
           },
           "uiContributions": {
             "items": {
@@ -1181,6 +1448,178 @@
           }
         ]
       },
+      "PluginRoute": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "capabilityId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "capabilityVersion": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+            "type": "string"
+          },
+          "maxBodyBytes": {
+            "default": 262144,
+            "maximum": 1048576,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "maxLength": 160,
+            "pattern": "^/[A-Za-z0-9._/-]+$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "integer"
+          },
+          "timeoutMs": {
+            "default": 30000,
+            "maximum": 120000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "schemaVersion",
+          "method",
+          "path",
+          "audience",
+          "capabilityId",
+          "capabilityVersion"
+        ],
+        "type": "object"
+      },
+      "PluginStorageKey": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._/-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
+      "PluginStorageOperation": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "$ref": "#/components/schemas/PluginStorageKey"
+              },
+              "operation": {
+                "const": "get"
+              }
+            },
+            "required": [
+              "operation",
+              "key"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "$ref": "#/components/schemas/PluginStorageKey"
+              },
+              "operation": {
+                "const": "put"
+              },
+              "value": {
+                "$ref": "#/components/schemas/PluginStorageValue"
+              }
+            },
+            "required": [
+              "operation",
+              "key",
+              "value"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "$ref": "#/components/schemas/PluginStorageKey"
+              },
+              "operation": {
+                "const": "delete"
+              }
+            },
+            "required": [
+              "operation",
+              "key"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operation": {
+                "const": "list"
+              },
+              "prefix": {
+                "maxLength": 128,
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "limit"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "PluginStorageValue": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAtUnixMs": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "value": {}
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
       "PluginTaskOperation": {
         "oneOf": [
           {
@@ -1213,6 +1652,29 @@
             "properties": {
               "kind": {
                 "const": "status"
+              },
+              "task_id": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "task_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "cancel"
+              },
+              "reason": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
               },
               "task_id": {
                 "maxLength": 512,
@@ -1309,13 +1771,22 @@
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "retry_after_seconds": {
+                    "maximum": 86400,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": "boolean"
+                  },
                   "state": {
                     "enum": [
                       "submitted",
                       "queued",
                       "running",
                       "succeeded",
-                      "failed"
+                      "failed",
+                      "cancelled"
                     ]
                   }
                 },

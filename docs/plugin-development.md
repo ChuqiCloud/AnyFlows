@@ -24,7 +24,7 @@
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
-插件不能自行注册服务端路由、模型、渠道、价卡、Webhook 或计划任务。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
+插件不能注册任意服务端路由、模型、渠道、价卡、Webhook 或计划任务。需要 HTTP 入口时，只能使用清单中的 `routes` 声明式路由；路由仍由宿主固定前缀、认证和能力授权统一管理。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
 
 ```http
 POST /api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke
@@ -318,6 +318,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | `uiContributions` | 插件管理页的静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
 | `uiPages` | 插件管理页中的管理员扩展页入口，最多 32 项。页面本身绑定只读能力；页面动作可另外绑定具备幂等语义的写能力。 |
+| `routes` | 插件自己的声明式 HTTP 入口，统一挂在 `/api/plugins/{plugin_id}` 下，最多 64 条；每条路由绑定一个已声明能力。 |
 
 `uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。`list` 最多 16 项，`notice` 使用 `tone` 标记提示级别，`progress` 使用 0–100 的 `percent`。需要更复杂的页面时，把数据拆成多个视图和组件组合，不要把前端代码塞进插件包。
 
@@ -384,6 +385,34 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 槽位表示 AnyFlows 哪个页面可以展示视图；插件不能自行注册 URL 或任意导航项。平台要增加新的业务页面槽位时，需要在契约中增加槽位，并在对应页面接入宿主渲染器。管理员扩展页通过 `uiPages` 单独接入，只能调用已授权的只读能力。两种方式都不执行第三方前端脚本。
 
+### 插件路由
+
+需要让用户或管理员通过 HTTP 调用插件自有业务时，在清单中声明 `routes`。宿主会把它们固定映射到 `/api/plugins/{plugin_id}/{path}`，插件只收到路由绑定能力的 JSON 输入，返回值必须符合该能力的 `outputSchema`。路由不能声明完整 URL、查询串、脚本或任意宿主路径。
+
+```json
+{
+  "routes": [
+    {
+      "id": "preview",
+      "schemaVersion": 1,
+      "method": "POST",
+      "path": "/preview",
+      "audience": "user",
+      "capabilityId": "com.example.preview.run",
+      "capabilityVersion": 1,
+      "maxBodyBytes": 262144,
+      "timeoutMs": 30000
+    }
+  ]
+}
+```
+
+`GET` 只能绑定 `access=read` 能力；`POST`、`PUT`、`PATCH` 和 `DELETE` 必须绑定写能力，并继续遵守现有幂等、确认和授权规则。用户路由只接受普通用户 PAT 或登录会话，管理员路由还需要管理员权限。宿主负责认证、限流、请求体大小、超时、审计和节点转发；插件不能选择上游主机、读取认证头、修改钱包或访问数据库。多节点部署由宿主把同一请求转发到当前就绪的插件代次。
+
+### 插件状态存储
+
+插件可以通过 `PluginStorageOperation` 使用宿主提供的命名空间 JSON 存储。每个插件只能读写自己的键空间，键最长 128 字节，值最长 64 KiB，可设置过期时间；支持 `get`、`put`、`delete` 和带前缀的 `list`。状态适合保存同步游标、Webhook 去重键和任务辅助状态，不适合保存凭据、钱包事实或宿主任务记录。宿主负责事务、并发、过期清理和多节点共享，插件不能执行 SQL 或获取数据库连接。
+
 ## 8. Python 处理函数
 
 SDK 负责启动握手、健康检查、JSON Lines 协议、超时和结果校验。业务代码只需要实现处理函数。
@@ -440,7 +469,7 @@ def review_live_balance(capability_id, public_config, value, context):
 }
 ```
 
-当前内置事件目录可通过插件契约的 `plugin_event_catalog()` 查询，包含事件名、输入 Schema、能力名和可过滤字段。过滤条件由宿主在入队前执行；插件不会收到不符合条件的事件。清单中的事件必须存在于目录，并且对应 capability 必须同时声明为 `read` + `none`。新增宿主事件时，需要同步登记契约目录、数据库投递映射和安全投影，再增加业务 producer；不需要改持久队列表结构。
+当前内置事件目录可通过插件契约的 `plugin_event_catalog()` 查询，包含事件名、输入 Schema、能力名和可过滤字段。过滤条件由宿主在入队前执行；插件不会收到不符合条件的事件。清单中的事件必须存在于目录，并且对应 capability 必须同时声明为 `read` + `none`。当前目录包括：`channel.health.changed`、`merchant.service.changed`、`model.catalog.changed`、`channel.config.changed`、`channel.credential.changed`、`model.pricing.changed`、`external.account.balance.changed`、`plugin.deployment.changed` 和 `plugin.task.changed`。事件只包含脱敏引用、版本、状态和时间，不包含 Key、Cookie、钱包金额或任务原文。新增宿主事件时，需要同步登记契约目录、Schema、数据库投递映射和安全投影，再增加业务 producer；不需要改持久队列表结构。
 
 ### 外部账户
 
@@ -468,9 +497,13 @@ def review_live_balance(capability_id, public_config, value, context):
 
 `provider.request.transform` 为渠道适配提供受限转换入口。插件只能处理宿主过滤后的协议、方法、路径、模型、普通请求头和 JSON 请求体，返回继续或拒绝，以及受限的路径、请求体和普通请求头变更。认证头、Cookie、渠道密钥、上游主机、模型计费字段、钱包和结算事实始终由宿主控制。本契约不授予插件任意 HTTP 客户端。
 
+### Provider 生命周期适配
+
+Provider 插件可以实现模型发现、请求构造、响应投影、失败分类和重试建议。请求构造只能返回相对路径、普通 Header 和 JSON 请求体；宿主负责凭据、上游主机、实际网络请求、路由、计费和最终重试决定。插件不能读取 Key、选择主机或返回钱包事实。
+
 ### 异步任务适配
 
-`invoke_task` 支持 `submit`、`status` 和 `result` 三种任务操作。插件负责把宿主投影的 Provider 响应转换为统一任务状态；宿主负责公开任务 ID、凭据、发送请求、轮询、持久化、重试和结算。插件不得返回价格、配额、钱包或扣费事实。
+`invoke_task` 支持 `submit`、`status`、`cancel` 和 `result` 四种任务操作。插件负责把宿主投影的 Provider 响应转换为统一任务状态；宿主负责公开任务 ID、凭据、发送请求、轮询、持久化、取消是否对用户可见、最终重试和结算。`status` 失败时可以返回 `retryable` 和不超过 86400 秒的 `retryAfterSeconds` 建议，宿主可以缩短或忽略该建议。插件不得返回价格、配额、钱包或扣费事实。
 
 ### 请求处理
 

@@ -21,6 +21,16 @@ pub enum PluginTaskOperation {
     },
     /// Build or validate a provider status request for an existing task.
     Status { task_id: String },
+    /// Request cancellation of an in-flight provider task.
+    ///
+    /// The host decides whether cancellation is exposed to callers and owns
+    /// the public task state. The plugin only translates the provider-side
+    /// cancellation request.
+    Cancel {
+        task_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     /// Project a completed provider result into a host-safe result.
     Result { task_id: String, response: Value },
 }
@@ -47,6 +57,12 @@ impl PluginTaskOperation {
                 }
             }
             Self::Status { task_id } => validate_task_id(task_id)?,
+            Self::Cancel { task_id, reason } => {
+                validate_task_id(task_id)?;
+                if let Some(reason) = reason {
+                    validate_text(reason, 256, TaskContractError::InvalidCancelReason)?;
+                }
+            }
             Self::Result { task_id, response } => {
                 validate_task_id(task_id)?;
                 if response.is_null() {
@@ -67,12 +83,13 @@ pub enum PluginTaskState {
     Running,
     Succeeded,
     Failed,
+    Cancelled,
 }
 
 impl PluginTaskState {
     #[must_use]
     pub const fn is_terminal(self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed)
+        matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
 }
 
@@ -99,6 +116,12 @@ pub enum PluginTaskResult {
         progress_basis_points: Option<u16>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         failure_code: Option<String>,
+        /// Whether the host may retry after a failed provider attempt.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retryable: Option<bool>,
+        /// Optional provider hint. The host may clamp or ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_after_seconds: Option<u32>,
     },
     /// Host-safe terminal output. Billing facts are deliberately not part of
     /// this value and remain owned by the host.
@@ -123,6 +146,8 @@ impl PluginTaskResult {
                 state,
                 progress_basis_points,
                 failure_code,
+                retryable,
+                retry_after_seconds,
             } => {
                 validate_progress(*progress_basis_points)?;
                 if *state == PluginTaskState::Failed && failure_code.is_none() {
@@ -131,8 +156,19 @@ impl PluginTaskResult {
                 if *state != PluginTaskState::Failed && failure_code.is_some() {
                     return Err(TaskContractError::InvalidFailureCode);
                 }
+                if *state != PluginTaskState::Failed
+                    && (retryable.is_some() || retry_after_seconds.is_some())
+                {
+                    return Err(TaskContractError::InvalidRetryAdvice);
+                }
                 if let Some(code) = failure_code {
                     validate_text(code, 128, TaskContractError::InvalidFailureCode)?;
+                }
+                if retry_after_seconds.is_some_and(|seconds| seconds > 86_400) {
+                    return Err(TaskContractError::InvalidRetryAdvice);
+                }
+                if retry_after_seconds.is_some() && retryable != Some(true) {
+                    return Err(TaskContractError::InvalidRetryAdvice);
                 }
             }
             Self::Result { task_id, output } => {
@@ -167,6 +203,10 @@ pub enum TaskContractError {
     MissingFailureCode,
     #[error("task failure code is invalid")]
     InvalidFailureCode,
+    #[error("task cancellation reason is invalid")]
+    InvalidCancelReason,
+    #[error("task retry advice is invalid")]
+    InvalidRetryAdvice,
 }
 
 fn validate_task_id(value: &str) -> Result<(), TaskContractError> {
@@ -236,6 +276,8 @@ mod tests {
             state: PluginTaskState::Failed,
             progress_basis_points: Some(10_000),
             failure_code: Some("upstream_failure".to_owned()),
+            retryable: Some(true),
+            retry_after_seconds: Some(5),
         };
         result.validate().unwrap();
         let wire = serde_json::to_value(result).unwrap();
@@ -256,6 +298,8 @@ mod tests {
             state: PluginTaskState::Running,
             progress_basis_points: Some(10_001),
             failure_code: None,
+            retryable: None,
+            retry_after_seconds: None,
         };
         assert_eq!(
             bad_progress.validate(),

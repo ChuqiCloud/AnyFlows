@@ -14,8 +14,9 @@ use af_db::{
     PluginCatalogRepository, PluginDeploymentQuery, PluginDeploymentRecord,
 };
 use af_plugin_contract::{
-    CapabilityId, CapabilityResult, InvocationMetadata, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
-    PluginId, PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
+    CapabilityId, CapabilityResult, InvocationMetadata, PROVIDER_LIFECYCLE_CAPABILITY,
+    PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId, PluginManifest, PluginProviderOperation,
+    PluginProviderResult, PluginTaskOperation, PluginTaskResult, PluginVersion,
     ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
     RequestProcessingInput, RequestProcessingOutput, RequestProcessingPipelineResult,
     RequestProcessingStage,
@@ -629,6 +630,142 @@ impl AdminPluginSidecarRuntime {
         Ok(output)
     }
 
+    /// Invoke a provider lifecycle adapter after validating deployment state,
+    /// capability grant and the host-owned plugin configuration.
+    pub async fn invoke_provider(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    ) -> Result<PluginProviderResult, AdminPluginLifecycleError> {
+        provider
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let remaining = invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(
+            remaining,
+            self.invoke_provider_inner(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                capability_version,
+                provider,
+            ),
+        )
+        .await
+        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+    }
+
+    async fn invoke_provider_inner(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    ) -> Result<PluginProviderResult, AdminPluginLifecycleError> {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let generation =
+            u64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let requested_generation =
+            i64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_id = CapabilityId::new(PROVIDER_LIFECYCLE_CAPABILITY.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let deployment = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation != requested_generation
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+            || !deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == capability_id.as_str() && grant.version == capability_version
+            })
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let current_session = self.supervisor.session(&plugin_id, generation).await;
+        let session_is_running = match current_session {
+            Ok(session) => session
+                .is_process_running(generation)
+                .await
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if !session_is_running {
+            self.apply(repository, &deployment).await?;
+        }
+        let latest = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != requested_generation {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let session = self
+            .supervisor
+            .session(&plugin_id, generation)
+            .await
+            .map_err(map_sidecar_error)?;
+        let invocation = invocation
+            .with_public_config(deployment.config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        session
+            .invoke_host_provider(
+                generation,
+                &invocation,
+                &capability_id,
+                capability_version,
+                provider,
+            )
+            .await
+            .map_err(map_sidecar_error)
+    }
+
+    /// Transform and apply a provider request through the host-controlled
+    /// boundary. The returned boolean is false when the plugin rejected it.
+    pub async fn transform_provider_request_with_state(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        mut request: ProviderRequestTransformInput,
+    ) -> Result<
+        (
+            ProviderRequestTransformInput,
+            ProviderRequestTransformOutput,
+            bool,
+        ),
+        AdminPluginLifecycleError,
+    > {
+        let output = self
+            .transform_provider_request(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                request.clone(),
+            )
+            .await?;
+        let may_continue = output
+            .apply_to(&mut request)
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        Ok((request, output, may_continue))
+    }
+
     pub async fn process_request_stage(
         &self,
         repository: &PluginCatalogRepository,
@@ -736,18 +873,11 @@ impl AdminPluginSidecarRuntime {
                     request.clone(),
                 )
                 .await?;
-            let terminal = matches!(
-                output.action,
-                af_plugin_contract::RequestProcessingAction::Reject
-                    | af_plugin_contract::RequestProcessingAction::Stop
-            );
-            if !terminal {
-                request
-                    .apply_effects(&output.effects)
-                    .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-            }
+            let may_continue = output
+                .apply_to(&mut request)
+                .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
             outputs.push(output);
-            if terminal {
+            if !may_continue {
                 break;
             }
         }
