@@ -359,6 +359,32 @@ pub(crate) struct PluginCapabilityInvocationResponse {
     output: Value,
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginRouteInvocationResponse)]
+pub(crate) struct PluginRouteInvocationResponse {
+    plugin_id: String,
+    route_id: String,
+    deployment_generation: i64,
+    capability_id: String,
+    capability_version: u16,
+    #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
+    output: Value,
+}
+
+impl From<AdminPluginRouteInvocationResult> for PluginRouteInvocationResponse {
+    fn from(value: AdminPluginRouteInvocationResult) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+            route_id: value.route_id,
+            deployment_generation: value.deployment_generation,
+            capability_id: value.capability_id,
+            capability_version: value.capability_version,
+            output: value.output,
+        }
+    }
+}
+
 impl From<AdminPluginCapabilityInvocationResult> for PluginCapabilityInvocationResponse {
     fn from(value: AdminPluginCapabilityInvocationResult) -> Self {
         Self {
@@ -667,7 +693,9 @@ pub fn build_plugin_lifecycle_router(
             "/api/admin/plugins/{plugin_id}/routes/{route_id}",
             get(invoke_plugin_route_get)
                 .post(invoke_plugin_route_post)
-                .put(invoke_plugin_route_put),
+                .put(invoke_plugin_route_put)
+                .patch(invoke_plugin_route_patch)
+                .delete(invoke_plugin_route_delete),
         )
         .route("/api/account/plugin-models/sources", get(catalog_sources))
         .route(
@@ -730,6 +758,44 @@ async fn invoke_plugin_route_put(
         plugin_id,
         route_id,
         af_admin::PluginRouteMethod::Put,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_plugin_route_patch(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Patch,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_plugin_route_delete(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Delete,
         input,
         request_id,
     )

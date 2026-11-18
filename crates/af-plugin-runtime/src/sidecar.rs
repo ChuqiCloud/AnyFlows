@@ -1574,6 +1574,31 @@ impl SidecarSession {
         capability_version: u16,
         input: Value,
     ) -> Result<CapabilityResult, SidecarError> {
+        self.invoke_host_route_with_storage(
+            deployment_generation,
+            invocation,
+            route_id,
+            capability_id,
+            capability_version,
+            input,
+            None,
+        )
+        .await
+    }
+
+    /// Invoke a manifest-declared route with an optional host-owned storage
+    /// callback. The route transport remains identical; storage is scoped to
+    /// the current plugin and invocation by the callback implementation.
+    pub async fn invoke_host_route_with_storage(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
+    ) -> Result<CapabilityResult, SidecarError> {
         self.ensure_generation(deployment_generation)?;
         if route_id.is_empty()
             || route_id.len() > 64
@@ -1612,7 +1637,7 @@ impl SidecarSession {
         crate::ensure_json_payload_within_limit(&input, route.max_body_bytes as usize)
             .map_err(|_| SidecarError::FrameTooLarge)?;
         let result = self
-            .exchange(
+            .exchange_with_dispatchers(
                 PluginHostOperation::PluginRoute {
                     connection_id: invocation.connection_id().to_owned(),
                     public_config: self.public_config.clone(),
@@ -1624,6 +1649,7 @@ impl SidecarSession {
                 Duration::from_millis(u64::from(route.timeout_ms)),
                 Some(invocation.metadata()),
                 None,
+                storage_dispatcher,
             )
             .await?;
         match result {

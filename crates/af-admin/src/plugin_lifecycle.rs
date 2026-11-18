@@ -25,7 +25,8 @@ use af_plugin_contract::{
     PluginManifest, PluginRouteMethod, PluginTaskOperation, PluginTaskResult, SideEffectClass,
 };
 use af_plugin_runtime::{
-    VerifiedPluginArtifact, validate_capability_schemas, validate_public_plugin_configuration,
+    PluginStorageDispatcher, VerifiedPluginArtifact, validate_capability_schemas,
+    validate_public_plugin_configuration,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
@@ -705,6 +706,7 @@ pub struct DatabaseAdminPluginLifecycleService {
     repository: PluginCatalogRepository,
     audit: Arc<dyn PlatformAuditService>,
     sidecar_runtime: Option<Arc<AdminPluginSidecarRuntime>>,
+    storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     event_delivery_repository: Option<PluginEventDeliveryRepository>,
     custom_capability_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission,
@@ -713,6 +715,10 @@ pub struct DatabaseAdminPluginLifecycleService {
 impl DatabaseAdminPluginLifecycleService {
     pub(crate) fn catalog_repository(&self) -> &PluginCatalogRepository {
         &self.repository
+    }
+
+    pub(crate) fn storage_dispatcher(&self) -> Option<Arc<dyn PluginStorageDispatcher>> {
+        self.storage_dispatcher.clone()
     }
 
     fn artifact_view(&self, record: PluginArtifactRecord) -> AdminPluginArtifact {
@@ -740,6 +746,7 @@ impl DatabaseAdminPluginLifecycleService {
             repository,
             audit,
             sidecar_runtime: None,
+            storage_dispatcher: None,
             event_delivery_repository: None,
             custom_capability_slots: Arc::new(tokio::sync::Semaphore::new(
                 PLUGIN_CUSTOM_CAPABILITY_MAX_CONCURRENCY,
@@ -751,6 +758,15 @@ impl DatabaseAdminPluginLifecycleService {
     #[must_use]
     pub fn with_sidecar_runtime(mut self, runtime: Option<Arc<AdminPluginSidecarRuntime>>) -> Self {
         self.sidecar_runtime = runtime;
+        self
+    }
+
+    #[must_use]
+    pub fn with_storage_dispatcher(
+        mut self,
+        dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
+    ) -> Self {
+        self.storage_dispatcher = dispatcher;
         self
     }
 
@@ -832,17 +848,35 @@ impl DatabaseAdminPluginLifecycleService {
             .sidecar_runtime
             .as_ref()
             .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
-        let invoked = runtime
-            .invoke_capability(
-                &self.repository,
-                plugin_id_value.as_str(),
-                deployment.generation,
-                &invocation,
-                capability.as_str(),
-                capability_version,
-                input,
-            )
-            .await;
+        let invoked = match self.storage_dispatcher.clone() {
+            Some(storage_dispatcher) => {
+                runtime
+                    .invoke_capability_with_storage(
+                        &self.repository,
+                        plugin_id_value.as_str(),
+                        deployment.generation,
+                        &invocation,
+                        capability.as_str(),
+                        capability_version,
+                        input,
+                        storage_dispatcher,
+                    )
+                    .await
+            }
+            None => {
+                runtime
+                    .invoke_capability(
+                        &self.repository,
+                        plugin_id_value.as_str(),
+                        deployment.generation,
+                        &invocation,
+                        capability.as_str(),
+                        capability_version,
+                        input,
+                    )
+                    .await
+            }
+        };
         let audit = audit_entry(
             principal,
             request_id,
@@ -976,7 +1010,7 @@ impl DatabaseAdminPluginLifecycleService {
             .as_ref()
             .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
         let invoked = runtime
-            .invoke_route(
+            .invoke_route_with_storage(
                 &self.repository,
                 plugin_id_value.as_str(),
                 deployment.generation,
@@ -985,6 +1019,7 @@ impl DatabaseAdminPluginLifecycleService {
                 capability.id.as_str(),
                 capability.version,
                 input,
+                self.storage_dispatcher.clone(),
             )
             .await;
         let audit = audit_entry(
@@ -1708,17 +1743,35 @@ impl DatabaseAdminPluginLifecycleService {
         )
         .map_err(|_| PluginEventFailureKind::Permanent)?;
         let started_at = Instant::now();
-        let invoked = runtime
-            .invoke_capability(
-                &self.repository,
-                lease.plugin_id(),
-                lease.deployment_generation(),
-                &invocation,
-                lease.capability_id(),
-                lease.capability_version(),
-                lease.payload().clone(),
-            )
-            .await;
+        let invoked = match self.storage_dispatcher.clone() {
+            Some(storage_dispatcher) => {
+                runtime
+                    .invoke_capability_with_storage(
+                        &self.repository,
+                        lease.plugin_id(),
+                        lease.deployment_generation(),
+                        &invocation,
+                        lease.capability_id(),
+                        lease.capability_version(),
+                        lease.payload().clone(),
+                        storage_dispatcher,
+                    )
+                    .await
+            }
+            None => {
+                runtime
+                    .invoke_capability(
+                        &self.repository,
+                        lease.plugin_id(),
+                        lease.deployment_generation(),
+                        &invocation,
+                        lease.capability_id(),
+                        lease.capability_version(),
+                        lease.payload().clone(),
+                    )
+                    .await
+            }
+        };
         let result = match invoked {
             Ok(result) => result,
             Err(

@@ -2822,6 +2822,11 @@ impl Bootstrap<Supervised> {
             Duration::from_secs(2),
         )
         .expect("plugin event repository requires a non-zero operation timeout");
+        let plugin_storage_dispatcher = Arc::new(af_admin::DatabasePluginStorageDispatcher::new(
+            Arc::new(af_db::PluginStorageRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+            )),
+        ));
         let plugin_lifecycle_service = Arc::new(
             af_admin::DatabaseAdminPluginLifecycleService::new(
                 af_db::PluginCatalogRepository::new(
@@ -2830,6 +2835,7 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.platform_audit_service),
             )
             .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone())
+            .with_storage_dispatcher(Some(plugin_storage_dispatcher))
             .with_event_delivery_repository(Some(event_delivery_repository.clone())),
         );
         if plugin_lifecycle_service.capability_runtime().is_some() {

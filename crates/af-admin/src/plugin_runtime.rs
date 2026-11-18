@@ -502,6 +502,36 @@ impl AdminPluginSidecarRuntime {
         capability_version: u16,
         input: serde_json::Value,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        self.invoke_route_with_storage(
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            route_id,
+            capability_id,
+            capability_version,
+            input,
+            None,
+        )
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件路由入口同时携带仓储、部署、路由、能力和请求上下文"
+    )]
+    pub async fn invoke_route_with_storage(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
         let plugin_id = PluginId::new(plugin_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let generation =
@@ -561,13 +591,14 @@ impl AdminPluginSidecarRuntime {
             .with_public_config(deployment.config)
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
-            .invoke_host_route(
+            .invoke_host_route_with_storage(
                 generation,
                 &invocation,
                 route_id,
                 &capability_id,
                 capability_version,
                 input,
+                storage_dispatcher,
             )
             .await
             .map_err(map_sidecar_error)
