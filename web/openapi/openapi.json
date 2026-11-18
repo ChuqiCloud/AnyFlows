@@ -33146,6 +33146,232 @@
         ]
       }
     },
+    "/api/admin/plugins/{plugin_id}/capability-actions": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "创建插件写能力动作提案",
+        "description": "只接受已审批、已启用且明确授权的幂等 external_write capability。创建提案不会执行插件动作，输入原文不写入动作表。",
+        "operationId": "proposeAdminPluginCapabilityAction",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginCapabilityActionProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "待确认动作提案",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCapabilityActionProposalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "能力、幂等键或输入无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户、插件部署或写能力授权不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "插件部署不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等键或部署状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:propose_admin_plugin_capability_action:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/capability-actions/{proposal_key}/confirm": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "确认并执行插件写能力动作",
+        "description": "确认时再次校验输入摘要、部署 generation、artifact digest 和 capability grant；执行结果只返回宿主状态码。",
+        "operationId": "confirmAdminPluginCapabilityAction",
+        "parameters": [
+          {
+            "name": "proposal_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginCapabilityActionConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件动作执行状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCapabilityActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "确认密钥或输入无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户或部署状态不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "动作提案不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "提案已执行、过期或状态发生变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用或结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:confirm_admin_plugin_capability_action:execute"
+        ]
+      }
+    },
     "/api/admin/plugins/events/results": {
       "get": {
         "tags": [
@@ -52644,6 +52870,92 @@
           }
         },
         "additionalProperties": false
+      },
+      "PluginCapabilityActionConfirmRequest": {
+        "type": "object",
+        "required": [
+          "confirmation_key",
+          "input"
+        ],
+        "properties": {
+          "confirmation_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "input": {}
+        },
+        "additionalProperties": false
+      },
+      "PluginCapabilityActionProposalRequest": {
+        "type": "object",
+        "required": [
+          "capability_id",
+          "capability_version",
+          "idempotency_key",
+          "input"
+        ],
+        "properties": {
+          "capability_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "capability_version": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "input": {}
+        },
+        "additionalProperties": false
+      },
+      "PluginCapabilityActionProposalResponse": {
+        "type": "object",
+        "required": [
+          "proposalKey",
+          "expiresAt",
+          "status"
+        ],
+        "properties": {
+          "proposalKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "PluginCapabilityActionResult": {
+        "type": "object",
+        "required": [
+          "proposalKey",
+          "status"
+        ],
+        "properties": {
+          "proposalKey": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "outcomeCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       },
       "PluginCapabilityGrantRequest": {
         "type": "object",
