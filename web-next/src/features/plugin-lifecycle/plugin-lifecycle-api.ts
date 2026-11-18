@@ -257,6 +257,61 @@ export function usePluginCustomCapability() {
   })
 }
 
+export type PluginCapabilityActionProposal = {
+  proposalKey: string
+  expiresAt: number
+  status: string
+}
+
+export type PluginCapabilityActionResult = {
+  proposalKey: string
+  status: string
+  outcomeCode?: string
+}
+
+export function usePluginCapabilityActionProposal() {
+  return useMutation({
+    mutationFn: async ({ pluginId, capabilityId, capabilityVersion, idempotencyKey, input }: {
+      pluginId: string
+      capabilityId: string
+      capabilityVersion: number
+      idempotencyKey: string
+      input: unknown
+    }) => {
+      const result = await apiClient.post<PluginCapabilityActionProposal>({
+        url: `/api/admin/plugins/${encodeURIComponent(pluginId)}/capability-actions`,
+        body: {
+          capability_id: capabilityId,
+          capability_version: capabilityVersion,
+          idempotency_key: idempotencyKey,
+          input,
+        },
+        security: [
+          { key: 'bearerAuth', scheme: 'bearer', type: 'http' },
+          { key: 'personalAccessTokenBearer', scheme: 'bearer', type: 'http' },
+        ],
+      }) as unknown as { data: PluginCapabilityActionProposal }
+      return result.data
+    },
+  })
+}
+
+export function useConfirmPluginCapabilityAction() {
+  return useMutation({
+    mutationFn: async ({ proposalKey, confirmationKey, input }: { proposalKey: string; confirmationKey: string; input: unknown }) => {
+      const result = await apiClient.post<PluginCapabilityActionResult>({
+        url: `/api/admin/plugins/capability-actions/${encodeURIComponent(proposalKey)}/confirm`,
+        body: { confirmation_key: confirmationKey, input },
+        security: [
+          { key: 'bearerAuth', scheme: 'bearer', type: 'http' },
+          { key: 'personalAccessTokenBearer', scheme: 'bearer', type: 'http' },
+        ],
+      }) as unknown as { data: PluginCapabilityActionResult }
+      return result.data
+    },
+  })
+}
+
 function invalidate(client: ReturnType<typeof useQueryClient>) {
   return client.invalidateQueries({ queryKey: root })
 }

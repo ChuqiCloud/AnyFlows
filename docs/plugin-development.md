@@ -317,7 +317,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | `limits` | 插件自己的并发、超时、输出和分页上限。宿主可以进一步收紧。 |
 | `uiContributions` | 插件管理页的静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
-| `uiPages` | 插件管理页中的管理员扩展页入口，最多 32 项。每页绑定一个已声明的只读、无副作用能力。 |
+| `uiPages` | 插件管理页中的管理员扩展页入口，最多 32 项。页面本身绑定只读能力；页面动作可另外绑定具备幂等语义的写能力。 |
 
 `uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。`list` 最多 16 项，`notice` 使用 `tone` 标记提示级别，`progress` 使用 0–100 的 `percent`。需要更复杂的页面时，把数据拆成多个视图和组件组合，不要把前端代码塞进插件包。
 
@@ -339,7 +339,22 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 }
 ```
 
-`uiPages` 不能注册任意路由、脚本、菜单项或写操作。页面调用仍经过宿主授权接口；插件停用、撤销或取消能力授权后，页面不能继续调用。能力可以返回任意合法 JSON；若返回值为 `{ "blocks": [...] }`，页面会用上面的宿主组件渲染，否则以转义后的 JSON 显示。返回内容必须符合能力自己的 `outputSchema`。新增图表、表单控件或普通用户页面需要扩展宿主组件和权限契约。
+`uiPages` 不能注册任意路由、脚本或菜单项。页面调用仍经过宿主授权接口；插件停用、撤销或取消能力授权后，页面不能继续调用。能力可以返回任意合法 JSON；若返回值为 `{ "blocks": [...] }`，页面会用上面的宿主组件渲染，否则以转义后的 JSON 显示。返回内容必须符合能力自己的 `outputSchema`。新增图表、普通用户页面需要扩展宿主组件和权限契约。
+
+页面可以声明 `actions` 提供写操作。动作必须绑定 `access: write`、`sideEffect: external_write` 且 `writeSemantics.nativeIdempotencyKey: true` 的能力，并在当前部署中明确授权。动作输入按能力 `inputSchema` 校验，页面先创建短期提案，管理员确认后才执行。宿主保存幂等键、插件制品摘要、部署 generation 和输入摘要；输入原文不写入动作表。执行状态可能是 `submitted` 或 `outcome_unknown`，未知结果不能自动重试。插件写能力应使用现有 `PluginTaskOperation::Submit` 格式：
+
+```json
+{
+  "kind": "submit",
+  "model": "vendor-model",
+  "request": { "prompt": "..." },
+  "idempotency_key": "request-123"
+}
+```
+
+钱包、任务 ID、凭据、重试和最终结算仍由宿主负责。动作不会直接获得数据库句柄、钱包权限、任意 URL 或宿主后台 API。除任务提交外，动作也可以绑定自定义 JSON 写能力；该能力必须声明完整的 `inputSchema`、`outputSchema` 和 `writeSemantics.nativeIdempotencyKey: true`。通用写动作收到的 `InvocationMetadata.requestId` 固定为 `plugin-action:<proposalKey>`，插件应使用它做幂等去重。
+
+除任务提交外，动作也可以绑定自定义 JSON 写能力。该能力必须声明完整的 `inputSchema`、`outputSchema` 和 `writeSemantics.nativeIdempotencyKey: true`；通用写动作收到的 `InvocationMetadata.requestId` 固定为 `plugin-action:<proposalKey>`，插件应使用它做幂等去重。自定义写入只能作用于插件自己拥有的外部资源，宿主会在确认前后重新检查部署代次、制品摘要、能力授权和输入摘要。执行结果为 `unknown` 时，插件可能已经收到请求，宿主不会自动重试。
 
 动态视图示例：
 

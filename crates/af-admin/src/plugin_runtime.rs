@@ -42,6 +42,7 @@ pub(crate) struct PluginCapabilityInvocation<'a> {
     pub(crate) capability_version: u16,
     pub(crate) input: serde_json::Value,
     pub(crate) proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+    pub(crate) allow_external_write: bool,
 }
 
 /// Runtime owner for administrator-installed local-process plugins.
@@ -448,6 +449,34 @@ impl AdminPluginSidecarRuntime {
             capability_version,
             input,
             proxy_dispatcher: None,
+            allow_external_write: false,
+        })
+        .await
+    }
+
+    /// Invoke an explicitly authorized idempotent external-write capability.
+    /// This method is only called after the lifecycle service has claimed a
+    /// durable proposal; ordinary capability invocation remains read-only.
+    pub async fn invoke_external_write(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        self.invoke_capability_with_proxy(PluginCapabilityInvocation {
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            proxy_dispatcher: None,
+            allow_external_write: true,
         })
         .await
     }
@@ -753,6 +782,7 @@ impl AdminPluginSidecarRuntime {
             capability_version,
             input,
             proxy_dispatcher,
+            allow_external_write,
         } = request;
         let plugin_id = PluginId::new(plugin_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -818,17 +848,30 @@ impl AdminPluginSidecarRuntime {
         let invocation = invocation
             .with_public_config(deployment.config)
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        session
-            .invoke_host_capability_with_proxy(
-                generation,
-                &invocation,
-                &capability_id,
-                capability_version,
-                input,
-                proxy_dispatcher,
-            )
-            .await
-            .map_err(map_sidecar_error)
+        if allow_external_write {
+            session
+                .invoke_host_external_write(
+                    generation,
+                    &invocation,
+                    &capability_id,
+                    capability_version,
+                    input,
+                )
+                .await
+                .map_err(map_sidecar_error)
+        } else {
+            session
+                .invoke_host_capability_with_proxy(
+                    generation,
+                    &invocation,
+                    &capability_id,
+                    capability_version,
+                    input,
+                    proxy_dispatcher,
+                )
+                .await
+                .map_err(map_sidecar_error)
+        }
     }
 
     /// Restore every enabled desired deployment before the HTTP server accepts

@@ -97,6 +97,7 @@ pub(crate) mod plugin_action_proposals;
 pub(crate) mod plugin_artifact_approvals;
 pub(crate) mod plugin_artifact_revocations;
 pub(crate) mod plugin_artifacts;
+pub(crate) mod plugin_capability_actions;
 pub(crate) mod plugin_deployment_revisions;
 pub(crate) mod plugin_deployments;
 pub(crate) mod plugin_event_deliveries;

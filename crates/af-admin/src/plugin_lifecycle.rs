@@ -22,7 +22,7 @@ use af_db::{
 use af_domain::PlatformPermission;
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata, PluginId,
-    PluginManifest, SideEffectClass,
+    PluginManifest, PluginTaskOperation, PluginTaskResult, SideEffectClass,
 };
 use af_plugin_runtime::{
     VerifiedPluginArtifact, validate_capability_schemas, validate_public_plugin_configuration,
@@ -30,6 +30,7 @@ use af_plugin_runtime::{
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Serialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::time::Duration;
 
@@ -50,6 +51,43 @@ const PLUGIN_EVENT_BATCH_SIZE: usize = 8;
 const MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES: usize = 256;
 pub const MAX_PLUGIN_PACKAGE_UPLOAD_BYTES: usize = 128 * 1024 * 1024;
 const STALE_PLUGIN_UPLOAD_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const PLUGIN_CAPABILITY_ACTION_TTL_SECONDS: i64 = 300;
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginCapabilityActionProposal {
+    pub proposal_key: String,
+    pub expires_at: i64,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginCapabilityActionResult {
+    pub proposal_key: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome_code: Option<String>,
+}
+
+fn capability_action_input_digest(input: &Value) -> Result<String, AdminPluginLifecycleError> {
+    let bytes = serde_json::to_vec(input).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+    if bytes.len() > 256 * 1024 {
+        return Err(AdminPluginLifecycleError::PayloadTooLarge);
+    }
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn capability_action_status(status: af_db::PluginCapabilityActionStatus) -> &'static str {
+    match status {
+        af_db::PluginCapabilityActionStatus::Pending => "pending",
+        af_db::PluginCapabilityActionStatus::Executing => "executing",
+        af_db::PluginCapabilityActionStatus::Succeeded => "succeeded",
+        af_db::PluginCapabilityActionStatus::Unknown => "unknown",
+        af_db::PluginCapabilityActionStatus::Expired => "expired",
+        af_db::PluginCapabilityActionStatus::Revoked => "revoked",
+    }
+}
 
 /// A capability is eligible for the one-step installer only when its verified
 /// declaration is schema-bound, read-only, and has no external side effect.
@@ -827,6 +865,247 @@ impl DatabaseAdminPluginLifecycleService {
             capability_id: capability.as_str().to_owned(),
             capability_version,
             output: result.output,
+        })
+    }
+
+    pub async fn propose_capability_action(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        idempotency_key: &str,
+        input: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginCapabilityActionProposal, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        let plugin_id_value = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability = CapabilityId::new(capability_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let input_sha256 = capability_action_input_digest(&input)?;
+        let deployment = self
+            .repository
+            .get_deployment(plugin_id_value.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        let manifest: PluginManifest = serde_json::from_value(deployment.artifact.manifest.clone())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let declaration = manifest
+            .capabilities
+            .iter()
+            .find(|item| item.id == capability && item.version == capability_version)
+            .ok_or(AdminPluginLifecycleError::Forbidden)?;
+        if declaration.access != CapabilityAccess::Write
+            || declaration.side_effect != SideEffectClass::ExternalWrite
+            || !declaration
+                .write_semantics
+                .is_some_and(|semantics| semantics.native_idempotency_key)
+            || declaration.input_schema.is_none()
+            || declaration.output_schema.is_none()
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.revocation.is_some()
+            || !deployment.enabled
+            || !deployment
+                .granted_capabilities
+                .iter()
+                .any(|grant| grant.id == capability.as_str() && grant.version == capability_version)
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            af_plugin_runtime::validate_plugin_configuration(schema, &input)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        }
+        let now = current_timestamp()?;
+        let (record, _) = self
+            .repository
+            .capability_action_repository()
+            .create(af_db::PluginCapabilityActionCreate {
+                proposal_key: uuid::Uuid::new_v4().simple().to_string(),
+                idempotency_key: idempotency_key.to_owned(),
+                requested_by_user_id: principal.user_id().get(),
+                plugin_id: deployment.plugin_id.clone(),
+                artifact_id: deployment.artifact.id,
+                artifact_digest: deployment.artifact.digest.clone(),
+                deployment_generation: deployment.generation,
+                capability_id: capability.as_str().to_owned(),
+                capability_version,
+                input_sha256,
+                created_at: now,
+                expires_at: now.saturating_add(PLUGIN_CAPABILITY_ACTION_TTL_SECONDS),
+            })
+            .await
+            .map_err(|error| match error {
+                af_db::PluginCapabilityActionRepositoryError::Conflict => {
+                    AdminPluginLifecycleError::Conflict
+                }
+                _ => AdminPluginLifecycleError::Internal,
+            })?;
+        self.audit_host_action(
+            principal,
+            request_id,
+            "propose_plugin_capability_action",
+            &record.proposal_key,
+            PlatformAuditOutcome::Succeeded,
+            None,
+            Some(
+                json!({"pluginId": plugin_id, "capabilityId": capability_id, "status": "pending"}),
+            ),
+        )
+        .await?;
+        Ok(AdminPluginCapabilityActionProposal {
+            proposal_key: record.proposal_key,
+            expires_at: record.expires_at,
+            status: capability_action_status(record.status).to_owned(),
+        })
+    }
+
+    pub async fn confirm_capability_action(
+        &self,
+        principal: SessionPrincipal,
+        proposal_key: &str,
+        confirmation_key: &str,
+        input: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginCapabilityActionResult, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        let input_sha256 = capability_action_input_digest(&input)?;
+        let repository = self.repository.capability_action_repository();
+        let existing = repository
+            .get_by_key(proposal_key)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::NotFound)?;
+        let task = serde_json::from_value::<PluginTaskOperation>(input.clone())
+            .ok()
+            .filter(|task| matches!(task, PluginTaskOperation::Submit { .. }));
+        let claimed = repository
+            .claim_for_execution(
+                proposal_key,
+                principal.user_id().get(),
+                confirmation_key,
+                &input_sha256,
+                current_timestamp()?,
+            )
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Conflict)?;
+        if matches!(
+            claimed.status,
+            af_db::PluginCapabilityActionStatus::Succeeded
+                | af_db::PluginCapabilityActionStatus::Unknown
+                | af_db::PluginCapabilityActionStatus::Expired
+                | af_db::PluginCapabilityActionStatus::Revoked
+        ) {
+            return Ok(AdminPluginCapabilityActionResult {
+                proposal_key: claimed.proposal_key,
+                status: capability_action_status(claimed.status).to_owned(),
+                outcome_code: claimed.outcome_code,
+            });
+        }
+        let deadline = time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let deployment = self
+            .repository
+            .get_deployment(&existing.plugin_id)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation != existing.deployment_generation
+            || deployment.artifact.digest != existing.artifact_digest
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
+        {
+            let _ = repository
+                .finish(
+                    proposal_key,
+                    af_db::PluginCapabilityActionStatus::Unknown,
+                    "deployment_changed",
+                )
+                .await;
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
+            format!("plugin-action:{proposal_key}"),
+            InvocationMetadata {
+                request_id: format!("plugin-action:{proposal_key}"),
+                deadline_unix_ms: u64::try_from(deadline)
+                    .unwrap_or(u64::MAX)
+                    .saturating_add(30_000),
+            },
+            deployment.config.clone(),
+            PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
+        )
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let runtime = self.sidecar_runtime.as_ref();
+        let result = match runtime {
+            Some(runtime) => {
+                if let Some(task) = task {
+                    runtime
+                        .invoke_task(
+                            &self.repository,
+                            &existing.plugin_id,
+                            existing.deployment_generation,
+                            &invocation,
+                            &existing.capability_id,
+                            existing.capability_version,
+                            task,
+                        )
+                        .await
+                        .map(|result| match result {
+                            PluginTaskResult::Submitted { .. } => "submitted",
+                            PluginTaskResult::Status { .. } | PluginTaskResult::Result { .. } => {
+                                "completed"
+                            }
+                        })
+                        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)
+                } else {
+                    runtime
+                        .invoke_external_write(
+                            &self.repository,
+                            &existing.plugin_id,
+                            existing.deployment_generation,
+                            &invocation,
+                            &existing.capability_id,
+                            existing.capability_version,
+                            input,
+                        )
+                        .await
+                        .map(|_| "completed")
+                        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)
+                }
+            }
+            None => Err(AdminPluginLifecycleError::RuntimeUnavailable),
+        };
+        let (status, outcome_code) = match result {
+            Ok(code) => (af_db::PluginCapabilityActionStatus::Succeeded, code),
+            Err(_) => (
+                af_db::PluginCapabilityActionStatus::Unknown,
+                "outcome_unknown",
+            ),
+        };
+        let finished = repository
+            .finish(proposal_key, status, outcome_code)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        self.audit_host_action(
+            principal,
+            request_id,
+            "confirm_plugin_capability_action",
+            proposal_key,
+            if status == af_db::PluginCapabilityActionStatus::Succeeded {
+                PlatformAuditOutcome::Succeeded
+            } else {
+                PlatformAuditOutcome::Failed
+            },
+            None,
+            Some(json!({"status": outcome_code})),
+        )
+        .await?;
+        Ok(AdminPluginCapabilityActionResult {
+            proposal_key: finished.proposal_key,
+            status: outcome_code.to_owned(),
+            outcome_code: Some(outcome_code.to_owned()),
         })
     }
 

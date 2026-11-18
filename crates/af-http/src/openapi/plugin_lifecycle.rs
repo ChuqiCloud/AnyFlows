@@ -9,6 +9,8 @@ use crate::{
         PluginActionResponse, PluginArtifactApprovalResponse, PluginArtifactCleanupResponse,
         PluginArtifactPageResponse, PluginArtifactRegistrationRequest, PluginArtifactResponse,
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
+        PluginCapabilityActionConfirmRequest, PluginCapabilityActionProposalRequest,
+        PluginCapabilityActionProposalResponse, PluginCapabilityActionResultResponse,
         PluginCapabilityGrantRequest, PluginCapabilityGrantResponse,
         PluginCapabilityInvocationRequest, PluginCapabilityInvocationResponse,
         PluginCatalogModelPageResponse, PluginCatalogModelResponse,
@@ -101,6 +103,50 @@ fn list_admin_plugin_deployments() {}
     security(("bearerAuth" = []))
 )]
 fn invoke_admin_plugin_capability() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/capability-actions",
+    operation_id = "proposeAdminPluginCapabilityAction",
+    tag = "插件生命周期",
+    summary = "创建插件写能力动作提案",
+    description = "只接受已审批、已启用且明确授权的幂等 external_write capability。创建提案不会执行插件动作，输入原文不写入动作表。",
+    params(("plugin_id" = String, Path)),
+    request_body = PluginCapabilityActionProposalRequest,
+    responses(
+        (status = 200, description = "待确认动作提案", body = PluginCapabilityActionProposalResponse),
+        (status = 400, description = "能力、幂等键或输入无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户、插件部署或写能力授权不满足要求", body = ManagementErrorBody),
+        (status = 404, description = "插件部署不存在", body = ManagementErrorBody),
+        (status = 409, description = "幂等键或部署状态冲突", body = ManagementErrorBody),
+        (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn propose_admin_plugin_capability_action() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/capability-actions/{proposal_key}/confirm",
+    operation_id = "confirmAdminPluginCapabilityAction",
+    tag = "插件生命周期",
+    summary = "确认并执行插件写能力动作",
+    description = "确认时再次校验输入摘要、部署 generation、artifact digest 和 capability grant；执行结果只返回宿主状态码。",
+    params(("proposal_key" = String, Path)),
+    request_body = PluginCapabilityActionConfirmRequest,
+    responses(
+        (status = 200, description = "插件动作执行状态", body = PluginCapabilityActionResultResponse),
+        (status = 400, description = "确认密钥或输入无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户或部署状态不满足要求", body = ManagementErrorBody),
+        (status = 404, description = "动作提案不存在", body = ManagementErrorBody),
+        (status = 409, description = "提案已执行、过期或状态发生变化", body = ManagementErrorBody),
+        (status = 503, description = "插件运行时不可用或结果未知", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn confirm_admin_plugin_capability_action() {}
 
 #[utoipa::path(
     get,
@@ -370,6 +416,8 @@ fn list_plugin_catalog_models() {}
         list_admin_plugin_artifacts,
         list_admin_plugin_deployments,
         invoke_admin_plugin_capability,
+        propose_admin_plugin_capability_action,
+        confirm_admin_plugin_capability_action,
         list_admin_plugin_event_results,
         list_admin_plugin_deployment_history,
         register_admin_plugin_artifact,
@@ -397,6 +445,10 @@ fn list_plugin_catalog_models() {}
         PluginCapabilityGrantResponse,
         PluginCapabilityInvocationRequest,
         PluginCapabilityInvocationResponse,
+        PluginCapabilityActionProposalRequest,
+        PluginCapabilityActionConfirmRequest,
+        PluginCapabilityActionProposalResponse,
+        PluginCapabilityActionResultResponse,
         PluginDeploymentDisableRequest,
         PluginDeploymentPageResponse,
         PluginDeploymentRequest,

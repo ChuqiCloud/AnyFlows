@@ -98,6 +98,25 @@ pub struct PluginUiPage {
     /// Optional JSON input sent through the host's normal capability schema validation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<Value>,
+    /// Optional host-confirmed actions. Actions never execute from the manifest alone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<PluginUiAction>,
+}
+
+/// A host-confirmed action entry bound to an explicitly idempotent external-write capability.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginUiAction {
+    pub id: String,
+    pub schema_version: u16,
+    pub title: PluginUiText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<PluginUiText>,
+    pub capability_id: CapabilityId,
+    pub capability_version: u16,
+    /// Optional initial JSON input; the host validates it against the capability schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<Value>,
 }
 
 /// A bounded declarative card rendered with host-owned components and translations.
@@ -214,6 +233,8 @@ const MAX_PLUGIN_UI_TABLE_ROWS: usize = 16;
 const MAX_PLUGIN_UI_LIST_ITEMS: usize = 16;
 const MAX_PLUGIN_UI_VIEW_BYTES: usize = 8 * 1024;
 const MAX_PLUGIN_UI_PAGE_BYTES: usize = 8 * 1024;
+const MAX_PLUGIN_UI_ACTIONS_PER_PAGE: usize = 16;
+const MAX_PLUGIN_UI_ACTION_BYTES: usize = 8 * 1024;
 const MAX_PLUGIN_UI_TOTAL_BYTES: usize = 32 * 1024;
 
 impl PluginUiBlock {
@@ -418,6 +439,51 @@ impl PluginManifest {
             {
                 return Err(ContractValidationError::InvalidManifest);
             }
+            if page.actions.len() > MAX_PLUGIN_UI_ACTIONS_PER_PAGE {
+                return Err(ContractValidationError::InvalidManifest);
+            }
+            let mut action_ids = BTreeSet::new();
+            for action in &page.actions {
+                let capability_available = self.capabilities.iter().any(|capability| {
+                    capability.id == action.capability_id
+                        && capability.version == action.capability_version
+                        && capability.access == CapabilityAccess::Write
+                        && capability.side_effect == SideEffectClass::ExternalWrite
+                        && capability
+                            .write_semantics
+                            .is_some_and(|semantics| semantics.native_idempotency_key)
+                        && capability.input_schema.is_some()
+                        && capability.output_schema.is_some()
+                });
+                if !capability_available
+                    || !valid_ui_id(&action.id)
+                    || action.schema_version != 1
+                    || action.capability_version == 0
+                    || !action_ids.insert(&action.id)
+                    || !contribution_ids.insert(&action.id)
+                    || !action.title.validate()
+                    || action
+                        .description
+                        .as_ref()
+                        .is_some_and(|description| !description.validate())
+                {
+                    return Err(ContractValidationError::InvalidManifest);
+                }
+                let action_bytes = serde_json::to_vec(action)
+                    .map_err(|_| ContractValidationError::InvalidManifest)?
+                    .len();
+                if action_bytes > MAX_PLUGIN_UI_ACTION_BYTES {
+                    return Err(ContractValidationError::InvalidManifest);
+                }
+                if let Some(input) = &action.input
+                    && serde_json::to_vec(input)
+                        .map_err(|_| ContractValidationError::InvalidManifest)?
+                        .len()
+                        > MAX_PLUGIN_UI_ACTION_BYTES
+                {
+                    return Err(ContractValidationError::InvalidManifest);
+                }
+            }
             let page_bytes = serde_json::to_vec(page)
                 .map_err(|_| ContractValidationError::InvalidManifest)?
                 .len();
@@ -537,7 +603,28 @@ mod tests {
             capability_id: CapabilityId::new(capability_id).unwrap(),
             capability_version: version,
             input: Some(serde_json::json!({"query": "ready"})),
+            actions: Vec::new(),
         }
+    }
+
+    fn add_custom_write_capability(value: &mut PluginManifest) {
+        value.capabilities.push(CapabilityDeclaration {
+            id: CapabilityId::new("vendor.customer.refresh").unwrap(),
+            version: 1,
+            access: CapabilityAccess::Write,
+            side_effect: SideEffectClass::ExternalWrite,
+            write_semantics: Some(crate::ExternalWriteSemantics {
+                native_idempotency_key: true,
+                result_lookup: crate::ResultLookupSupport::ByRequestId,
+                reconciliation: true,
+            }),
+            input_schema: Some(serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {"target": {"type": "string"}}
+            })),
+            output_schema: Some(serde_json::json!({"type": "object"})),
+        });
     }
 
     fn add_custom_read_capability(value: &mut PluginManifest) {
@@ -655,6 +742,75 @@ mod tests {
             .collect();
         assert_eq!(
             too_many_pages.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+    }
+
+    #[test]
+    fn manifest_supports_explicitly_idempotent_write_actions_on_pages() {
+        let mut value = manifest(serde_json::json!({ "type": "object" }));
+        add_custom_read_capability(&mut value);
+        add_custom_write_capability(&mut value);
+        let mut page = ui_page("customer-lookup", "vendor.customer.lookup", 1);
+        page.actions.push(PluginUiAction {
+            id: "refresh-customer".to_owned(),
+            schema_version: 1,
+            title: PluginUiText {
+                en: Some("Refresh customer".to_owned()),
+                zh: Some("刷新客户".to_owned()),
+            },
+            description: None,
+            capability_id: CapabilityId::new("vendor.customer.refresh").unwrap(),
+            capability_version: 1,
+            input: Some(serde_json::json!({"target": "customer-1"})),
+        });
+        value.ui_pages.push(page);
+        assert!(value.validate().is_ok());
+
+        let mut non_idempotent = value.clone();
+        non_idempotent.capabilities[2]
+            .write_semantics
+            .as_mut()
+            .unwrap()
+            .native_idempotency_key = false;
+        assert_eq!(
+            non_idempotent.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut duplicate = value.clone();
+        let duplicate_action = duplicate.ui_pages[0].actions[0].clone();
+        duplicate.ui_pages[0].actions.push(duplicate_action);
+        assert_eq!(
+            duplicate.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut wrong_access = value.clone();
+        wrong_access.ui_pages[0].actions[0].capability_id =
+            CapabilityId::new("vendor.customer.lookup").unwrap();
+        assert_eq!(
+            wrong_access.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
+
+        let mut too_many_actions = value;
+        too_many_actions.ui_pages[0].actions = (0..=MAX_PLUGIN_UI_ACTIONS_PER_PAGE)
+            .map(|index| PluginUiAction {
+                id: format!("action-{index}"),
+                schema_version: 1,
+                title: PluginUiText {
+                    en: Some("Action".to_owned()),
+                    zh: None,
+                },
+                description: None,
+                capability_id: CapabilityId::new("vendor.customer.refresh").unwrap(),
+                capability_version: 1,
+                input: None,
+            })
+            .collect();
+        assert_eq!(
+            too_many_actions.validate(),
             Err(ContractValidationError::InvalidManifest)
         );
     }
