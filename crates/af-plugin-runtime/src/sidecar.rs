@@ -1375,6 +1375,10 @@ impl SidecarSession {
         .await
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "内部调用同时携带 generation、请求上下文、能力和两个请求级回调"
+    )]
     async fn invoke_internal(
         &self,
         deployment_generation: u64,
