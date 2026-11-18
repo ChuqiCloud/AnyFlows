@@ -722,7 +722,13 @@ jobs:
         run: cargo run --locked --package xtask -- channel-capabilities check
 
       - name: Check plugin contract schema
-        run: cargo run --locked --package af-plugin-contract --example export_contract -- check
+        run: |
+          if cargo run --locked --package af-plugin-contract --example export_contract -- check; then
+            exit 0
+          fi
+          cargo run --locked --package af-plugin-contract --example export_contract -- export
+          git diff -- contracts/plugins/v1/schema.json contracts/plugins/v1/openapi.json
+          exit 1
 
       - name: Check plugin developer SDK and package tooling
         run: python3 -m unittest discover -s tools/plugins/tests
