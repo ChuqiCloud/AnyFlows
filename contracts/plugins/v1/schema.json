@@ -400,6 +400,159 @@
       ],
       "type": "object"
     },
+    "PluginEventDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "eventKind": {
+          "enum": [
+            "channel.health.changed",
+            "merchant.service.changed"
+          ]
+        },
+        "filterFields": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "payloadSchema": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "eventKind",
+        "capabilityId",
+        "capabilityVersion",
+        "payloadSchema",
+        "filterFields"
+      ],
+      "type": "object"
+    },
+    "PluginEventSubscription": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "channel.health.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.channel-health.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              },
+              "filters": {
+                "properties": {
+                  "status": {
+                    "items": {
+                      "enum": [
+                        "down",
+                        "recovered"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "merchant.service.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.merchant-service.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              },
+              "filters": {
+                "properties": {
+                  "status": {
+                    "items": {
+                      "enum": [
+                        "active",
+                        "paused"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "eventKind": {
+          "enum": [
+            "channel.health.changed",
+            "merchant.service.changed"
+          ]
+        },
+        "filters": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "items": {
+                "enum": [
+                  "down",
+                  "recovered",
+                  "active",
+                  "paused"
+                ]
+              },
+              "maxItems": 2,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "eventKind",
+        "capabilityId",
+        "capabilityVersion"
+      ],
+      "type": "object"
+    },
     "PluginHostOperation": {
       "oneOf": [
         {
@@ -744,6 +897,13 @@
           "maxLength": 128,
           "type": "string"
         },
+        "eventSubscriptions": {
+          "items": {
+            "$ref": "#/$defs/PluginEventSubscription"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "limits": {
           "$ref": "#/$defs/ConnectorLimits"
         },
@@ -760,6 +920,13 @@
             "$ref": "#/$defs/PluginUiContribution"
           },
           "maxItems": 16,
+          "type": "array"
+        },
+        "uiPages": {
+          "items": {
+            "$ref": "#/$defs/PluginUiPage"
+          },
+          "maxItems": 32,
           "type": "array"
         },
         "uiViews": {
@@ -1228,6 +1395,72 @@
         {
           "additionalProperties": false,
           "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/PluginUiText"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "type": {
+              "const": "list"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "title": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "tone": {
+              "$ref": "#/$defs/PluginUiTone"
+            },
+            "type": {
+              "const": "notice"
+            }
+          },
+          "required": [
+            "type",
+            "title",
+            "tone"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "progress"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "percent"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "description": {
               "$ref": "#/$defs/PluginUiText"
             },
@@ -1277,6 +1510,45 @@
         "slot",
         "component",
         "title"
+      ],
+      "type": "object"
+    },
+    "PluginUiPage": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "input": {},
+        "schemaVersion": {
+          "const": 1
+        },
+        "title": {
+          "$ref": "#/$defs/PluginUiText"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "title",
+        "capabilityId",
+        "capabilityVersion"
       ],
       "type": "object"
     },
@@ -1726,6 +1998,9 @@
       "$ref": "#/$defs/PluginTaskResult"
     },
     {
+      "$ref": "#/$defs/PluginEventDefinition"
+    },
+    {
       "$ref": "#/$defs/ProviderRequestTransformInput"
     },
     {
@@ -1754,6 +2029,9 @@
     },
     {
       "$ref": "#/$defs/PluginUiView"
+    },
+    {
+      "$ref": "#/$defs/PluginUiPage"
     },
     {
       "$ref": "#/$defs/PluginUiBlock"

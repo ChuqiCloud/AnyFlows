@@ -94,6 +94,17 @@
       }
     }
   ],
+  "uiPages": [
+    {
+      "id": "model-catalog",
+      "schemaVersion": 1,
+      "title": {"zh": "模型目录", "en": "Model catalogue"},
+      "description": {"zh": "查看此插件提供的模型资料。", "en": "Browse model information provided by this plugin."},
+      "capabilityId": "catalog.models.read",
+      "capabilityVersion": 1,
+      "input": {"query": null, "cursor": null, "limit": 20}
+    }
+  ],
   "authenticationModes": ["none"],
   "limits": {
     "maxConcurrency": 1,

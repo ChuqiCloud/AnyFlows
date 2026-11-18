@@ -4,7 +4,9 @@
 
 ## 1. 先确认能力范围
 
-上传插件只能使用宿主已经接入的固定入口。插件清单中的 capability 只声明需求，不会自动创建页面、接口或后台任务。
+插件可以使用宿主固定业务入口，也可以声明自己的 namespaced 只读能力。清单不会自动创建页面、服务端路由或后台任务；自定义能力通过统一的宿主能力入口执行。
+
+“上传并安装”会自动授予清单中通过校验的自定义只读 capability，条件是同时提供有效的输入和输出 JSON Schema，且 `access` 为 `read`、`sideEffect` 为 `none`。这只代表插件获准响应宿主发起的通用能力调用，不会自动接入某个业务模块。`external_read`、写能力以及外部任务提交仍需管理员在完整权限审核中明确授权；任务提交还必须声明写副作用恢复语义。
 
 | 入口 | capability | 插件收到的数据 | 插件可以返回什么 |
 | --- | --- | --- | --- |
@@ -15,13 +17,30 @@
 | 渠道模型映射检查 | `channel.model_mapping.review.read`（v1） | 管理员选中的公开模型名和映射值 | 摘要、检查项和建议 |
 | 渠道健康事件 | `events.channel-health.changed.consume`（v1） | `eventKey`、状态变化和时间 | 有界的处理结果 |
 | 商户服务事件 | `events.merchant-service.changed.consume`（v1） | `eventKey`、服务 ID、版本、状态和时间 | 有界的处理结果 |
+| 自定义只读能力 | 清单中的 namespaced capability | 符合 `inputSchema` 的 JSON 值 | 符合 `outputSchema` 的 JSON 值；管理员可通过宿主通用入口调用 |
 | 已保存余额快照分析 | `account.balance.snapshot.review.read`（v1） | 本人最多 20 条余额快照 | 摘要、检查项和建议 |
 | 当前余额读取 | `account.balance.snapshot.live-review.read` + `external.account.balance.read`（均为 v1） | 用户本次同意后由宿主返回的当前余额投影 | 摘要、检查项和建议 |
-| 固定页面补充内容 | `uiViews` / `uiContributions` | 插件清单中的静态文本和指标 | 宿主组件渲染的卡片、徽标、指标或表格 |
+| 页面补充内容 | `uiViews` / `uiContributions` / `uiPages` | 静态文本、指标，或绑定只读能力的管理员扩展页 | 宿主组件渲染；扩展页也可调用已授权的只读能力 |
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
-插件不能创建模型、渠道、价卡、菜单、路由、HTTP API、Webhook、计划任务或自定义页面。涉及新模块时，必须先由宿主增加固定入口、输入输出 Schema、权限和页面接线。
+插件不能自行注册服务端路由、模型、渠道、价卡、Webhook 或计划任务。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
+
+```http
+POST /api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke
+Content-Type: application/json
+
+{
+  "capability_version": 1,
+  "input": { "query": "example" }
+}
+```
+
+部署必须已启用、制品已批准、该能力版本已授权；宿主会再次校验 Schema、输入输出大小和部署代次。此接口只执行无副作用的只读能力，不替代外部读取、写入、任务提交或业务动作的专用宿主入口。
+
+自定义能力的输入和输出不限于对象，也可以是数组、字符串、数字、布尔值或 `null`，具体由各自的 Schema 决定。请求外层仍是上例的对象；把所需 JSON 值放在 `input` 字段中。管理页面对对象 Schema 提供字段编辑器，其他类型使用 JSON 输入框；对象编辑器中的“高级 JSON 配置”也可以编辑完整输入。
+
+固定业务页面仍只支持清单声明的宿主渲染视图。需要新业务页面、用户操作或可改变平台状态的功能时，宿主仍需提供对应的数据投影、权限边界和动作确认流程。
 
 ## 2. 宿主实际发送和接收的数据
 
@@ -298,8 +317,57 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | `limits` | 插件自己的并发、超时、输出和分页上限。宿主可以进一步收紧。 |
 | `uiContributions` | 插件管理页的静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
+| `uiPages` | 插件管理页中的管理员扩展页入口，最多 32 项。每页绑定一个已声明的只读、无副作用能力。 |
 
-`uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。
+`uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。`list` 最多 16 项，`notice` 使用 `tone` 标记提示级别，`progress` 使用 0–100 的 `percent`。需要更复杂的页面时，把数据拆成多个视图和组件组合，不要把前端代码塞进插件包。
+
+`uiPages` 用来给插件自己的只读能力提供独立管理页面。宿主使用固定路由和现有 JSON 输入、输出控件；页面只在管理员的插件管理流程中显示。被绑定的能力必须声明为 `read` + `none`，并在当前部署中明确授权。页面输入会按该能力的 `inputSchema` 校验，未填写 `input` 时默认发送 `{}`。例如，模型目录示例可以声明：
+
+```json
+{
+  "uiPages": [
+    {
+      "id": "model-catalog",
+      "schemaVersion": 1,
+      "title": { "zh": "模型目录", "en": "Model catalogue" },
+      "description": { "zh": "查看插件提供的模型资料。", "en": "Browse model information provided by this plugin." },
+      "capabilityId": "catalog.models.read",
+      "capabilityVersion": 1,
+      "input": { "query": null, "cursor": null, "limit": 20 }
+    }
+  ]
+}
+```
+
+`uiPages` 不能注册任意路由、脚本、菜单项或写操作。页面调用仍经过宿主授权接口；插件停用、撤销或取消能力授权后，页面不能继续调用。能力可以返回任意合法 JSON；若返回值为 `{ "blocks": [...] }`，页面会用上面的宿主组件渲染，否则以转义后的 JSON 显示。返回内容必须符合能力自己的 `outputSchema`。新增图表、表单控件或普通用户页面需要扩展宿主组件和权限契约。
+
+动态视图示例：
+
+```json
+{
+  "blocks": [
+    { "type": "metric", "label": { "zh": "模型数量" }, "value": "42" },
+    { "type": "table", "columns": [{ "zh": "模型" }, { "zh": "提供商" }], "rows": [[{ "zh": "示例模型" }, { "zh": "示例厂商" }]] }
+  ]
+}
+```
+
+一个视图示例：
+
+```json
+{
+  "id": "service-status",
+  "schemaVersion": 1,
+  "slot": "merchant_service",
+  "blocks": [
+    { "type": "notice", "title": { "zh": "检查完成" }, "description": { "zh": "发现两项需要关注的配置。" }, "tone": "warning" },
+    { "type": "list", "items": [{ "zh": "模型映射完整" }, { "zh": "价格仍待确认" }] },
+    { "type": "progress", "label": { "zh": "检查进度" }, "percent": 75 }
+  ]
+}
+```
+
+槽位表示 AnyFlows 哪个页面可以展示视图；插件不能自行注册 URL 或任意导航项。平台要增加新的业务页面槽位时，需要在契约中增加槽位，并在对应页面接入宿主渲染器。管理员扩展页通过 `uiPages` 单独接入，只能调用已授权的只读能力。两种方式都不执行第三方前端脚本。
 
 ## 8. Python 处理函数
 
@@ -346,6 +414,19 @@ def review_live_balance(capability_id, public_config, value, context):
 
 渠道健康事件使用 `down` / `recovered`；商户服务事件使用 `active` / `paused`。输入包含稳定的 `eventKey`，重试时保持不变。插件输出会进入持久队列结果页，不会自动变成通知或业务写入。管理员结果接口需要对应的管理 PAT 权限。
 
+插件可以在清单中声明 `eventSubscriptions`，让宿主和管理界面直接知道它要接收哪些事件。例如：
+
+```json
+{
+  "eventKind": "channel.health.changed",
+  "capabilityId": "events.channel-health.changed.consume",
+  "capabilityVersion": 1,
+  "filters": { "status": ["down"] }
+}
+```
+
+当前内置事件目录可通过插件契约的 `plugin_event_catalog()` 查询，包含事件名、输入 Schema、能力名和可过滤字段。过滤条件由宿主在入队前执行；插件不会收到不符合条件的事件。清单中的事件必须存在于目录，并且对应 capability 必须同时声明为 `read` + `none`。新增宿主事件时，需要同步登记契约目录、数据库投递映射和安全投影，再增加业务 producer；不需要改持久队列表结构。
+
 ### 外部账户
 
 快照分析只读取 AnyFlows 已保存的数据。实时读取必须同时满足：用户本次勾选同意、插件拥有分析 capability、部署拥有 `external.account.balance.read@1`。余额读取会保存新的快照，但不会充值、扣款或修改 AnyFlows 钱包。
@@ -379,3 +460,7 @@ def review_live_balance(capability_id, public_config, value, context):
 ### 请求处理
 
 `request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。
+
+当前已接入 Chat 模型请求的 `ingress` 只读观察阶段。已启用且精确获授该能力的本地插件会收到协议、模型、流式标记和消息/工具/附件数量，不会收到提示词、工具参数、原始 Header 或凭据。宿主只记录 finding 的代码和状态，忽略插件返回的拒绝、停止及所有修改提案；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。其余五个阶段以及 Responses、图像、音频和异步任务转发尚未接入实时请求链路。
+
+当宿主显式执行多个阶段时，`continue` 结果中的 `json_patch` 和 `header_patch` 会按顺序应用到下一阶段输入。JSON Patch 只支持 `add`、`replace`、`remove`；中间路径必须存在，`replace` 和 `remove` 的目标项也必须存在，`add` 可新增对象字段或插入数组项。缺失路径、根替换和受保护字段都会使整批提案失败，且不会留下部分修改。头部修改按不区分大小写的名称合并，认证、Cookie、Host、内容长度和协议控制头不能修改。插件只能影响这条插件处理流水线的快照，真实转发、路由、计费和结算仍由宿主决定。

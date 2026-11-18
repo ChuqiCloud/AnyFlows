@@ -75,9 +75,9 @@
     "signatureHint": "自己的插件无需签名。匹配已配置发布者公钥的签名会显示为已验证；其他插件仍可由管理员确认安装。",
     "install": {
       "title": "安装插件",
-      "description": "选择插件包即可安装，无需单独登记或审批。默认只授予公开模型目录的只读能力。",
+      "description": "选择插件包即可安装，无需单独登记。符合输入输出 Schema 的只读无副作用能力会自动授权；外部读取和写入能力仍需单独审核。",
       "package": "插件包",
-      "packageHint": "支持 .afplugin 或 ZIP 格式。系统自动读取插件信息；默认只启用 catalog.models.read/search。",
+      "packageHint": "支持 .afplugin 或 ZIP 格式。系统自动读取插件信息，并按能力声明自动授权安全的自定义只读能力。",
       "configure": "可选配置",
       "submit": "安装并启用",
       "installing": "正在安装…",
@@ -86,7 +86,7 @@
         "packageType": "请选择 .afplugin 或 ZIP 插件包。",
         "configJson": "配置必须是有效的 JSON 对象。",
         "conflict": "安装期间部署状态发生变化。请刷新后重试，避免覆盖并发更新。",
-        "needsReview": "该插件声明了简易安装默认不会授权的能力。请到高级管理中查看并明确授予所需能力。",
+        "needsReview": "该插件声明了外部读取、写入或未提供有效 Schema 的能力。请到高级管理中查看并明确授权。",
         "tooLarge": "插件包超过服务允许的大小，请检查包内容。",
         "invalidPackage": "插件包或配置未通过校验，请检查包格式、兼容版本和必填配置。",
         "forbidden": "当前账号没有安装插件的权限。",
@@ -153,7 +153,27 @@
     },
     "ui": {
       "section": "插件信息",
-      "scope": "由 AnyFlows 展示的静态文本；此处不会运行插件代码或操作。"
+      "scope": "页面由 AnyFlows 安全组件展示；仅调用已授权的只读能力。"
+    },
+    "pages": {
+      "title": "插件页面",
+      "back": "返回插件管理",
+      "refresh": "读取数据",
+      "running": "读取中…",
+      "empty": "点击“读取数据”调用插件的只读能力。",
+      "invalidInput": "请输入有效的 JSON。",
+      "invokeError": "插件读取失败，请检查授权、输入和插件运行状态。",
+      "outputTooLarge": "结果超过页面显示上限，请调整查询条件后重试。",
+      "unavailable": "页面不可用：插件已停用、授权已撤销，或页面配置无效。"
+    },
+    "capabilityConsole": {
+      "title": "调用自定义能力",
+      "description": "调用已授权且无副作用的插件能力。输入和输出仍由插件清单 Schema 与宿主校验；外部读取、写入和任务提交使用专用入口。",
+      "capability": "能力",
+      "run": "运行",
+      "running": "运行中…",
+      "complete": "已完成",
+      "error": "能力调用失败，请检查输入、部署状态和插件日志。"
     },
     "events": {
       "title": "插件事件结果",

@@ -1267,6 +1267,7 @@ impl SidecarSession {
             session.stop().await;
             return Err(SidecarError::InvalidHandshake);
         };
+        let manifest = *manifest;
         if manifest.validate().is_err()
             || manifest.plugin_id != session.artifact.plugin_id
             || manifest.plugin_version != session.artifact.plugin_version
@@ -2185,6 +2186,7 @@ mod tests {
                 input_schema: Some(json!({ "type": "object" })),
                 output_schema: Some(json!({ "type": "object" })),
             }],
+            event_subscriptions: Vec::new(),
             authentication_modes: vec!["none".to_owned()],
             limits: ConnectorLimits {
                 max_concurrency: 1,
@@ -2195,6 +2197,7 @@ mod tests {
             config_schema: json!({ "type": "object" }),
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
+            ui_pages: Vec::new(),
         }
     }
 

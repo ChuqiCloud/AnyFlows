@@ -2842,6 +2842,17 @@ export type PluginCapabilityGrantResponse = {
     id: string;
     version: number;
 };
+export type PluginCapabilityInvocationRequest = {
+    capability_version: number;
+    input: unknown;
+};
+export type PluginCapabilityInvocationResponse = {
+    pluginId: string;
+    deploymentGeneration: number;
+    capabilityId: string;
+    capabilityVersion: number;
+    output: unknown;
+};
 export type PluginCatalogModelPageResponse = {
     source: PluginCatalogSourceResponse;
     models: Array<PluginCatalogModelResponse>;
@@ -11814,6 +11825,28 @@ export type ListAdminPluginDeploymentsResponses = {
     200: PluginDeploymentPageResponse;
 };
 export type ListAdminPluginDeploymentsResponse = ListAdminPluginDeploymentsResponses[keyof ListAdminPluginDeploymentsResponses];
+export type InvokeAdminPluginCapabilityData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        capability_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke';
+};
+export type InvokeAdminPluginCapabilityErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginCapabilityError = InvokeAdminPluginCapabilityErrors[keyof InvokeAdminPluginCapabilityErrors];
+export type InvokeAdminPluginCapabilityResponses = {
+    200: PluginCapabilityInvocationResponse;
+};
+export type InvokeAdminPluginCapabilityResponse = InvokeAdminPluginCapabilityResponses[keyof InvokeAdminPluginCapabilityResponses];
 export type ListAdminPluginEventResultsData = {
     body?: never;
     path?: never;

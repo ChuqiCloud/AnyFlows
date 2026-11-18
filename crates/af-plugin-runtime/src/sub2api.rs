@@ -172,6 +172,7 @@ fn manifest() -> PluginManifest {
             capability(ACCOUNT_PROFILE_READ),
             capability(ACCOUNT_BALANCE_READ),
         ],
+        event_subscriptions: Vec::new(),
         authentication_modes: vec!["bearer_token".to_owned()],
         limits: ConnectorLimits {
             max_concurrency: 4,
@@ -187,6 +188,7 @@ fn manifest() -> PluginManifest {
         }),
         ui_contributions: Vec::new(),
         ui_views: Vec::new(),
+        ui_pages: Vec::new(),
     }
 }
 

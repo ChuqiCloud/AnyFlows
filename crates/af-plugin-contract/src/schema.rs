@@ -17,6 +17,7 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/CapabilityResult" },
             { "$ref": "#/$defs/PluginTaskOperation" },
             { "$ref": "#/$defs/PluginTaskResult" },
+            { "$ref": "#/$defs/PluginEventDefinition" },
             { "$ref": "#/$defs/ProviderRequestTransformInput" },
             { "$ref": "#/$defs/ProviderRequestTransformOutput" },
             { "$ref": "#/$defs/RequestProcessingInput" },
@@ -27,6 +28,7 @@ pub fn schema_document() -> Value {
             { "$ref": "#/$defs/PluginHostResponse" },
             { "$ref": "#/$defs/PluginHostProtocol" },
             { "$ref": "#/$defs/PluginUiView" },
+            { "$ref": "#/$defs/PluginUiPage" },
             { "$ref": "#/$defs/PluginUiBlock" }
         ],
         "$defs": {
@@ -101,11 +103,43 @@ pub fn schema_document() -> Value {
                     "pluginVersion": { "$ref": "#/$defs/PluginVersion" },
                     "contractRange": { "$ref": "#/$defs/ContractVersionRange" },
                     "capabilities": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/CapabilityDeclaration" } },
+                    "eventSubscriptions": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/PluginEventSubscription" } },
                     "authenticationModes": { "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$", "maxLength": 128 } },
                     "limits": { "$ref": "#/$defs/ConnectorLimits" },
                     "configSchema": { "type": "object" },
                     "uiContributions": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiContribution" } },
-                    "uiViews": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiView" } }
+                    "uiViews": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiView" } },
+                    "uiPages": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/PluginUiPage" } }
+                }
+            },
+            "PluginEventSubscription": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["eventKind", "capabilityId", "capabilityVersion"],
+                "properties": {
+                    "eventKind": { "enum": ["channel.health.changed", "merchant.service.changed"] },
+                    "capabilityId": { "type": "string", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "filters": {
+                        "type": "object", "additionalProperties": false,
+                        "properties": { "status": { "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["down", "recovered", "active", "paused"] } } }
+                    }
+                },
+                "allOf": [
+                    { "if": { "properties": { "eventKind": { "const": "channel.health.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.channel-health.changed.consume" }, "capabilityVersion": { "const": 1 }, "filters": { "properties": { "status": { "items": { "enum": ["down", "recovered"] } } } } } } },
+                    { "if": { "properties": { "eventKind": { "const": "merchant.service.changed" } }, "required": ["eventKind"] }, "then": { "properties": { "capabilityId": { "const": "events.merchant-service.changed.consume" }, "capabilityVersion": { "const": 1 }, "filters": { "properties": { "status": { "items": { "enum": ["active", "paused"] } } } } } } }
+                ]
+            },
+            "PluginEventDefinition": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["eventKind", "capabilityId", "capabilityVersion", "payloadSchema", "filterFields"],
+                "properties": {
+                    "eventKind": { "enum": ["channel.health.changed", "merchant.service.changed"] },
+                    "capabilityId": { "type": "string", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "payloadSchema": { "type": "object" },
+                    "filterFields": { "type": "array", "items": { "type": "object" } }
                 }
             },
             "PluginUiContribution": {
@@ -149,12 +183,29 @@ pub fn schema_document() -> Value {
                     "blocks": { "type": "array", "minItems": 1, "maxItems": 24, "items": { "$ref": "#/$defs/PluginUiBlock" } }
                 }
             },
+            "PluginUiPage": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "schemaVersion", "title", "capabilityId", "capabilityVersion"],
+                "properties": {
+                    "id": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$", "minLength": 1, "maxLength": 64 },
+                    "schemaVersion": { "const": 1 },
+                    "title": { "$ref": "#/$defs/PluginUiText" },
+                    "description": { "$ref": "#/$defs/PluginUiText" },
+                    "capabilityId": { "type": "string", "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$", "maxLength": 128 },
+                    "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    "input": {}
+                }
+            },
             "PluginUiBlock": {
                 "oneOf": [
                     { "type": "object", "additionalProperties": false, "required": ["type", "text"], "properties": { "type": { "const": "text" }, "text": { "$ref": "#/$defs/PluginUiText" } } },
                     { "type": "object", "additionalProperties": false, "required": ["type", "label", "tone"], "properties": { "type": { "const": "badge" }, "label": { "$ref": "#/$defs/PluginUiText" }, "tone": { "$ref": "#/$defs/PluginUiTone" } } },
                     { "type": "object", "additionalProperties": false, "required": ["type", "label", "value"], "properties": { "type": { "const": "metric" }, "label": { "$ref": "#/$defs/PluginUiText" }, "value": { "$ref": "#/$defs/PluginUiText" } } },
                     { "type": "object", "additionalProperties": false, "required": ["type", "columns", "rows"], "properties": { "type": { "const": "table" }, "columns": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiText" } }, "rows": { "type": "array", "maxItems": 16, "items": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/PluginUiText" } } } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "items"], "properties": { "type": { "const": "list" }, "items": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/PluginUiText" } } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "title", "tone"], "properties": { "type": { "const": "notice" }, "title": { "$ref": "#/$defs/PluginUiText" }, "description": { "$ref": "#/$defs/PluginUiText" }, "tone": { "$ref": "#/$defs/PluginUiTone" } } },
+                    { "type": "object", "additionalProperties": false, "required": ["type", "label", "percent"], "properties": { "type": { "const": "progress" }, "label": { "$ref": "#/$defs/PluginUiText" }, "percent": { "type": "integer", "minimum": 0, "maximum": 100 } } },
                     { "type": "object", "additionalProperties": false, "required": ["type", "title"], "properties": { "type": { "const": "info_card" }, "title": { "$ref": "#/$defs/PluginUiText" }, "description": { "$ref": "#/$defs/PluginUiText" } } }
                 ]
             },
@@ -768,6 +819,7 @@ mod tests {
                 input_schema: None,
                 output_schema: None,
             }],
+            event_subscriptions: Vec::new(),
             authentication_modes: vec!["api_key".to_owned()],
             limits: crate::ConnectorLimits {
                 max_concurrency: 8,
@@ -801,6 +853,7 @@ mod tests {
                     },
                 }],
             }],
+            ui_pages: Vec::new(),
         };
         let account = ExternalAccountProfile {
             subject: "opaque-123".to_owned(),
@@ -842,7 +895,7 @@ mod tests {
             artifact_sha256: "a".repeat(64),
             deployment_generation: 4,
             request_id: "request-1".to_owned(),
-            result: PluginHostResult::Manifest(manifest.clone()),
+            result: PluginHostResult::Manifest(Box::new(manifest.clone())),
         };
         let proxy_request = PluginProxyRequest {
             protocol_version: 1,

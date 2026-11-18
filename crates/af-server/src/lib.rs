@@ -32,6 +32,7 @@ mod model_price_source;
 mod model_subject;
 mod oauth_connection;
 mod payment_runtime;
+mod plugin_chat_observation;
 mod readiness;
 mod request_outcome_runtime;
 mod request_rate_limit;

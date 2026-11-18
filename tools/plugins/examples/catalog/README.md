@@ -31,7 +31,7 @@ python tools/plugins/package-example.py dist/catalog-example.afplugin
 
 输出包必须尚不存在。命令会复制示例文件和 Python SDK，再生成 `.afplugin` 文件；它只负责打包，不会安装服务器依赖或启动 AnyFlows。
 
-随后管理员在“插件管理”上传并安装。模型资料目录属于公开只读能力，使用简单安装流程即可部署。登录后进入模型页的“插件模型资料”，选中 `Example model catalogue`，输入 `vision` 搜索示例结果。清空搜索词可以查看全部目录；继续翻页时，宿主会把插件上次返回的 `nextCursor` 传回来。
+随后管理员在“插件管理”上传并安装。模型资料目录属于公开只读能力，使用简单安装流程即可部署。管理员可在部署卡片中打开“模型目录”扩展页，按 Schema 输入搜索和分页参数；该页面调用已授权的只读能力，结果以 JSON 显示。用户登录后进入模型页的“插件模型资料”，选中 `Example model catalogue`，输入 `vision` 搜索示例结果。清空搜索词可以查看全部目录；继续翻页时，宿主会把插件上次返回的 `nextCursor` 传回来。
 
 ## 文件说明
 
