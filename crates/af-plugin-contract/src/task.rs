@@ -167,7 +167,7 @@ impl PluginTaskResult {
                 if retry_after_seconds.is_some_and(|seconds| seconds > 86_400) {
                     return Err(TaskContractError::InvalidRetryAdvice);
                 }
-                if retry_after_seconds.is_some() && retryable != Some(true) {
+                if retry_after_seconds.is_some() && *retryable != Some(true) {
                     return Err(TaskContractError::InvalidRetryAdvice);
                 }
             }
