@@ -1567,7 +1567,7 @@ impl SidecarSession {
         input_validator
             .validate(&input)
             .map_err(|_| SidecarError::InvalidConfiguration)?;
-        crate::ensure_json_payload_within_limit(&input, u32::from(route.max_body_bytes) as usize)
+        crate::ensure_json_payload_within_limit(&input, route.max_body_bytes as usize)
             .map_err(|_| SidecarError::FrameTooLarge)?;
         let result = self
             .exchange(
