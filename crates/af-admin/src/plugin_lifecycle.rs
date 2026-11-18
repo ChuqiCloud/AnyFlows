@@ -78,6 +78,17 @@ fn capability_action_input_digest(input: &Value) -> Result<String, AdminPluginLi
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
+fn capability_action_status(status: af_db::PluginCapabilityActionStatus) -> &'static str {
+    match status {
+        af_db::PluginCapabilityActionStatus::Pending => "pending",
+        af_db::PluginCapabilityActionStatus::Executing => "executing",
+        af_db::PluginCapabilityActionStatus::Succeeded => "succeeded",
+        af_db::PluginCapabilityActionStatus::Unknown => "unknown",
+        af_db::PluginCapabilityActionStatus::Expired => "expired",
+        af_db::PluginCapabilityActionStatus::Revoked => "revoked",
+    }
+}
+
 /// A capability is eligible for the one-step installer only when its verified
 /// declaration is schema-bound, read-only, and has no external side effect.
 /// This semantic check deliberately applies to any namespaced capability ID;
@@ -872,11 +883,6 @@ impl DatabaseAdminPluginLifecycleService {
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let capability = CapabilityId::new(capability_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        let task: PluginTaskOperation = serde_json::from_value(input.clone())
-            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        if !matches!(task, PluginTaskOperation::Submit { .. }) {
-            return Err(AdminPluginLifecycleError::InvalidInput);
-        }
         let input_sha256 = capability_action_input_digest(&input)?;
         let deployment = self
             .repository
@@ -896,6 +902,8 @@ impl DatabaseAdminPluginLifecycleService {
             || !declaration
                 .write_semantics
                 .is_some_and(|semantics| semantics.native_idempotency_key)
+            || declaration.input_schema.is_none()
+            || declaration.output_schema.is_none()
             || deployment.artifact.approval.is_none()
             || deployment.artifact.revocation.is_some()
             || !deployment.enabled
@@ -929,7 +937,12 @@ impl DatabaseAdminPluginLifecycleService {
                 expires_at: now.saturating_add(PLUGIN_CAPABILITY_ACTION_TTL_SECONDS),
             })
             .await
-            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+            .map_err(|error| match error {
+                af_db::PluginCapabilityActionRepositoryError::Conflict => {
+                    AdminPluginLifecycleError::Conflict
+                }
+                _ => AdminPluginLifecycleError::Internal,
+            })?;
         self.audit_host_action(
             principal,
             request_id,
@@ -945,7 +958,7 @@ impl DatabaseAdminPluginLifecycleService {
         Ok(AdminPluginCapabilityActionProposal {
             proposal_key: record.proposal_key,
             expires_at: record.expires_at,
-            status: "pending".to_owned(),
+            status: capability_action_status(record.status).to_owned(),
         })
     }
 
@@ -964,11 +977,9 @@ impl DatabaseAdminPluginLifecycleService {
             .get_by_key(proposal_key)
             .await
             .map_err(|_| AdminPluginLifecycleError::NotFound)?;
-        let task: PluginTaskOperation =
-            serde_json::from_value(input).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        if !matches!(task, PluginTaskOperation::Submit { .. }) {
-            return Err(AdminPluginLifecycleError::InvalidInput);
-        }
+        let task = serde_json::from_value::<PluginTaskOperation>(input.clone())
+            .ok()
+            .filter(|task| matches!(task, PluginTaskOperation::Submit { .. }));
         let claimed = repository
             .claim_for_execution(
                 proposal_key,
@@ -983,10 +994,12 @@ impl DatabaseAdminPluginLifecycleService {
             claimed.status,
             af_db::PluginCapabilityActionStatus::Succeeded
                 | af_db::PluginCapabilityActionStatus::Unknown
+                | af_db::PluginCapabilityActionStatus::Expired
+                | af_db::PluginCapabilityActionStatus::Revoked
         ) {
             return Ok(AdminPluginCapabilityActionResult {
                 proposal_key: claimed.proposal_key,
-                status: format!("{:?}", claimed.status).to_ascii_lowercase(),
+                status: capability_action_status(claimed.status).to_owned(),
                 outcome_code: claimed.outcome_code,
             });
         }
@@ -1013,9 +1026,9 @@ impl DatabaseAdminPluginLifecycleService {
             return Err(AdminPluginLifecycleError::Conflict);
         }
         let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
-            format!("plugin-action:{}", proposal_key),
+            format!("plugin-action:{proposal_key}"),
             InvocationMetadata {
-                request_id: request_id.to_owned(),
+                request_id: format!("plugin-action:{proposal_key}"),
                 deadline_unix_ms: u64::try_from(deadline)
                     .unwrap_or(u64::MAX)
                     .saturating_add(30_000),
@@ -1024,28 +1037,48 @@ impl DatabaseAdminPluginLifecycleService {
             PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
         )
         .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        let runtime = self
-            .sidecar_runtime
-            .as_ref()
-            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
-        let result = runtime
-            .invoke_task(
-                &self.repository,
-                &existing.plugin_id,
-                existing.deployment_generation,
-                &invocation,
-                &existing.capability_id,
-                existing.capability_version,
-                task,
-            )
-            .await;
+        let runtime = self.sidecar_runtime.as_ref();
+        let result = match runtime {
+            Some(runtime) => {
+                if let Some(task) = task {
+                    runtime
+                        .invoke_task(
+                            &self.repository,
+                            &existing.plugin_id,
+                            existing.deployment_generation,
+                            &invocation,
+                            &existing.capability_id,
+                            existing.capability_version,
+                            task,
+                        )
+                        .await
+                        .map(|result| match result {
+                            PluginTaskResult::Submitted { .. } => "submitted",
+                            PluginTaskResult::Status { .. } | PluginTaskResult::Result { .. } => {
+                                "completed"
+                            }
+                        })
+                        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)
+                } else {
+                    runtime
+                        .invoke_external_write(
+                            &self.repository,
+                            &existing.plugin_id,
+                            existing.deployment_generation,
+                            &invocation,
+                            &existing.capability_id,
+                            existing.capability_version,
+                            input,
+                        )
+                        .await
+                        .map(|_| "completed")
+                        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)
+                }
+            }
+            None => Err(AdminPluginLifecycleError::RuntimeUnavailable),
+        };
         let (status, outcome_code) = match result {
-            Ok(PluginTaskResult::Submitted { .. }) => {
-                (af_db::PluginCapabilityActionStatus::Succeeded, "submitted")
-            }
-            Ok(PluginTaskResult::Status { .. }) | Ok(PluginTaskResult::Result { .. }) => {
-                (af_db::PluginCapabilityActionStatus::Succeeded, "completed")
-            }
+            Ok(code) => (af_db::PluginCapabilityActionStatus::Succeeded, code),
             Err(_) => (
                 af_db::PluginCapabilityActionStatus::Unknown,
                 "outcome_unknown",

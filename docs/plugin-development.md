@@ -352,7 +352,9 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 }
 ```
 
-钱包、任务 ID、凭据、重试和最终结算仍由宿主负责。动作不会直接获得数据库句柄、钱包权限、任意 URL 或宿主后台 API。
+钱包、任务 ID、凭据、重试和最终结算仍由宿主负责。动作不会直接获得数据库句柄、钱包权限、任意 URL 或宿主后台 API。除任务提交外，动作也可以绑定自定义 JSON 写能力；该能力必须声明完整的 `inputSchema`、`outputSchema` 和 `writeSemantics.nativeIdempotencyKey: true`。通用写动作收到的 `InvocationMetadata.requestId` 固定为 `plugin-action:<proposalKey>`，插件应使用它做幂等去重。
+
+除任务提交外，动作也可以绑定自定义 JSON 写能力。该能力必须声明完整的 `inputSchema`、`outputSchema` 和 `writeSemantics.nativeIdempotencyKey: true`；通用写动作收到的 `InvocationMetadata.requestId` 固定为 `plugin-action:<proposalKey>`，插件应使用它做幂等去重。自定义写入只能作用于插件自己拥有的外部资源，宿主会在确认前后重新检查部署代次、制品摘要、能力授权和输入摘要。执行结果为 `unknown` 时，插件可能已经收到请求，宿主不会自动重试。
 
 动态视图示例：
 

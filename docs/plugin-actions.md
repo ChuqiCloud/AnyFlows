@@ -1,6 +1,6 @@
 # 插件动作确认
 
-当前只有一个可执行的插件动作：根据渠道监控事件，建议启用或停用一个监控目标。
+插件动作分为两类：宿主内置动作（例如渠道监控目标的启停）和插件清单通过 `uiPages.actions[]` 声明的自定义写动作。自定义动作绑定一个已授权的 `write` + `external_write` capability，并且必须声明 `writeSemantics.nativeIdempotencyKey: true`、输入 Schema 和输出 Schema。
 
 插件只能返回“启用”或“停用”的建议。它不能直接修改目标，也不能看到目标 ID、渠道、凭据或模型。管理员必须在控制台再次确认，宿主才会执行修改。
 
@@ -40,9 +40,15 @@ Content-Type: application/json
 - `admin:propose_admin_channel_monitor_target_action:execute`
 - `admin:confirm_admin_channel_monitor_action_proposal:execute`
 
+## 自定义写动作
+
+自定义动作不会直接获得宿主数据库、钱包、凭据或后台接口。宿主只把清单声明的 JSON 输入交给插件，并在执行前后校验部署代次、制品摘要、能力授权和输入摘要。页面先创建 5 分钟提案，管理员确认后才执行；插件收到的 `InvocationMetadata.requestId` 固定为 `plugin-action:<proposalKey>`，用于幂等去重。任务适配插件可以继续使用 `PluginTaskOperation::Submit`，其他插件可以定义自己的 JSON 输入。
+
+确认结果有三种常见状态：`completed` 表示插件返回成功，`submitted` 表示异步任务已经提交，`outcome_unknown` 表示宿主无法确认上游结果。`outcome_unknown` 不能自动重试，需要插件或管理员根据外部系统状态处理。
+
 ## 插件限制
 
-这是宿主登记的固定动作，不是通用写权限。当前动作只允许修改监控目标的 `enabled` 状态。
+宿主内置动作仍只修改它明确负责的业务字段；自定义动作只能写入插件自己拥有的外部资源。
 
 插件不能：
 

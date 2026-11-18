@@ -106,14 +106,7 @@
           "minimum": 1,
           "type": "integer"
         },
-          "input": {},
-          "actions": {
-            "items": {
-              "$ref": "#/$defs/PluginUiAction"
-            },
-            "maxItems": 16,
-            "type": "array"
-          }
+        "input": {}
       },
       "required": [
         "capabilityVersion",

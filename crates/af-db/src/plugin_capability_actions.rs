@@ -19,6 +19,7 @@ const STATUS_EXPIRED: i16 = 5;
 const STATUS_REVOKED: i16 = 6;
 const MAX_OUTCOME_CODE: usize = 128;
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
+const EXECUTING_RECOVERY_AGE_SECONDS: i64 = 600;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PluginCapabilityActionCreate {
@@ -254,6 +255,18 @@ impl PluginCapabilityActionRepository {
                 }
                 transaction.commit().await.map_err(map_db)?;
                 return record(row);
+            }
+            if row.status == STATUS_EXECUTING
+                && row.confirmed_at.is_some_and(|confirmed_at| {
+                    confirmed_at.saturating_add(EXECUTING_RECOVERY_AGE_SECONDS) <= now
+                })
+            {
+                let mut update: plugin_capability_actions::ActiveModel = row.clone().into();
+                update.status = Set(STATUS_UNKNOWN);
+                update.outcome_code = Set(Some("execution_timeout".to_owned()));
+                let updated = update.update(&transaction).await.map_err(map_db)?;
+                transaction.commit().await.map_err(map_db)?;
+                return record(updated);
             }
             if row.status != STATUS_PENDING {
                 transaction.rollback().await.map_err(map_db)?;

@@ -1343,6 +1343,14 @@ mod tests {
                 post(|| async { StatusCode::OK }),
             )
             .route(
+                "/api/admin/plugins/{plugin_id}/capability-actions",
+                post(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/api/admin/plugins/capability-actions/{proposal_key}/confirm",
+                post(|| async { StatusCode::OK }),
+            )
+            .route(
                 "/api/admin/plugins/{plugin_id}/uninstall",
                 post(|| async { StatusCode::OK }),
             )
@@ -1375,6 +1383,14 @@ mod tests {
             (
                 "POST",
                 "/api/admin/plugins/org.example.test/capabilities/vendor.custom.lookup/invoke",
+            ),
+            (
+                "POST",
+                "/api/admin/plugins/org.example.test/capability-actions",
+            ),
+            (
+                "POST",
+                "/api/admin/plugins/capability-actions/proposal-123/confirm",
             ),
             ("POST", "/api/admin/plugins/org.example.catalog/uninstall"),
             ("POST", "/api/admin/plugins/artifacts/1/cleanup"),
@@ -1439,6 +1455,11 @@ mod tests {
             (
                 "POST",
                 "/api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke",
+            ),
+            ("POST", "/api/admin/plugins/{plugin_id}/capability-actions"),
+            (
+                "POST",
+                "/api/admin/plugins/capability-actions/{proposal_key}/confirm",
             ),
             ("POST", "/api/admin/plugins/{plugin_id}/uninstall"),
             ("POST", "/api/admin/plugins/artifacts/{artifact_id}/cleanup"),
