@@ -2074,6 +2074,9 @@
       "$ref": "#/$defs/PluginUiPage"
     },
     {
+      "$ref": "#/$defs/PluginUiAction"
+    },
+    {
       "$ref": "#/$defs/PluginUiBlock"
     }
   ],
