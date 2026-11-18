@@ -173,7 +173,10 @@ impl PluginProviderResult {
             } => {
                 validate_text(method, 16, ProviderContractError::InvalidMethod)?;
                 validate_text(path, 2048, ProviderContractError::InvalidPath)?;
-                if !path.starts_with('/') || headers.len() > 64 || body.is_null() {
+                if !path.starts_with('/') {
+                    return Err(ProviderContractError::InvalidPath);
+                }
+                if headers.len() > 64 || body.is_null() {
                     return Err(ProviderContractError::InvalidPayload);
                 }
             }
