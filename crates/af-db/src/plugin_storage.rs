@@ -97,7 +97,7 @@ impl PluginStorageRepository {
                     .await
                     .map_err(|_| PluginStorageRepositoryError::Query)?;
             if existing.is_some() {
-                let mut model = plugin_storage::ActiveModel {
+                let model = plugin_storage::ActiveModel {
                     plugin_id: Set(plugin_id.to_owned()),
                     storage_key: Set(key.to_owned()),
                     value_json: Set(value),
