@@ -779,9 +779,8 @@ mod tests {
         );
 
         let mut duplicate = value.clone();
-        duplicate.ui_pages[0]
-            .actions
-            .push(duplicate.ui_pages[0].actions[0].clone());
+        let duplicate_action = duplicate.ui_pages[0].actions[0].clone();
+        duplicate.ui_pages[0].actions.push(duplicate_action);
         assert_eq!(
             duplicate.validate(),
             Err(ContractValidationError::InvalidManifest)
