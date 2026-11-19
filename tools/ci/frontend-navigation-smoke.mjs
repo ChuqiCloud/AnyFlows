@@ -109,6 +109,9 @@ try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
   page = await browser.newPage({ viewport: { width: 1280, height: 960 }, locale: 'zh-CN', reducedMotion: 'reduce' })
   page.setDefaultTimeout(20000)
+  // The first navigation also pays Vite's cold dependency scan on a fresh CI runner.
+  // Keep assertion timeouts strict while allowing that one-time compilation to finish.
+  page.setDefaultNavigationTimeout(60000)
   page.on('pageerror', error => errors.push(error.stack || error.message))
   await page.addInitScript(() => {
     const params = new URLSearchParams(window.location.search)

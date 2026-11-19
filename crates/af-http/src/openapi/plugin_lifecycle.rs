@@ -18,10 +18,11 @@ use crate::{
         PluginCredentialInvocationRequest, PluginCredentialInvocationResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
         PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginEventResultPageResponse,
-        PluginEventResultResponse, PluginMarketEntryResponse, PluginMarketPageResponse,
-        PluginPackageInstallRequest, PluginRouteInvocationResponse, PluginRuntimeNodeResponse,
-        PluginRuntimeOverviewResponse, PluginRuntimeStateResponse, PluginTaskInvocationRequest,
-        PluginTaskInvocationResponse, PluginUninstallResponse,
+        PluginEventResultResponse, PluginMarketEntryResponse, PluginMarketInstallHttpRequest,
+        PluginMarketPageResponse, PluginMarketSourceRequest, PluginPackageInstallRequest,
+        PluginRouteInvocationResponse, PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse,
+        PluginRuntimeStateResponse, PluginTaskInvocationRequest, PluginTaskInvocationResponse,
+        PluginUninstallResponse,
     },
 };
 
@@ -45,6 +46,26 @@ use crate::{
     security(("bearerAuth" = []))
 )]
 fn install_admin_plugin_package() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/market/install",
+    operation_id = "installAdminMarketPlugin",
+    tag = "插件市场",
+    summary = "从已验证的市场来源下载并安装插件",
+    request_body = PluginMarketInstallHttpRequest,
+    responses(
+        (status = 200, description = "已下载、校验并安装启用", body = PluginDeploymentResponse),
+        (status = 400, description = "来源、摘要、插件身份或配置无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "缺少插件管理权限", body = ManagementErrorBody),
+        (status = 409, description = "插件身份或部署代次冲突", body = ManagementErrorBody),
+        (status = 413, description = "远程插件包超过大小上限", body = ManagementErrorBody),
+        (status = 503, description = "市场下载器或插件运行时不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn install_admin_market_plugin() {}
 
 #[utoipa::path(
     get,
@@ -275,6 +296,24 @@ fn invoke_user_plugin_route_delete() {}
     security(("bearerAuth" = []))
 )]
 fn list_plugin_market() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/plugins/market/index",
+    operation_id = "fetchPluginMarketIndex",
+    tag = "插件市场",
+    summary = "读取并校验远程插件市场索引",
+    params(("url" = String, Query, max_length = 4096)),
+    responses(
+        (status = 200, description = "经过宿主校验的市场索引", body = serde_json::Value),
+        (status = 400, description = "索引地址或内容无效", body = ManagementErrorBody),
+        (status = 401, description = "需要登录", body = ManagementErrorBody),
+        (status = 413, description = "索引超过大小上限", body = ManagementErrorBody),
+        (status = 503, description = "市场下载器不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn fetch_plugin_market_index() {}
 
 #[utoipa::path(
     post,
@@ -585,6 +624,7 @@ fn list_plugin_catalog_models() {}
 #[openapi(
     paths(
         install_admin_plugin_package,
+        install_admin_market_plugin,
         list_admin_plugin_artifacts,
         list_admin_plugin_deployments,
         invoke_admin_plugin_capability,
@@ -601,6 +641,7 @@ fn list_plugin_catalog_models() {}
         invoke_user_plugin_route_patch,
         invoke_user_plugin_route_delete,
         list_plugin_market,
+        fetch_plugin_market_index,
         propose_admin_plugin_capability_action,
         confirm_admin_plugin_capability_action,
         list_admin_plugin_event_results,
@@ -619,6 +660,7 @@ fn list_plugin_catalog_models() {}
     ),
     components(schemas(
         PluginPackageInstallRequest,
+        PluginMarketInstallHttpRequest,
         PluginActionResponse,
         PluginArtifactApprovalResponse,
         PluginArtifactPageResponse,
@@ -657,6 +699,7 @@ fn list_plugin_catalog_models() {}
         PluginCatalogModelPageResponse,
         PluginMarketEntryResponse,
         PluginMarketPageResponse,
+        PluginMarketSourceRequest,
         ManagementErrorBody
     ))
 )]

@@ -2968,9 +2968,23 @@ export type PluginMarketEntryResponse = {
     publishedAt: number;
     official: boolean;
 };
+export type PluginMarketInstallHttpRequest = {
+    plugin_id: string;
+    plugin_version: string;
+    source: PluginMarketSourceRequest;
+    expected_generation?: number | null;
+};
 export type PluginMarketPageResponse = {
     plugins: Array<PluginMarketEntryResponse>;
     nextBeforeId?: number | null;
+};
+export type PluginMarketSourceRequest = {
+    kind: string;
+    archive_url: string;
+    sha256: string;
+    repository?: string | null;
+    commit?: string | null;
+    path?: string | null;
 };
 export type PluginPackageInstallRequest = {
     package: Blob | File;
@@ -4206,6 +4220,15 @@ export type PluginDeploymentRequestWritable = {
     config: {
         [key: string]: unknown;
     };
+};
+export type PluginMarketInstallHttpRequestWritable = {
+    plugin_id: string;
+    plugin_version: string;
+    source: PluginMarketSourceRequest;
+    config: {
+        [key: string]: unknown;
+    };
+    expected_generation?: number | null;
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
@@ -11831,6 +11854,25 @@ export type InstallAdminPluginPackageResponses = {
     200: PluginDeploymentResponse;
 };
 export type InstallAdminPluginPackageResponse = InstallAdminPluginPackageResponses[keyof InstallAdminPluginPackageResponses];
+export type InstallAdminMarketPluginData = {
+    body: PluginMarketInstallHttpRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/plugins/market/install';
+};
+export type InstallAdminMarketPluginErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    413: ManagementError;
+    503: ManagementError;
+};
+export type InstallAdminMarketPluginError = InstallAdminMarketPluginErrors[keyof InstallAdminMarketPluginErrors];
+export type InstallAdminMarketPluginResponses = {
+    200: PluginDeploymentResponse;
+};
+export type InstallAdminMarketPluginResponse = InstallAdminMarketPluginResponses[keyof InstallAdminMarketPluginResponses];
 export type ListAdminPluginArtifactsData = {
     body?: never;
     path?: never;
@@ -12173,6 +12215,24 @@ export type ListPluginMarketResponses = {
     200: PluginMarketPageResponse;
 };
 export type ListPluginMarketResponse = ListPluginMarketResponses[keyof ListPluginMarketResponses];
+export type FetchPluginMarketIndexData = {
+    body?: never;
+    path?: never;
+    query: {
+        url: string;
+    };
+    url: '/api/account/plugins/market/index';
+};
+export type FetchPluginMarketIndexErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    413: ManagementError;
+    503: ManagementError;
+};
+export type FetchPluginMarketIndexError = FetchPluginMarketIndexErrors[keyof FetchPluginMarketIndexErrors];
+export type FetchPluginMarketIndexResponses = {
+    200: unknown;
+};
 export type ProposeAdminPluginCapabilityActionData = {
     body: PluginCapabilityActionProposalRequest;
     path: {
