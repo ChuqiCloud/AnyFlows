@@ -531,7 +531,7 @@ fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
         | "/api/model-providers"
         | "/api/account/plugin-models/sources"
         | "/api/account/plugin-models/{plugin_id}" => &["models:read"],
-        "/api/account/plugins/market" => &["plugins:read"],
+        "/api/account/plugins/market" | "/api/account/plugins/market/index" => &["plugins:read"],
         "/api/account/plugins/{plugin_id}/routes/{route_id}" => &["plugins:execute"],
         "/api/token-groups" => &["api_keys:read"],
         "/api/tokens" | "/api/tokens/{id}" => {

@@ -20,10 +20,11 @@ use af_db::{
     PluginEventFailureKind,
 };
 use af_domain::PlatformPermission;
+use af_httpclient::{HeaderMap, HttpClientProvider, HttpResponse, Method, PooledClient};
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata,
-    PluginCredentialOperation, PluginId, PluginManifest, PluginRouteMethod, PluginTaskOperation,
-    PluginTaskResult, SideEffectClass,
+    PluginCredentialOperation, PluginId, PluginManifest, PluginMarketIndex, PluginMarketSource,
+    PluginRouteMethod, PluginTaskOperation, PluginTaskResult, SideEffectClass,
 };
 use af_plugin_runtime::{
     PluginStorageDispatcher, VerifiedPluginArtifact, validate_capability_schemas,
@@ -54,6 +55,48 @@ const MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES: usize = 256;
 pub const MAX_PLUGIN_PACKAGE_UPLOAD_BYTES: usize = 128 * 1024 * 1024;
 const STALE_PLUGIN_UPLOAD_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const PLUGIN_CAPABILITY_ACTION_TTL_SECONDS: i64 = 300;
+const MAX_PLUGIN_MARKET_INDEX_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_MARKET_REDIRECTS: usize = 3;
+
+async fn execute_market_get(client: &PooledClient, initial_url: &str) -> Result<HttpResponse, ()> {
+    let initial = url::Url::parse(initial_url).map_err(|_| ())?;
+    let initial_host = initial.host_str().ok_or(())?.to_owned();
+    let mut current = initial;
+    for _ in 0..=MAX_MARKET_REDIRECTS {
+        let response = client
+            .execute(Method::GET, current.as_str(), HeaderMap::new(), None)
+            .await
+            .map_err(|_| ())?;
+        if !response.status().is_redirection() {
+            return Ok(response);
+        }
+        let location = response
+            .headers()
+            .get(http::header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .ok_or(())?;
+        let target = url::Url::parse(location).map_err(|_| ())?;
+        if target.scheme() != "https"
+            || !target.username().is_empty()
+            || target.password().is_some()
+            || !market_redirect_host_allowed(&initial_host, target.host_str().ok_or(())?)
+        {
+            return Err(());
+        }
+        current = target;
+    }
+    Err(())
+}
+
+fn market_redirect_host_allowed(initial: &str, target: &str) -> bool {
+    let initial = initial.to_ascii_lowercase();
+    let target = target.to_ascii_lowercase();
+    target == initial
+        || (initial == "github.com"
+            && (target == "github.com"
+                || target.ends_with(".githubusercontent.com")
+                || target.ends_with(".githubassets.com")))
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,6 +214,17 @@ pub struct AdminPluginMarketEntry {
     pub official: bool,
 }
 
+/// A validated remote artifact selected from a market index. The archive is
+/// downloaded by the host and then passed through the normal package verifier.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PluginMarketInstallRequest {
+    pub plugin_id: String,
+    pub plugin_version: String,
+    pub source: PluginMarketSource,
+    pub config: Value,
+    pub expected_generation: Option<i64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminPluginCredentialInvocationResult {
@@ -194,10 +248,25 @@ pub struct PluginPackageUpload {
     temporary: tempfile::NamedTempFile,
     artifact_root: std::path::PathBuf,
     uploaded: usize,
+    expected_plugin_id: Option<String>,
+    expected_plugin_version: Option<String>,
+    market_source: Option<PluginMarketSource>,
     _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
 impl PluginPackageUpload {
+    pub fn bind_market_source(
+        mut self,
+        plugin_id: String,
+        plugin_version: String,
+        source: PluginMarketSource,
+    ) -> Self {
+        self.expected_plugin_id = Some(plugin_id);
+        self.expected_plugin_version = Some(plugin_version);
+        self.market_source = Some(source);
+        self
+    }
+
     pub async fn write_chunk(&mut self, bytes: &[u8]) -> Result<(), AdminPluginLifecycleError> {
         use tokio::io::AsyncWriteExt as _;
         self.uploaded = self
@@ -594,6 +663,7 @@ pub struct PluginArtifactRegistrationCommand {
     sha256: String,
     signer_key_id: String,
     signature_base64: String,
+    source_reference: Option<String>,
 }
 
 impl PluginArtifactRegistrationCommand {
@@ -636,7 +706,22 @@ impl PluginArtifactRegistrationCommand {
             sha256,
             signer_key_id,
             signature_base64,
+            source_reference: None,
         })
+    }
+
+    pub fn with_source_reference(
+        mut self,
+        source_reference: String,
+    ) -> Result<Self, AdminPluginLifecycleError> {
+        if source_reference.is_empty()
+            || source_reference.len() > 2048
+            || source_reference.chars().any(char::is_control)
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        self.source_reference = Some(source_reference);
+        Ok(self)
     }
 }
 
@@ -652,6 +737,7 @@ impl fmt::Debug for PluginArtifactRegistrationCommand {
             .field("sha256", &self.sha256)
             .field("signer_key_id", &self.signer_key_id)
             .field("signature_base64", &"<redacted>")
+            .field("source_reference", &"<redacted>")
             .finish()
     }
 }
@@ -740,6 +826,7 @@ pub enum AdminPluginLifecycleError {
 pub struct DatabaseAdminPluginLifecycleService {
     repository: PluginCatalogRepository,
     audit: Arc<dyn PlatformAuditService>,
+    market_clients: Option<HttpClientProvider>,
     sidecar_runtime: Option<Arc<AdminPluginSidecarRuntime>>,
     storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     event_delivery_repository: Option<PluginEventDeliveryRepository>,
@@ -780,6 +867,7 @@ impl DatabaseAdminPluginLifecycleService {
         Self {
             repository,
             audit,
+            market_clients: None,
             sidecar_runtime: None,
             storage_dispatcher: None,
             event_delivery_repository: None,
@@ -788,6 +876,12 @@ impl DatabaseAdminPluginLifecycleService {
             )),
             catalog_admission: crate::plugin_catalog_extension::PluginCatalogAdmission::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_market_clients(mut self, clients: HttpClientProvider) -> Self {
+        self.market_clients = Some(clients);
+        self
     }
 
     #[must_use]
@@ -819,6 +913,58 @@ impl DatabaseAdminPluginLifecycleService {
     #[must_use]
     pub fn capability_runtime(&self) -> Option<Arc<AdminPluginSidecarRuntime>> {
         self.sidecar_runtime.clone()
+    }
+
+    /// Fetch and validate a static market index without executing any plugin
+    /// code. The URL is supplied by the authenticated caller but remains
+    /// subject to the managed HTTP client's target policy and strict HTTPS
+    /// validation.
+    pub async fn fetch_market_index(
+        &self,
+        index_url: &str,
+    ) -> Result<PluginMarketIndex, AdminPluginLifecycleError> {
+        let url =
+            url::Url::parse(index_url).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if url.scheme() != "https"
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || index_url.len() > 4096
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let clients = self
+            .market_clients
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let client = clients
+            .get(Some(Duration::from_secs(30)))
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let response = execute_market_get(&client, index_url)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        if !response.status().is_success()
+            || response
+                .content_length()
+                .is_some_and(|length| length > MAX_PLUGIN_MARKET_INDEX_BYTES)
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        if bytes.len() as u64 > MAX_PLUGIN_MARKET_INDEX_BYTES {
+            return Err(AdminPluginLifecycleError::PayloadTooLarge);
+        }
+        let index: PluginMarketIndex =
+            serde_json::from_slice(&bytes).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        index
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        Ok(index)
     }
 
     /// Invoke a plugin-defined, explicitly granted read-only capability. This
@@ -1666,6 +1812,9 @@ impl DatabaseAdminPluginLifecycleService {
             temporary,
             artifact_root,
             uploaded: 0,
+            expected_plugin_id: None,
+            expected_plugin_version: None,
+            market_source: None,
             _permit: permit,
         })
     }
@@ -1704,6 +1853,114 @@ impl DatabaseAdminPluginLifecycleService {
                     "pluginId": deployment.plugin_id(),
                     "generation": deployment.generation(),
                     "digest": deployment.artifact().digest(),
+                })
+            }),
+            result,
+        )
+        .await
+    }
+
+    /// Download an immutable market artifact through the managed HTTP client,
+    /// verify its digest and install it through the same package path as an
+    /// uploaded archive. The caller never supplies a local filesystem path.
+    pub async fn install_market_package(
+        &self,
+        principal: SessionPrincipal,
+        request: PluginMarketInstallRequest,
+        request_id: &str,
+    ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
+        let plugin_id = request.plugin_id.clone();
+        let source_kind = request.source.kind.clone();
+        let source_commit = request.source.commit.clone();
+        self.authorize_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/market/install",
+            "install",
+            "plugin",
+            Some(&plugin_id),
+        )
+        .await?;
+        if PluginId::new(request.plugin_id.clone()).is_err()
+            || af_plugin_contract::PluginVersion::new(request.plugin_version.clone()).is_err()
+            || !request.config.is_object()
+            || request
+                .expected_generation
+                .is_some_and(|generation| generation <= 0)
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        request
+            .source
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let clients = self
+            .market_clients
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let client = clients
+            .get(Some(Duration::from_secs(60)))
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let response = execute_market_get(&client, &request.source.archive_url)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+        if !response.status().is_success() {
+            return Err(AdminPluginLifecycleError::Internal);
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_PLUGIN_PACKAGE_UPLOAD_BYTES as u64)
+        {
+            return Err(AdminPluginLifecycleError::PayloadTooLarge);
+        }
+        let mut upload = self
+            .begin_package_upload(principal, request_id)
+            .await?
+            .bind_market_source(
+                request.plugin_id.clone(),
+                request.plugin_version.clone(),
+                request.source.clone(),
+            );
+        let mut stream = response.into_bytes_stream();
+        let mut hasher = Sha256::new();
+        let mut downloaded = 0usize;
+        while let Some(chunk) = stream.next_chunk().await {
+            let chunk = chunk.map_err(|_| AdminPluginLifecycleError::Internal)?;
+            downloaded = downloaded
+                .checked_add(chunk.len())
+                .filter(|size| *size <= MAX_PLUGIN_PACKAGE_UPLOAD_BYTES)
+                .ok_or(AdminPluginLifecycleError::PayloadTooLarge)?;
+            hasher.update(&chunk);
+            upload.write_chunk(&chunk).await?;
+        }
+        let digest = format!("{:x}", hasher.finalize());
+        if digest != request.source.sha256 {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let result = self
+            .install_package_authorized(
+                principal,
+                upload,
+                request.config,
+                request.expected_generation,
+                request_id,
+            )
+            .await;
+        self.finish_mutation(
+            principal,
+            request_id,
+            "/admin/plugins/market/install",
+            "install",
+            "plugin",
+            Some(plugin_id),
+            None,
+            result.as_ref().ok().map(|deployment| {
+                json!({
+                    "pluginVersion": deployment.artifact().plugin_version(),
+                    "generation": deployment.generation(),
+                    "digest": deployment.artifact().digest(),
+                    "sourceKind": source_kind,
+                    "commit": source_commit,
                 })
             }),
             result,
@@ -1777,6 +2034,17 @@ impl DatabaseAdminPluginLifecycleService {
         }
         let manifest: PluginManifest = serde_json::from_value(imported.manifest.clone())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if upload
+            .expected_plugin_id
+            .as_deref()
+            .is_some_and(|expected| expected != imported.plugin_id)
+            || upload
+                .expected_plugin_version
+                .as_deref()
+                .is_some_and(|expected| expected != imported.plugin_version)
+        {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
         manifest
             .validate()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -1833,6 +2101,17 @@ impl DatabaseAdminPluginLifecycleService {
             signer_key_id,
             signature_base64,
         )?;
+        let command = if let Some(source) = upload.market_source.as_ref() {
+            let source_reference = serde_json::to_string(&json!({
+                "packagePath": imported.package_path.clone(),
+                "executablePath": imported.executable_path.clone(),
+                "origin": source,
+            }))
+            .map_err(|_| AdminPluginLifecycleError::Internal)?;
+            command.with_source_reference(source_reference)?
+        } else {
+            command
+        };
         let artifact = self
             .register_artifact_candidate(principal, command, request_id)
             .await?;
@@ -2406,7 +2685,7 @@ impl DatabaseAdminPluginLifecycleService {
         let plugin_version = artifact.plugin_version().as_str().to_owned();
         let digest = artifact.sha256().to_owned();
         let result = self
-            .persist_verified_artifact(artifact, principal.user_id(), request_id)
+            .persist_verified_artifact(artifact, principal.user_id(), request_id, None)
             .await;
         self.finish_mutation(
             principal,
@@ -2443,6 +2722,7 @@ impl DatabaseAdminPluginLifecycleService {
         let plugin_version = command.plugin_version.clone();
         let digest = command.sha256.clone();
         let result = async {
+            let source_reference_override = command.source_reference.clone();
             let runtime = self
                 .sidecar_runtime
                 .as_ref()
@@ -2459,8 +2739,13 @@ impl DatabaseAdminPluginLifecycleService {
                     command.signature_base64,
                 )
                 .await?;
-            self.persist_verified_artifact(artifact, principal.user_id(), request_id)
-                .await
+            self.persist_verified_artifact(
+                artifact,
+                principal.user_id(),
+                request_id,
+                source_reference_override,
+            )
+            .await
         }
         .await;
         self.finish_mutation(
@@ -2482,6 +2767,7 @@ impl DatabaseAdminPluginLifecycleService {
         artifact: VerifiedPluginArtifact,
         operator: af_domain::UserId,
         request_id: &str,
+        source_reference_override: Option<String>,
     ) -> Result<AdminPluginArtifact, AdminPluginLifecycleError> {
         let source_kind = match artifact.source_kind() {
             "builtin" => PluginArtifactSourceKind::Builtin,
@@ -2501,7 +2787,8 @@ impl DatabaseAdminPluginLifecycleService {
             manifest: serde_json::to_value(artifact.manifest())
                 .map_err(|_| AdminPluginLifecycleError::InvalidInput)?,
             source_kind,
-            source_reference: artifact.source_reference().to_owned(),
+            source_reference: source_reference_override
+                .unwrap_or_else(|| artifact.source_reference().to_owned()),
             signer_key_id: artifact.signer_key_id().to_owned(),
             signature,
             created_at: current_timestamp()?,
@@ -3131,6 +3418,25 @@ mod event_result_tests {
         assert!(!safe_event_result_summary(
             &"x".repeat(MAX_PLUGIN_EVENT_RESULT_SUMMARY_BYTES + 1)
         ));
+    }
+}
+
+#[cfg(test)]
+mod market_source_tests {
+    use super::market_redirect_host_allowed;
+
+    #[test]
+    fn github_release_redirects_are_limited_to_github_asset_hosts() {
+        assert!(market_redirect_host_allowed(
+            "github.com",
+            "release-assets.githubusercontent.com"
+        ));
+        assert!(market_redirect_host_allowed("example.com", "example.com"));
+        assert!(!market_redirect_host_allowed(
+            "github.com",
+            "cdn.example.com"
+        ));
+        assert!(!market_redirect_host_allowed("example.com", "10.0.0.1"));
     }
 }
 

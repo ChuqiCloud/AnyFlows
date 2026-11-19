@@ -2867,6 +2867,7 @@ impl Bootstrap<Supervised> {
                 ),
                 Arc::clone(&self.stage.infrastructure.platform_audit_service),
             )
+            .with_market_clients(self.stage.upstream_clients.clone())
             .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone())
             .with_storage_dispatcher(Some(plugin_storage_dispatcher))
             .with_event_delivery_repository(Some(event_delivery_repository.clone())),

@@ -11,7 +11,7 @@ use af_admin::{
     AdminPluginRouteInvocationResult, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
-    PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
+    PluginMarketInstallRequest, PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
 };
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
@@ -96,6 +96,38 @@ pub(crate) struct PluginPackageInstallRequest {
     /// Required for an explicit update of an existing deployment.
     #[schema(minimum = 1)]
     expected_generation: Option<i64>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PluginMarketInstallHttpRequest)]
+pub(crate) struct PluginMarketInstallHttpRequest {
+    #[schema(min_length = 3, max_length = 128)]
+    plugin_id: String,
+    #[schema(min_length = 5, max_length = 128)]
+    plugin_version: String,
+    source: PluginMarketSourceRequest,
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
+    config: Value,
+    #[schema(minimum = 1)]
+    expected_generation: Option<i64>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PluginMarketSourceRequest {
+    #[schema(min_length = 1, max_length = 32)]
+    kind: String,
+    #[schema(min_length = 8, max_length = 4096)]
+    archive_url: String,
+    #[schema(min_length = 64, max_length = 64, pattern = "^[a-fA-F0-9]{64}$")]
+    sha256: String,
+    #[schema(max_length = 2048)]
+    repository: Option<String>,
+    #[schema(min_length = 40, max_length = 40)]
+    commit: Option<String>,
+    #[schema(max_length = 900)]
+    path: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -636,6 +668,12 @@ struct PluginMarketQuery {
     limit: Option<u32>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginMarketIndexQuery {
+    url: String,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PluginMarketEntryResponse {
@@ -754,6 +792,10 @@ pub fn build_plugin_lifecycle_router(
             )),
         )
         .route(
+            "/api/admin/plugins/market/install",
+            post(install_market_package).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
+        .route(
             "/api/admin/plugins/artifacts",
             get(list_artifacts).post(register_artifact),
         )
@@ -829,6 +871,10 @@ pub fn build_plugin_lifecycle_router(
                 .delete(invoke_user_plugin_route_delete),
         )
         .route("/api/account/plugins/market", get(plugin_market))
+        .route(
+            "/api/account/plugins/market/index",
+            get(plugin_market_index),
+        )
         .route("/api/account/plugin-models/sources", get(catalog_sources))
         .route(
             "/api/account/plugin-models/{plugin_id}",
@@ -1239,6 +1285,18 @@ async fn plugin_market(
     }))
 }
 
+async fn plugin_market_index(
+    State(state): State<PluginLifecycleHttpState>,
+    Query(query): Query<PluginMarketIndexQuery>,
+) -> Result<Response, ManagementError> {
+    let index = state
+        .service
+        .fetch_market_index(&query.url)
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(index))
+}
+
 async fn catalog_models(
     State(state): State<PluginLifecycleHttpState>,
     PathParam(plugin_id): PathParam<String>,
@@ -1317,6 +1375,38 @@ async fn install_package(
             upload,
             config,
             expected_generation,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginDeploymentResponse::from(deployment)))
+}
+
+async fn install_market_package(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginMarketInstallHttpRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let deployment = state
+        .service
+        .install_market_package(
+            authentication.principal(),
+            PluginMarketInstallRequest {
+                plugin_id: request.plugin_id,
+                plugin_version: request.plugin_version,
+                source: af_plugin_contract::PluginMarketSource {
+                    kind: request.source.kind,
+                    archive_url: request.source.archive_url,
+                    sha256: request.source.sha256,
+                    repository: request.source.repository,
+                    commit: request.source.commit,
+                    path: request.source.path,
+                },
+                config: request.config,
+                expected_generation: request.expected_generation,
+            },
             request_id.as_str(),
         )
         .await
