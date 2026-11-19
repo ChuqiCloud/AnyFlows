@@ -13,7 +13,7 @@ use af_admin::{
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
     PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
 };
-use af_plugin_contract::{
+use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
 };
 use af_telemetry::RequestId;

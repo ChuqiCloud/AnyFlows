@@ -2,6 +2,9 @@
 
 pub use af_db::{PluginActionProposalRecord, PluginActionProposalStatus};
 pub use af_plugin_contract::HostActionProposal;
+pub use af_plugin_contract::{
+    PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
+};
 
 mod alipay_verification;
 mod verification_access;
