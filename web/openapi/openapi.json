@@ -48176,7 +48176,7 @@
               "null"
             ],
             "format": "double",
-            "default": 1,
+            "default": 1.0,
             "maximum": 4,
             "minimum": 0.25
           },
@@ -54902,6 +54902,44 @@
           }
         }
       },
+      "PluginMarketInstallHttpRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "plugin_version",
+          "source",
+          "config"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 5
+          },
+          "source": {
+            "$ref": "#/components/schemas/PluginMarketSourceRequest"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
+          },
+          "expected_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "PluginMarketPageResponse": {
         "type": "object",
         "required": [
@@ -54933,19 +54971,19 @@
         "properties": {
           "kind": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 32
+            "maxLength": 32,
+            "minLength": 1
           },
           "archive_url": {
             "type": "string",
-            "minLength": 8,
-            "maxLength": 4096
+            "maxLength": 4096,
+            "minLength": 8
           },
           "sha256": {
             "type": "string",
-            "pattern": "^[a-fA-F0-9]{64}$",
+            "maxLength": 64,
             "minLength": 64,
-            "maxLength": 64
+            "pattern": "^[a-fA-F0-9]{64}$"
           },
           "repository": {
             "type": [
@@ -54959,8 +54997,8 @@
               "string",
               "null"
             ],
-            "minLength": 40,
-            "maxLength": 40
+            "maxLength": 40,
+            "minLength": 40
           },
           "path": {
             "type": [
@@ -54969,7 +55007,8 @@
             ],
             "maxLength": 900
           }
-        }
+        },
+        "additionalProperties": false
       },
       "PluginPackageInstallRequest": {
         "type": "object",
@@ -54996,43 +55035,6 @@
             ],
             "format": "int64",
             "description": "Required for an explicit update of an existing deployment.",
-            "minimum": 1
-          }
-        }
-      },
-      "PluginMarketInstallHttpRequest": {
-        "type": "object",
-        "required": [
-          "plugin_id",
-          "plugin_version",
-          "source",
-          "config"
-        ],
-        "properties": {
-          "plugin_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "plugin_version": {
-            "type": "string",
-            "minLength": 5,
-            "maxLength": 128
-          },
-          "source": {
-            "$ref": "#/components/schemas/PluginMarketSourceRequest"
-          },
-          "config": {
-            "type": "object",
-            "additionalProperties": true,
-            "writeOnly": true
-          },
-          "expected_generation": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
             "minimum": 1
           }
         }
