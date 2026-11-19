@@ -13,6 +13,9 @@ use af_admin::{
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
     PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
 };
+use af_plugin_contract::{
+    PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
+};
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
@@ -135,6 +138,30 @@ pub(crate) struct PluginCapabilityInvocationRequest {
     capability_version: u16,
     #[schema(schema_with = crate::openapi::schema::free_form_json_schema)]
     input: Value,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PluginCredentialInvocationRequest)]
+pub(crate) struct PluginCredentialInvocationRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    credential_id: String,
+    #[schema(minimum = 1, maximum = 65535)]
+    capability_version: u16,
+    #[schema(value_type = serde_json::Value)]
+    operation: PluginCredentialOperation,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PluginTaskInvocationRequest)]
+pub(crate) struct PluginTaskInvocationRequest {
+    #[schema(min_length = 3, max_length = 128)]
+    capability_id: String,
+    #[schema(minimum = 1, maximum = 65535)]
+    capability_version: u16,
+    #[schema(value_type = serde_json::Value)]
+    task: PluginTaskOperation,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -361,6 +388,48 @@ pub(crate) struct PluginCapabilityInvocationResponse {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(as = PluginCredentialInvocationResponse)]
+pub(crate) struct PluginCredentialInvocationResponse {
+    plugin_id: String,
+    deployment_generation: i64,
+    credential_id: String,
+    #[schema(value_type = serde_json::Value)]
+    result: PluginCredentialResult,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginTaskInvocationResponse)]
+pub(crate) struct PluginTaskInvocationResponse {
+    plugin_id: String,
+    deployment_generation: i64,
+    #[schema(value_type = serde_json::Value)]
+    result: PluginTaskResult,
+}
+
+impl From<af_admin::AdminPluginCredentialInvocationResult> for PluginCredentialInvocationResponse {
+    fn from(value: af_admin::AdminPluginCredentialInvocationResult) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+            deployment_generation: value.deployment_generation,
+            credential_id: value.credential_id,
+            result: value.result,
+        }
+    }
+}
+
+impl From<af_admin::AdminPluginTaskInvocationResult> for PluginTaskInvocationResponse {
+    fn from(value: af_admin::AdminPluginTaskInvocationResult) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+            deployment_generation: value.deployment_generation,
+            result: value.result,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 #[schema(as = PluginRouteInvocationResponse)]
 pub(crate) struct PluginRouteInvocationResponse {
     plugin_id: String,
@@ -560,6 +629,52 @@ pub(crate) struct PluginCatalogSourceResponse {
     supports_search: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginMarketQuery {
+    before_id: Option<i64>,
+    limit: Option<u32>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginMarketEntryResponse {
+    plugin_id: String,
+    display_name: String,
+    plugin_version: String,
+    digest: String,
+    source_kind: String,
+    capabilities: Vec<String>,
+    icon: Option<String>,
+    repository: Option<String>,
+    published_at: i64,
+    official: bool,
+}
+
+impl From<af_admin::AdminPluginMarketEntry> for PluginMarketEntryResponse {
+    fn from(value: af_admin::AdminPluginMarketEntry) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+            display_name: value.display_name,
+            plugin_version: value.plugin_version,
+            digest: value.digest,
+            source_kind: value.source_kind,
+            capabilities: value.capabilities,
+            icon: value.icon,
+            repository: value.repository,
+            published_at: value.published_at,
+            official: value.official,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginMarketPageResponse {
+    plugins: Vec<PluginMarketEntryResponse>,
+    next_before_id: Option<i64>,
+}
+
 impl From<af_admin::PluginCatalogSource> for PluginCatalogSourceResponse {
     fn from(value: af_admin::PluginCatalogSource) -> Self {
         Self {
@@ -648,6 +763,14 @@ pub fn build_plugin_lifecycle_router(
             post(invoke_capability).layer(DefaultBodyLimit::max(512 * 1024)),
         )
         .route(
+            "/api/admin/plugins/{plugin_id}/credential-lifecycle",
+            post(invoke_credential_lifecycle).layer(DefaultBodyLimit::max(512 * 1024)),
+        )
+        .route(
+            "/api/admin/plugins/{plugin_id}/tasks",
+            post(invoke_task_direct).layer(DefaultBodyLimit::max(1024 * 1024)),
+        )
+        .route(
             "/api/admin/plugins/{plugin_id}/capability-actions",
             post(propose_capability_action).layer(DefaultBodyLimit::max(512 * 1024)),
         )
@@ -697,6 +820,15 @@ pub fn build_plugin_lifecycle_router(
                 .patch(invoke_plugin_route_patch)
                 .delete(invoke_plugin_route_delete),
         )
+        .route(
+            "/api/account/plugins/{plugin_id}/routes/{route_id}",
+            get(invoke_user_plugin_route_get)
+                .post(invoke_user_plugin_route_post)
+                .put(invoke_user_plugin_route_put)
+                .patch(invoke_user_plugin_route_patch)
+                .delete(invoke_user_plugin_route_delete),
+        )
+        .route("/api/account/plugins/market", get(plugin_market))
         .route("/api/account/plugin-models/sources", get(catalog_sources))
         .route(
             "/api/account/plugin-models/{plugin_id}",
@@ -706,6 +838,52 @@ pub fn build_plugin_lifecycle_router(
         .layer(middleware::from_fn(ensure_request_id))
         .layer(middleware::from_fn(add_no_store))
         .with_state(PluginLifecycleHttpState { service })
+}
+
+async fn invoke_credential_lifecycle(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<PluginCredentialInvocationRequest>,
+) -> Result<Response, ManagementError> {
+    let result = state
+        .service
+        .invoke_plugin_credential(
+            authentication.principal(),
+            &plugin_id,
+            &request.credential_id,
+            request.capability_version,
+            request.operation,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginCredentialInvocationResponse::from(
+        result,
+    )))
+}
+
+async fn invoke_task_direct(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<PluginTaskInvocationRequest>,
+) -> Result<Response, ManagementError> {
+    let result = state
+        .service
+        .invoke_plugin_task_direct(
+            authentication.principal(),
+            &plugin_id,
+            &request.capability_id,
+            request.capability_version,
+            request.task,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginTaskInvocationResponse::from(result)))
 }
 
 async fn invoke_plugin_route_get(
@@ -722,6 +900,7 @@ async fn invoke_plugin_route_get(
         af_admin::PluginRouteMethod::Get,
         Value::Object(serde_json::Map::new()),
         request_id,
+        false,
     )
     .await
 }
@@ -741,6 +920,7 @@ async fn invoke_plugin_route_post(
         af_admin::PluginRouteMethod::Post,
         input,
         request_id,
+        false,
     )
     .await
 }
@@ -760,6 +940,7 @@ async fn invoke_plugin_route_put(
         af_admin::PluginRouteMethod::Put,
         input,
         request_id,
+        false,
     )
     .await
 }
@@ -779,6 +960,7 @@ async fn invoke_plugin_route_patch(
         af_admin::PluginRouteMethod::Patch,
         input,
         request_id,
+        false,
     )
     .await
 }
@@ -798,6 +980,7 @@ async fn invoke_plugin_route_delete(
         af_admin::PluginRouteMethod::Delete,
         input,
         request_id,
+        false,
     )
     .await
 }
@@ -810,20 +993,134 @@ async fn invoke_plugin_route_inner(
     method: af_admin::PluginRouteMethod,
     input: Value,
     request_id: RequestId,
+    user_route: bool,
 ) -> Result<Response, ManagementError> {
-    let result: AdminPluginRouteInvocationResult = state
-        .service
-        .invoke_plugin_route(
-            authentication.principal(),
-            &plugin_id,
-            &route_id,
-            method,
-            input,
-            request_id.as_str(),
-        )
-        .await
-        .map_err(map_service_error)?;
+    let result: AdminPluginRouteInvocationResult = if user_route {
+        state
+            .service
+            .invoke_user_plugin_route(
+                authentication.principal(),
+                &plugin_id,
+                &route_id,
+                method,
+                input,
+                request_id.as_str(),
+            )
+            .await
+    } else {
+        state
+            .service
+            .invoke_plugin_route(
+                authentication.principal(),
+                &plugin_id,
+                &route_id,
+                method,
+                input,
+                request_id.as_str(),
+            )
+            .await
+    }
+    .map_err(map_service_error)?;
     Ok(no_store_json(result))
+}
+
+async fn invoke_user_plugin_route_get(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Get,
+        Value::Object(serde_json::Map::new()),
+        request_id,
+        true,
+    )
+    .await
+}
+
+async fn invoke_user_plugin_route_post(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Post,
+        input,
+        request_id,
+        true,
+    )
+    .await
+}
+
+async fn invoke_user_plugin_route_put(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Put,
+        input,
+        request_id,
+        true,
+    )
+    .await
+}
+
+async fn invoke_user_plugin_route_patch(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Patch,
+        input,
+        request_id,
+        true,
+    )
+    .await
+}
+
+async fn invoke_user_plugin_route_delete(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Delete,
+        input,
+        request_id,
+        true,
+    )
+    .await
 }
 
 async fn runtime_overview(
@@ -923,6 +1220,22 @@ async fn catalog_sources(
     Ok(no_store_json(PluginCatalogSourcePageResponse {
         sources: result.sources.into_iter().map(Into::into).collect(),
         next_cursor: result.next_cursor,
+    }))
+}
+
+async fn plugin_market(
+    State(state): State<PluginLifecycleHttpState>,
+    Query(query): Query<PluginMarketQuery>,
+) -> Result<Response, ManagementError> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let plugins = state
+        .service
+        .list_public_market(query.before_id, limit)
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginMarketPageResponse {
+        plugins: plugins.into_iter().map(Into::into).collect(),
+        next_before_id: None,
     }))
 }
 

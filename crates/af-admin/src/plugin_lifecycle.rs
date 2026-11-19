@@ -21,8 +21,9 @@ use af_db::{
 };
 use af_domain::PlatformPermission;
 use af_plugin_contract::{
-    CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata, PluginId,
-    PluginManifest, PluginRouteMethod, PluginTaskOperation, PluginTaskResult, SideEffectClass,
+    CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata,
+    PluginCredentialOperation, PluginId, PluginManifest, PluginRouteMethod, PluginTaskOperation,
+    PluginTaskResult, SideEffectClass,
 };
 use af_plugin_runtime::{
     PluginStorageDispatcher, VerifiedPluginArtifact, validate_capability_schemas,
@@ -151,6 +152,40 @@ pub struct AdminPluginRouteInvocationResult {
     pub capability_id: String,
     pub capability_version: u16,
     pub output: Value,
+}
+
+/// Public discovery projection used by the plugin market. It contains only
+/// approved artifact metadata and never exposes host paths or configuration.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginMarketEntry {
+    pub plugin_id: String,
+    pub display_name: String,
+    pub plugin_version: String,
+    pub digest: String,
+    pub source_kind: String,
+    pub capabilities: Vec<String>,
+    pub icon: Option<String>,
+    pub repository: Option<String>,
+    pub published_at: i64,
+    pub official: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginCredentialInvocationResult {
+    pub plugin_id: String,
+    pub deployment_generation: i64,
+    pub credential_id: String,
+    pub result: af_plugin_contract::PluginCredentialResult,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginTaskInvocationResult {
+    pub plugin_id: String,
+    pub deployment_generation: i64,
+    pub result: PluginTaskResult,
 }
 
 /// A bounded upload in host-owned storage. Dropping it removes unfinished data.
@@ -928,6 +963,55 @@ impl DatabaseAdminPluginLifecycleService {
         request_id: &str,
     ) -> Result<AdminPluginRouteInvocationResult, AdminPluginLifecycleError> {
         self.authorize(principal).await?;
+        self.invoke_plugin_route_for_audience(
+            principal,
+            plugin_id,
+            route_id,
+            method,
+            input,
+            request_id,
+            af_plugin_contract::PluginRouteAudience::Admin,
+            "/api/admin/plugins/{pluginId}/routes/{routeId}",
+        )
+        .await
+    }
+
+    /// Invoke a user-facing manifest route. User routes are deliberately
+    /// separate from administrator routes and use the caller's own session
+    /// identity in the invocation metadata.
+    pub async fn invoke_user_plugin_route(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        route_id: &str,
+        method: PluginRouteMethod,
+        input: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginRouteInvocationResult, AdminPluginLifecycleError> {
+        self.invoke_plugin_route_for_audience(
+            principal,
+            plugin_id,
+            route_id,
+            method,
+            input,
+            request_id,
+            af_plugin_contract::PluginRouteAudience::User,
+            "/api/account/plugins/{pluginId}/routes/{routeId}",
+        )
+        .await
+    }
+
+    async fn invoke_plugin_route_for_audience(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        route_id: &str,
+        method: PluginRouteMethod,
+        input: Value,
+        request_id: &str,
+        audience: af_plugin_contract::PluginRouteAudience,
+        audit_route: &'static str,
+    ) -> Result<AdminPluginRouteInvocationResult, AdminPluginLifecycleError> {
         let plugin_id_value = PluginId::new(plugin_id.to_owned())
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         if route_id.is_empty()
@@ -965,9 +1049,7 @@ impl DatabaseAdminPluginLifecycleService {
             .iter()
             .find(|route| route.id == route_id)
             .ok_or(AdminPluginLifecycleError::NotFound)?;
-        if route.method != method
-            || route.audience != af_plugin_contract::PluginRouteAudience::Admin
-        {
+        if route.method != method || route.audience != audience {
             return Err(AdminPluginLifecycleError::Forbidden);
         }
         let capability = manifest
@@ -996,7 +1078,7 @@ impl DatabaseAdminPluginLifecycleService {
             .checked_add(u64::from(route.timeout_ms))
             .ok_or(AdminPluginLifecycleError::Internal)?;
         let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
-            format!("admin-route:{}:{}", plugin_id_value.as_str(), route_id),
+            format!("plugin-route:{}:{}", plugin_id_value.as_str(), route_id),
             InvocationMetadata {
                 request_id: request_id.to_owned(),
                 deadline_unix_ms,
@@ -1025,7 +1107,7 @@ impl DatabaseAdminPluginLifecycleService {
         let audit = audit_entry(
             principal,
             request_id,
-            "/api/admin/plugins/{pluginId}/routes/{routeId}",
+            audit_route,
             "invoke_plugin_route",
             "plugin_route",
             Some(format!("{plugin_id}:{route_id}")),
@@ -1055,6 +1137,152 @@ impl DatabaseAdminPluginLifecycleService {
             capability_id: capability.id.as_str().to_owned(),
             capability_version: capability.version,
             output: result.output,
+        })
+    }
+
+    async fn prepare_plugin_operation(
+        &self,
+        plugin_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        request_id: &str,
+        max_bytes: u32,
+    ) -> Result<
+        (
+            PluginDeploymentRecord,
+            af_plugin_runtime::CapabilityExecutionContext,
+        ),
+        AdminPluginLifecycleError,
+    > {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_id = CapabilityId::new(capability_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let deployment = self
+            .repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation <= 0
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+            || !deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == capability_id.as_str() && grant.version == capability_version
+            })
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let now_ms = time::OffsetDateTime::now_utc()
+            .unix_timestamp_nanos()
+            .checked_div(1_000_000)
+            .and_then(|value| u64::try_from(value).ok())
+            .ok_or(AdminPluginLifecycleError::Internal)?;
+        let invocation = af_plugin_runtime::CapabilityExecutionContext::new(
+            format!("plugin-operation:{}", plugin_id.as_str()),
+            InvocationMetadata {
+                request_id: request_id.to_owned(),
+                deadline_unix_ms: now_ms.saturating_add(30_000),
+            },
+            deployment.config.clone(),
+            max_bytes,
+        )
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        Ok((deployment, invocation))
+    }
+
+    pub async fn invoke_plugin_credential(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        credential_id: &str,
+        capability_version: u16,
+        operation: PluginCredentialOperation,
+        request_id: &str,
+    ) -> Result<AdminPluginCredentialInvocationResult, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        if credential_id.is_empty()
+            || credential_id.len() > 128
+            || credential_id.chars().any(char::is_whitespace)
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        operation
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let (deployment, invocation) = self
+            .prepare_plugin_operation(
+                plugin_id,
+                af_plugin_contract::PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY,
+                capability_version,
+                request_id,
+                PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
+            )
+            .await?;
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let result = runtime
+            .invoke_credential(
+                &self.repository,
+                plugin_id,
+                deployment.generation,
+                &invocation,
+                capability_version,
+                operation,
+            )
+            .await?;
+        Ok(AdminPluginCredentialInvocationResult {
+            plugin_id: plugin_id.to_owned(),
+            deployment_generation: deployment.generation,
+            credential_id: credential_id.to_owned(),
+            result,
+        })
+    }
+
+    pub async fn invoke_plugin_task_direct(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        task: PluginTaskOperation,
+        request_id: &str,
+    ) -> Result<AdminPluginTaskInvocationResult, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        task.validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let (deployment, invocation) = self
+            .prepare_plugin_operation(
+                plugin_id,
+                capability_id,
+                capability_version,
+                request_id,
+                PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
+            )
+            .await?;
+        let runtime = self
+            .sidecar_runtime
+            .as_ref()
+            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
+        let result = runtime
+            .invoke_task(
+                &self.repository,
+                plugin_id,
+                deployment.generation,
+                &invocation,
+                capability_id,
+                capability_version,
+                task,
+            )
+            .await?;
+        Ok(AdminPluginTaskInvocationResult {
+            plugin_id: plugin_id.to_owned(),
+            deployment_generation: deployment.generation,
+            result,
         })
     }
 
@@ -2034,6 +2262,64 @@ impl DatabaseAdminPluginLifecycleService {
                 .collect(),
             next_before_id,
         })
+    }
+
+    /// Return approved, non-revoked artifacts for public market discovery.
+    /// Installation and capability approval remain administrator operations.
+    pub async fn list_public_market(
+        &self,
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<AdminPluginMarketEntry>, AdminPluginLifecycleError> {
+        let query =
+            PluginArtifactQuery::new(before_id, limit.min(100)).map_err(map_catalog_error)?;
+        let records = self
+            .repository
+            .list_artifacts(query)
+            .await
+            .map_err(map_catalog_error)?;
+        Ok(records
+            .into_iter()
+            .filter(|record| record.approval.is_some() && record.revocation.is_none())
+            .map(|record| {
+                let manifest = record.manifest.clone();
+                let display_name = manifest
+                    .get("displayName")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(&record.plugin_id)
+                    .to_owned();
+                let capabilities = manifest
+                    .get("capabilities")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.get("id").and_then(Value::as_str))
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                AdminPluginMarketEntry {
+                    plugin_id: record.plugin_id,
+                    display_name,
+                    plugin_version: record.plugin_version,
+                    digest: record.digest,
+                    source_kind: record.source_kind.as_str().to_owned(),
+                    capabilities,
+                    icon: manifest
+                        .get("icon")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    repository: manifest
+                        .get("repository")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    published_at: record.created_at,
+                    official: !record.signer_key_id.is_empty(),
+                }
+            })
+            .collect())
     }
 
     pub async fn list_deployments(

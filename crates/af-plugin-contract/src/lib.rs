@@ -7,9 +7,11 @@
 #![recursion_limit = "256"]
 
 mod capability;
+mod credential;
 mod error;
 mod event;
 mod manifest;
+mod market;
 mod proposal;
 mod provider;
 mod request_processing;
@@ -24,6 +26,10 @@ pub use capability::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityRequirement,
     ExternalWriteSemantics, ResultLookupSupport, SideEffectClass,
 };
+pub use credential::{
+    CredentialContractError, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PluginCredentialOperation,
+    PluginCredentialResult,
+};
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use event::{
     PluginEventDefinition, PluginEventFilterField, PluginEventSubscription, plugin_event_catalog,
@@ -33,6 +39,10 @@ pub use manifest::{
     ConnectorLimits, PluginId, PluginManifest, PluginUiAction, PluginUiBlock, PluginUiComponent,
     PluginUiContribution, PluginUiPage, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView,
     PluginUiViewSlot,
+};
+pub use market::{
+    PluginMarketEngines, PluginMarketEntry, PluginMarketError, PluginMarketIndex,
+    PluginMarketVersion,
 };
 pub use proposal::HostActionProposal;
 pub use provider::{
@@ -53,8 +63,9 @@ pub use storage::{
     PluginStorageResponse, PluginStorageResult, PluginStorageValue,
 };
 pub use task::{
-    MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskOperation,
-    PluginTaskResult, PluginTaskState, TaskContractError,
+    MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskCompletion,
+    PluginTaskFile, PluginTaskFinding, PluginTaskFindingSeverity, PluginTaskOperation,
+    PluginTaskReport, PluginTaskResult, PluginTaskState, TaskContractError,
 };
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,

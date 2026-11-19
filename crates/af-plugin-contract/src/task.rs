@@ -128,6 +128,94 @@ pub enum PluginTaskResult {
     Result { task_id: String, output: Value },
 }
 
+/// A bounded file produced by a completed task. The host stores bytes and
+/// returns a short-lived download reference; plugins never choose a host path.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskFile {
+    pub name: String,
+    pub media_type: String,
+    pub bytes_base64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
+
+impl PluginTaskFile {
+    pub fn validate(&self) -> Result<(), TaskContractError> {
+        validate_text(&self.name, 256, TaskContractError::InvalidFile)?;
+        validate_text(&self.media_type, 128, TaskContractError::InvalidFile)?;
+        if self.bytes_base64.is_empty() || self.bytes_base64.len() > 64 * 1024 * 1024 {
+            return Err(TaskContractError::InvalidFile);
+        }
+        if self.sha256.as_ref().is_some_and(|digest| {
+            digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(TaskContractError::InvalidFile);
+        }
+        Ok(())
+    }
+}
+
+/// Human-readable task report plus machine-readable summary.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskReport {
+    pub title: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<PluginTaskFinding>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskFinding {
+    pub code: String,
+    pub severity: PluginTaskFindingSeverity,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginTaskFindingSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskCompletion {
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<PluginTaskFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<PluginTaskReport>,
+}
+
+impl PluginTaskCompletion {
+    pub fn validate(&self) -> Result<(), TaskContractError> {
+        validate_task_id(&self.task_id)?;
+        if self.files.len() > 64 {
+            return Err(TaskContractError::InvalidFile);
+        }
+        for file in &self.files {
+            file.validate()?;
+        }
+        if let Some(report) = &self.report {
+            validate_text(&report.title, 256, TaskContractError::InvalidReport)?;
+            validate_text(&report.summary, 16 * 1024, TaskContractError::InvalidReport)?;
+            if report.findings.len() > 1024 {
+                return Err(TaskContractError::InvalidReport);
+            }
+            for finding in &report.findings {
+                validate_text(&finding.code, 128, TaskContractError::InvalidReport)?;
+                validate_text(&finding.message, 4096, TaskContractError::InvalidReport)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl PluginTaskResult {
     pub fn validate(&self) -> Result<(), TaskContractError> {
         match self {
@@ -207,6 +295,10 @@ pub enum TaskContractError {
     InvalidCancelReason,
     #[error("task retry advice is invalid")]
     InvalidRetryAdvice,
+    #[error("task file is invalid")]
+    InvalidFile,
+    #[error("task report is invalid")]
+    InvalidReport,
 }
 
 fn validate_task_id(value: &str) -> Result<(), TaskContractError> {
@@ -305,5 +397,29 @@ mod tests {
             bad_progress.validate(),
             Err(TaskContractError::InvalidProgress)
         );
+    }
+
+    #[test]
+    fn task_completion_bounds_files_and_report_without_host_paths() {
+        let completion = PluginTaskCompletion {
+            task_id: "task-1".to_owned(),
+            files: vec![PluginTaskFile {
+                name: "result.json".to_owned(),
+                media_type: "application/json".to_owned(),
+                bytes_base64: "e30=".to_owned(),
+                sha256: None,
+            }],
+            report: Some(PluginTaskReport {
+                title: "完成".to_owned(),
+                summary: "处理完成".to_owned(),
+                findings: vec![PluginTaskFinding {
+                    code: "ok".to_owned(),
+                    severity: PluginTaskFindingSeverity::Info,
+                    message: "ready".to_owned(),
+                }],
+            }),
+        };
+        completion.validate().unwrap();
+        assert!(!serde_json::to_string(&completion).unwrap().contains("/tmp"));
     }
 }

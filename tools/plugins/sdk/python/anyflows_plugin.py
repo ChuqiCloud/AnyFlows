@@ -305,6 +305,7 @@ class Plugin:
         *,
         task_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
         provider_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
+        credential_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
         route_handler: Callable[[str, str, dict[str, Any], dict[str, Any]], Any] | None = None,
         clock_ms: Callable[[], int] | None = None,
     ) -> None:
@@ -312,6 +313,7 @@ class Plugin:
         self.handler = handler
         self.task_handler = task_handler
         self.provider_handler = provider_handler
+        self.credential_handler = credential_handler
         self.route_handler = route_handler
         self.clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
         # The wire envelope has an independent host limit. maxResponseBytes
@@ -390,6 +392,22 @@ class Plugin:
                 if request["deadlineUnixMs"] <= self.clock_ms():
                     raise PluginError("temporarily_unavailable")
                 result = {"kind": "task", "value": output}
+            elif kind == "invoke_credential":
+                declaration = self.declarations.get(operation["capabilityId"])
+                if (
+                    operation["capabilityId"] != "credential.lifecycle"
+                    or not declaration
+                    or declaration["version"] != operation["capabilityVersion"]
+                    or self.credential_handler is None
+                ):
+                    raise PluginError("unsupported")
+                output = self.credential_handler(
+                    operation["capabilityId"], operation["publicConfig"], operation["credential"]
+                )
+                self._validate_credential_result(output)
+                if self._json_size(output) > self.max_response_bytes:
+                    raise PluginError("invalid_response")
+                result = {"kind": "credential", "value": output}
             elif kind == "plugin_route":
                 declaration = self.declarations.get(operation["capabilityId"])
                 route = next(
@@ -414,7 +432,7 @@ class Plugin:
                 if self._json_size(output) > self.max_response_bytes:
                     raise PluginError("invalid_response")
                 result = {"kind": "capability", "value": {"output": output}}
-            else:
+            elif kind == "invoke_provider":
                 declaration = self.declarations.get(operation["capabilityId"])
                 if (
                     not declaration
@@ -533,6 +551,31 @@ class Plugin:
     def _validate_provider_result(value: Any) -> None:
         if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code"}:
             raise PluginError("invalid_response")
+
+    @staticmethod
+    def _validate_credential_result(value: Any) -> None:
+        if not isinstance(value, dict) or not isinstance(value.get("kind"), str):
+            raise PluginError("invalid_response")
+        kind = value["kind"]
+        if kind == "login":
+            if set(value) - {"kind", "authorization_url", "state", "complete"} or type(value.get("complete")) is not bool:
+                raise PluginError("invalid_response")
+        elif kind == "refreshed":
+            if set(value) - {"kind", "expires_at_unix_ms"}:
+                raise PluginError("invalid_response")
+        elif kind == "revoked":
+            if set(value) != {"kind"}:
+                raise PluginError("invalid_response")
+        elif kind == "signed":
+            if set(value) - {"kind", "headers", "query", "body"} or not isinstance(value.get("headers"), dict):
+                raise PluginError("invalid_response")
+            if any(str(name).lower() in {"authorization", "host", "cookie", "content-length", "proxy-authorization"} for name in value["headers"]):
+                raise PluginError("invalid_response")
+        elif kind == "balance":
+            if set(value) - {"kind", "amount", "currency", "as_of_unix_ms"} or not isinstance(value.get("amount"), str) or not isinstance(value.get("currency"), str):
+                raise PluginError("invalid_response")
+        else:
+            raise PluginError("invalid_response")
         kind = value.get("kind")
         if kind == "models":
             models = value.get("models")
@@ -594,7 +637,7 @@ class Plugin:
         ):
             raise ProtocolError("invalid correlation metadata")
         operation = request["operation"]
-        if not isinstance(operation, dict) or operation.get("operation") not in {"manifest", "health", "invoke_capability", "invoke_task", "invoke_provider", "plugin_route"}:
+        if not isinstance(operation, dict) or operation.get("operation") not in {"manifest", "health", "invoke_capability", "invoke_task", "invoke_provider", "invoke_credential", "plugin_route"}:
             raise ProtocolError("invalid operation")
         if operation["operation"] in {"manifest", "health"}:
             if set(operation) != {"operation"}:
@@ -606,6 +649,9 @@ class Plugin:
         elif operation["operation"] == "invoke_provider":
             if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "provider"}:
                 raise ProtocolError("invalid provider operation")
+        elif operation["operation"] == "invoke_credential":
+            if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "credential"}:
+                raise ProtocolError("invalid credential operation")
         elif operation["operation"] == "plugin_route":
             if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "routeId", "input"}:
                 raise ProtocolError("invalid plugin route operation")
@@ -673,6 +719,19 @@ class Plugin:
                 raise ProtocolError("invalid task operation")
             if self._json_size(task) > self.max_response_bytes:
                 raise ProtocolError("task input exceeds advertised limit")
+            return
+        if operation["operation"] == "invoke_credential":
+            credential = operation["credential"]
+            if (
+                not isinstance(credential, dict)
+                or credential.get("kind") not in {"login", "refresh", "revoke", "sign", "balance"}
+                or self._json_size(credential) > self.max_response_bytes
+            ):
+                raise ProtocolError("invalid credential operation")
+            return
+        if operation["operation"] == "invoke_provider":
+            if self._json_size(operation["provider"]) > self.max_response_bytes:
+                raise ProtocolError("provider input exceeds advertised limit")
             return
         if self._json_size(operation["input"]) > self.max_response_bytes:
             raise ProtocolError("capability input exceeds advertised limit")

@@ -20,7 +20,8 @@ use crate::{
 use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
-    InvocationMetadata, PROVIDER_LIFECYCLE_CAPABILITY, PluginHostOperation, PluginHostRequest,
+    InvocationMetadata, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PROVIDER_LIFECYCLE_CAPABILITY,
+    PluginCredentialOperation, PluginCredentialResult, PluginHostOperation, PluginHostRequest,
     PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProviderOperation,
     PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginStorageRequest,
     PluginTaskOperation, PluginTaskResult, PluginVersion, SideEffectClass,
@@ -1760,6 +1761,106 @@ impl SidecarSession {
                     self.stop().await;
                     return Err(SidecarError::SensitivePayload);
                 }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&value)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
+    /// Invoke a credential lifecycle adapter. Credential callbacks are a
+    /// dedicated host operation so OAuth codes and refresh material do not
+    /// get mistaken for public capability input. The host still binds the
+    /// credential identity and stores the secret envelope.
+    pub async fn invoke_host_credential(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        credential: PluginCredentialOperation,
+    ) -> Result<PluginCredentialResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        credential
+            .validate()
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        if capability_id.as_str() != PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        if declaration.version != capability_version
+            || !matches!(
+                declaration.access,
+                CapabilityAccess::Read | CapabilityAccess::Write
+            )
+            || !matches!(
+                declaration.side_effect,
+                SideEffectClass::None
+                    | SideEffectClass::ExternalRead
+                    | SideEffectClass::ExternalWrite
+            )
+        {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let value =
+            serde_json::to_value(&credential).map_err(|_| SidecarError::InvalidConfiguration)?;
+        if contains_sensitive_fields(&self.public_config) {
+            return Err(SidecarError::SensitivePayload);
+        }
+        crate::ensure_json_payload_within_limit(
+            &value,
+            self.manifest.limits.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            CompiledJsonSchema::compile(schema)
+                .map_err(|_| SidecarError::InvalidHandshake)?
+                .validate(&value)
+                .map_err(|_| SidecarError::InvalidConfiguration)?;
+        }
+        match self
+            .exchange(
+                PluginHostOperation::InvokeCredential {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    credential,
+                },
+                self.limits.request_timeout,
+                Some(invocation.metadata()),
+                None,
+            )
+            .await?
+        {
+            PluginHostResult::Credential(result) => {
+                result
+                    .validate()
+                    .map_err(|_| SidecarError::ProtocolViolation)?;
+                let value =
+                    serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
+                crate::ensure_json_payload_within_limit(
+                    &value,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
                 if let Some(schema) = declaration.output_schema.as_ref() {
                     CompiledJsonSchema::compile(schema)
                         .map_err(|_| SidecarError::InvalidHandshake)?

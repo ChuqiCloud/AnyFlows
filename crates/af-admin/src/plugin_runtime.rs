@@ -14,12 +14,13 @@ use af_db::{
     PluginCatalogRepository, PluginDeploymentQuery, PluginDeploymentRecord,
 };
 use af_plugin_contract::{
-    CapabilityId, CapabilityResult, InvocationMetadata, PROVIDER_LIFECYCLE_CAPABILITY,
-    PROVIDER_REQUEST_TRANSFORM_CAPABILITY, PluginId, PluginManifest, PluginProviderOperation,
-    PluginProviderResult, PluginTaskOperation, PluginTaskResult, PluginVersion,
-    ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
-    RequestProcessingInput, RequestProcessingOutput, RequestProcessingPipelineResult,
-    RequestProcessingStage,
+    CapabilityId, CapabilityResult, InvocationMetadata, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY,
+    PROVIDER_LIFECYCLE_CAPABILITY, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
+    PluginCredentialOperation, PluginCredentialResult, PluginId, PluginManifest,
+    PluginProviderOperation, PluginProviderResult, PluginTaskOperation, PluginTaskResult,
+    PluginVersion, ProviderRequestTransformInput, ProviderRequestTransformOutput,
+    REQUEST_PROCESSING_CAPABILITY, RequestProcessingInput, RequestProcessingOutput,
+    RequestProcessingPipelineResult, RequestProcessingStage,
 };
 use af_plugin_runtime::{
     CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher,
@@ -810,6 +811,111 @@ impl AdminPluginSidecarRuntime {
         )
         .await
         .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+    }
+
+    /// Invoke a credential lifecycle adapter through the normal capability
+    /// boundary. The host binds the credential connection and never forwards
+    /// its secret envelope to the plugin.
+    pub async fn invoke_credential(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        operation: PluginCredentialOperation,
+    ) -> Result<PluginCredentialResult, AdminPluginLifecycleError> {
+        operation
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let remaining = invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(
+            remaining,
+            self.invoke_credential_inner(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                capability_version,
+                operation,
+            ),
+        )
+        .await
+        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+    }
+
+    async fn invoke_credential_inner(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        operation: PluginCredentialOperation,
+    ) -> Result<PluginCredentialResult, AdminPluginLifecycleError> {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let generation =
+            u64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let requested_generation =
+            i64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_id = CapabilityId::new(PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let deployment = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation != requested_generation
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+            || !deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == capability_id.as_str() && grant.version == capability_version
+            })
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let current_session = self.supervisor.session(&plugin_id, generation).await;
+        let session_is_running = match current_session {
+            Ok(session) => session
+                .is_process_running(generation)
+                .await
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if !session_is_running {
+            self.apply(repository, &deployment).await?;
+        }
+        let latest = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != requested_generation {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let session = self
+            .supervisor
+            .session(&plugin_id, generation)
+            .await
+            .map_err(map_sidecar_error)?;
+        let invocation = invocation
+            .with_public_config(deployment.config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        session
+            .invoke_host_credential(
+                generation,
+                &invocation,
+                &capability_id,
+                capability_version,
+                operation,
+            )
+            .await
+            .map_err(map_sidecar_error)
     }
 
     async fn invoke_provider_inner(

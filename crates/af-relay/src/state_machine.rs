@@ -1,7 +1,9 @@
 use std::{
     collections::BTreeSet,
     fmt,
+    future::Future,
     num::NonZeroUsize,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -531,6 +533,46 @@ pub struct RelayRequest {
     anthropic_beta: Option<String>,
 }
 
+/// Candidate request projection exposed to a host provider plugin. The host
+/// still owns the credential header and final target policy; a hook may only
+/// return another validated request projection.
+#[derive(Clone)]
+pub struct ProviderRelayRequest {
+    pub model: String,
+    pub operation: Operation,
+    pub method: Method,
+    pub target: String,
+    pub headers: HeaderMap,
+    pub body: Option<Bytes>,
+    pub response_mode: ResponseMode,
+    pub response_body_limit: usize,
+}
+
+#[derive(Clone, Copy)]
+pub struct ProviderRelayResponse<'a> {
+    pub model: &'a str,
+    pub status: StatusCode,
+    pub headers: &'a HeaderMap,
+}
+
+pub type ProviderRelayRequestFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ProviderRelayRequest, UpstreamError>> + Send + 'a>>;
+pub type ProviderRelayResponseFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+
+/// Host adapter for provider lifecycle plugins. It is optional and fail-open:
+/// a plugin failure becomes a normal protocol failure for the current attempt.
+pub trait ProviderRelayHook: Send + Sync {
+    fn transform_request<'a>(
+        &'a self,
+        request: ProviderRelayRequest,
+    ) -> ProviderRelayRequestFuture<'a>;
+
+    fn observe_response<'a>(
+        &'a self,
+        response: ProviderRelayResponse<'a>,
+    ) -> ProviderRelayResponseFuture<'a>;
+}
+
 impl RelayRequest {
     /// 构造候选无关的上游请求；请求体和 Header 的最终校验仍在适配层完成。
     pub fn new(
@@ -784,6 +826,7 @@ pub struct RelayStateMachine {
     candidates: Vec<RelayCandidate>,
     diagnostic_policy: Option<RelayDiagnosticPolicy>,
     execution_policy: RelayExecutionPolicy,
+    provider_hook: Option<Arc<dyn ProviderRelayHook>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -894,6 +937,7 @@ impl RelayStateMachine {
             candidates,
             diagnostic_policy: None,
             execution_policy: RelayExecutionPolicy::default(),
+            provider_hook: None,
         })
     }
 
@@ -913,6 +957,12 @@ impl RelayStateMachine {
     #[must_use]
     pub const fn with_execution_policy(mut self, policy: RelayExecutionPolicy) -> Self {
         self.execution_policy = policy;
+        self
+    }
+
+    #[must_use]
+    pub fn with_provider_hook(mut self, hook: Arc<dyn ProviderRelayHook>) -> Self {
+        self.provider_hook = Some(hook);
         self
     }
 
@@ -1005,6 +1055,7 @@ impl RelayStateMachine {
                     candidates: vec![self.candidates[index].clone()],
                     diagnostic_policy: self.diagnostic_policy,
                     execution_policy: self.execution_policy,
+                    provider_hook: self.provider_hook.clone(),
                 };
                 match child
                     .execute_serial(request.clone(), freeze_continuation, attempt_count.clone())
@@ -1051,6 +1102,7 @@ impl RelayStateMachine {
                 let candidate = self.candidates[candidate_index].clone();
                 let policy = self.execution_policy;
                 let diagnostic_policy = self.diagnostic_policy;
+                let provider_hook = self.provider_hook.clone();
                 let request = request.clone();
                 let attempt_count = attempt_count.clone();
                 tasks.spawn(async move {
@@ -1058,6 +1110,7 @@ impl RelayStateMachine {
                         candidates: vec![candidate],
                         diagnostic_policy,
                         execution_policy: policy,
+                        provider_hook,
                     };
                     (
                         candidate_index,
@@ -1222,22 +1275,51 @@ impl RelayStateMachine {
             } else {
                 request.body.clone()
             };
-            let upstream_request =
-                match UpstreamRequest::new(request.method.clone(), target, headers, outbound_body)
-                    .and_then(|upstream_request| {
-                        upstream_request.with_response_body_limit(request.response_body_limit)
-                    })
-                    .map(|upstream_request| {
-                        upstream_request.with_response_mode(request.response_mode)
-                    }) {
+            let mut provider_request = ProviderRelayRequest {
+                model: candidate_model.to_owned(),
+                operation: request.operation,
+                method: request.method.clone(),
+                target,
+                headers,
+                body: outbound_body,
+                response_mode: request.response_mode,
+                response_body_limit: request.response_body_limit,
+            };
+            if let Some(hook) = self.provider_hook.as_ref() {
+                provider_request = match hook.transform_request(provider_request).await {
                     Ok(request) => request,
                     Err(error) => {
-                        return Err(RelayExecutionError::new(
-                            RelayError::Request(error),
-                            failures,
+                        failures.push(RelayAttemptFailure::new(
+                            index,
+                            error,
+                            attempt_started_at.elapsed(),
                         ));
+                        last_error = Some(RelayError::Upstream(error));
+                        index = self.next_candidate_index(index, error);
+                        continue;
                     }
                 };
+            }
+            let upstream_request = match UpstreamRequest::new(
+                provider_request.method.clone(),
+                provider_request.target.clone(),
+                provider_request.headers.clone(),
+                provider_request.body.clone(),
+            )
+            .and_then(|upstream_request| {
+                upstream_request.with_response_body_limit(provider_request.response_body_limit)
+            })
+            .map(|upstream_request| {
+                upstream_request.with_response_mode(provider_request.response_mode)
+            }) {
+                Ok(request) => request,
+                Err(error) => {
+                    return Err(RelayExecutionError::new(
+                        RelayError::Request(error),
+                        failures,
+                    ));
+                }
+            };
             let upstream_request = match candidate.client_simulation.as_ref() {
                 Some(middleware) => match apply_client_simulation(
                     middleware.as_ref(),
@@ -1419,6 +1501,14 @@ impl RelayStateMachine {
 
             if let Some(diagnostic) = diagnostic.as_mut() {
                 diagnostic.capture_response_head(&response);
+            }
+            if let Some(hook) = self.provider_hook.as_ref() {
+                hook.observe_response(ProviderRelayResponse {
+                    model: candidate_model,
+                    status: response.status(),
+                    headers: response.headers(),
+                })
+                .await;
             }
 
             if response.status().is_success() {

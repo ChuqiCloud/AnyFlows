@@ -511,6 +511,26 @@ Provider 插件可以实现模型发现、请求构造、响应投影、失败�
 
 `request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。
 
-当前已接入 Chat 模型请求的 `ingress` 只读观察阶段。已启用且精确获授该能力的本地插件会收到协议、模型、流式标记和消息/工具/附件数量，不会收到提示词、工具参数、原始 Header 或凭据。宿主只记录 finding 的代码和状态，忽略插件返回的拒绝、停止及所有修改提案；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。其余五个阶段以及 Responses、图像、音频和异步任务转发尚未接入实时请求链路。
+Chat 模型请求已接入 `request` 同步处理和 `ingress` 只读观察。请求阶段只传递协议、模型、流式标记和消息/工具/附件数量；插件可以通过合法的 JSON Patch 修改模型，或拒绝当前请求，不会收到提示词、工具参数、原始 Header 或凭据。宿主仍控制计费和路由；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。`outbound`、`reply`、`report` 的完整流水线以及 Responses、图像、音频和异步任务转发仍按各自服务逐步接入。
 
 当宿主显式执行多个阶段时，`continue` 结果中的 `json_patch` 和 `header_patch` 会按顺序应用到下一阶段输入。JSON Patch 只支持 `add`、`replace`、`remove`；中间路径必须存在，`replace` 和 `remove` 的目标项也必须存在，`add` 可新增对象字段或插入数组项。缺失路径、根替换和受保护字段都会使整批提案失败，且不会留下部分修改。头部修改按不区分大小写的名称合并，认证、Cookie、Host、内容长度和协议控制头不能修改。插件只能影响这条插件处理流水线的快照，真实转发、路由、计费和结算仍由宿主决定。
+
+### 凭据生命周期
+
+需要登录外部平台的插件声明 `credential.lifecycle` 能力。宿主按当前凭据调用 `login`、`refresh`、`revoke`、`sign` 和 `balance` 操作。插件收到的是脱敏的操作参数，不会收到其他用户的凭据、钱包或会话。登录结果可以是授权地址和短期 state；刷新和撤销必须幂等；签名结果只能包含受限 Header、Query 和 Body，不能覆盖 `Authorization`、`Host`、`Cookie` 等宿主保护字段；余额只返回快照，不得修改 AnyFlows 钱包。
+
+### 普通用户路由
+
+清单中的 `routes[].audience` 可以设置为 `user`。这类路由通过 `/api/account/plugins/{plugin_id}/routes/{route_id}` 调用，使用当前用户会话或 PAT，并且只获得宿主授予的 capability。`admin` 路由只能通过 `/api/admin/plugins/...` 调用。两种受众的输入、输出 Schema、超时、部署代次和存储命名空间都由宿主复核；插件不会收到用户会话、模型 Key 或钱包密文。
+
+### 任务文件和报告
+
+任务进入 `succeeded` 后，可以在 `result.output` 中返回 `taskId`、`files` 和 `report`。文件以 base64 传输，单个文件和总数量受宿主限制；宿主校验 SHA-256 后写入受控存储，客户端得到短期下载引用。报告包含标题、摘要和有限数量的 finding，不能携带凭据、价格或内部路径。
+
+### Relay Provider
+
+声明 `provider.lifecycle` 后，插件会在候选发送前收到规范化的模型、请求方法、相对路径、非敏感 Header 和 JSON Body。插件可以返回新的相对路径、Body 和普通 Header。宿主重新绑定上游主机和认证，并过滤保护字段。响应结束后宿主会回调 `response`；非成功响应还会回调 `classify_failure`。插件的失败不会绕过 Relay 的重试、路由或计费权。
+
+### 市场发布
+
+插件可以发布到 GitHub Release 或固定 commit 的仓库。市场索引格式和安装约束见 [插件市场](plugin-market.md)。Release 包必须提供完整 SHA-256；Git 源必须固定 40 位 commit。市场只负责发现，安装仍复用管理员审批、能力授权和多节点分发。

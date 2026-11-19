@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ConnectorError, ContractValidationError, PluginProviderOperation, PluginProviderResult,
-    PluginTaskOperation, PluginTaskResult,
+    ConnectorError, ContractValidationError, PluginCredentialOperation, PluginCredentialResult,
+    PluginProviderOperation, PluginProviderResult, PluginTaskOperation, PluginTaskResult,
 };
 
 pub const PROVIDER_REQUEST_TRANSFORM_CAPABILITY: &str = "provider.request.transform";
@@ -596,6 +596,22 @@ impl PluginHostRequest {
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
+        if let PluginHostOperation::InvokeCredential {
+            connection_id,
+            public_config,
+            capability_id,
+            capability_version,
+            credential,
+        } = &self.operation
+            && (connection_id.is_empty()
+                || connection_id.len() > 128
+                || !public_config.is_object()
+                || capability_id.is_empty()
+                || *capability_version == 0
+                || credential.validate().is_err())
+        {
+            return Err(ContractValidationError::InvalidExternalValue);
+        }
         if let PluginHostOperation::PluginRoute {
             connection_id,
             public_config,
@@ -664,6 +680,17 @@ pub enum PluginHostOperation {
         capability_version: u16,
         provider: PluginProviderOperation,
     },
+    InvokeCredential {
+        #[serde(rename = "connectionId", alias = "connection_id")]
+        connection_id: String,
+        #[serde(rename = "publicConfig", alias = "public_config")]
+        public_config: serde_json::Value,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(rename = "capabilityVersion", alias = "capability_version")]
+        capability_version: u16,
+        credential: PluginCredentialOperation,
+    },
     PluginRoute {
         #[serde(rename = "connectionId", alias = "connection_id")]
         connection_id: String,
@@ -700,6 +727,7 @@ pub enum PluginHostResult {
     Capability(CapabilityResult),
     Task(PluginTaskResult),
     Provider(PluginProviderResult),
+    Credential(PluginCredentialResult),
     Error(ConnectorError),
 }
 

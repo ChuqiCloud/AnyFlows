@@ -189,4 +189,4 @@ plugin_isolation = "auto"
 常见响应：`422 / plugin_lifecycle_capability_review_required` 表示包已保存但还要授权能力；`409 / plugin_lifecycle_conflict` 表示代次或当前状态发生冲突，应先刷新状态。完整参数以 [OpenAPI 文档](../web-next/openapi/openapi.json) 为准。
 ## 数据面扩展契约
 
-`invoke_task`、`provider.request.transform`、Provider 生命周期操作和 `request.processing.read` 已纳入 v1 契约。任务插件的状态、进度、失败码和幂等键由宿主校验；Provider 插件不能选择上游主机、读取认证、修改模型计费字段或返回钱包事实。生命周期结果覆盖模型发现、受限请求构造、响应投影、失败分类和重试建议，宿主保留最终发送、路由、重试和结算权。在实时模型流量中，目前只有 Chat 的 `ingress` 只读观察接入：传递脱敏请求摘要，只保留 finding 代码和状态，忽略拒绝与修改提案；调用超时或失败时继续模型请求。其他请求处理阶段以及 Provider 转换仍是可复用宿主运行时入口，尚未接入 Relay 发送路径。在显式执行的多阶段流水线中，`continue` 提案的 JSON/Header effect 会传递到下一阶段；路径不存在或命中保护字段时调用失败。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。
+`invoke_task`、`provider.request.transform`、Provider 生命周期操作和 `request.processing.read` 已纳入 v1 契约。任务插件的状态、进度、失败码和幂等键由宿主校验；终态 `result` 可返回大小受限的结果文件和报告，文件由宿主保存并生成下载引用，插件不能指定宿主路径。Provider 插件不能选择上游主机、读取认证、修改模型计费字段或返回钱包事实。生命周期结果覆盖模型发现、受限请求构造、响应投影、失败分类和重试建议，宿主保留最终发送、路由、重试和结算权。在实时模型流量中，Chat 的 `request` 阶段已接入同步处理，`ingress` 继续提供脱敏观察；插件可在安全路径上修改模型或返回拒绝，超时和运行时错误按 fail-open 继续模型请求。Provider 请求转换已挂到 Relay 候选发送前，响应和失败分类在候选完成后回调。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。
