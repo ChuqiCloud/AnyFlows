@@ -414,6 +414,7 @@ pub(crate) async fn invoke_read_only_review_with_proxy(
                     capability_version: contract.capability_version,
                     input,
                     proxy_dispatcher,
+                    storage_dispatcher: None,
                     allow_external_write: false,
                 },
             )

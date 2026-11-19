@@ -44,6 +44,20 @@ pub enum PluginEventKind {
     ChannelHealthChanged,
     /// A merchant service moved through a public lifecycle state.
     MerchantServiceChanged,
+    /// A public model catalog record changed.
+    ModelCatalogChanged,
+    /// A channel's public configuration state changed.
+    ChannelConfigChanged,
+    /// A channel credential's public lifecycle state changed.
+    ChannelCredentialChanged,
+    /// A published model price changed.
+    ModelPricingChanged,
+    /// A redacted external account balance observation changed.
+    ExternalAccountBalanceChanged,
+    /// A plugin deployment moved through a lifecycle state.
+    PluginDeploymentChanged,
+    /// A plugin-owned asynchronous task changed state.
+    PluginTaskChanged,
 }
 
 impl PluginEventKind {
@@ -51,6 +65,13 @@ impl PluginEventKind {
         match self {
             Self::ChannelHealthChanged => "channel.health.changed",
             Self::MerchantServiceChanged => "merchant.service.changed",
+            Self::ModelCatalogChanged => "model.catalog.changed",
+            Self::ChannelConfigChanged => "channel.config.changed",
+            Self::ChannelCredentialChanged => "channel.credential.changed",
+            Self::ModelPricingChanged => "model.pricing.changed",
+            Self::ExternalAccountBalanceChanged => "external.account.balance.changed",
+            Self::PluginDeploymentChanged => "plugin.deployment.changed",
+            Self::PluginTaskChanged => "plugin.task.changed",
         }
     }
 
@@ -58,6 +79,13 @@ impl PluginEventKind {
         match value {
             "channel.health.changed" => Ok(Self::ChannelHealthChanged),
             "merchant.service.changed" => Ok(Self::MerchantServiceChanged),
+            "model.catalog.changed" => Ok(Self::ModelCatalogChanged),
+            "channel.config.changed" => Ok(Self::ChannelConfigChanged),
+            "channel.credential.changed" => Ok(Self::ChannelCredentialChanged),
+            "model.pricing.changed" => Ok(Self::ModelPricingChanged),
+            "external.account.balance.changed" => Ok(Self::ExternalAccountBalanceChanged),
+            "plugin.deployment.changed" => Ok(Self::PluginDeploymentChanged),
+            "plugin.task.changed" => Ok(Self::PluginTaskChanged),
             _ => Err(PluginEventDeliveryRepositoryError::Invariant),
         }
     }
@@ -66,6 +94,15 @@ impl PluginEventKind {
         match self {
             Self::ChannelHealthChanged => "events.channel-health.changed.consume",
             Self::MerchantServiceChanged => "events.merchant-service.changed.consume",
+            Self::ModelCatalogChanged => "events.model-catalog.changed.consume",
+            Self::ChannelConfigChanged => "events.channel-config.changed.consume",
+            Self::ChannelCredentialChanged => "events.channel-credential.changed.consume",
+            Self::ModelPricingChanged => "events.model-pricing.changed.consume",
+            Self::ExternalAccountBalanceChanged => {
+                "events.external-account-balance.changed.consume"
+            }
+            Self::PluginDeploymentChanged => "events.plugin-deployment.changed.consume",
+            Self::PluginTaskChanged => "events.plugin-task.changed.consume",
         }
     }
 
@@ -106,6 +143,104 @@ impl PluginEventKind {
                         .and_then(Value::as_str)
                         .is_some_and(|status| matches!(status, "active" | "paused"))
             }
+            Self::ModelCatalogChanged | Self::ModelPricingChanged => {
+                only_keys(
+                    object,
+                    &["eventKey", "modelId", "revision", "status", "observedAt"],
+                ) && valid_event_key_field(object)
+                    && valid_text_field(object, "modelId", 128)
+                    && positive_integer("revision")
+                    && positive_integer("observedAt")
+                    && object
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| match self {
+                            Self::ModelCatalogChanged => {
+                                matches!(status, "added" | "updated" | "removed")
+                            }
+                            Self::ModelPricingChanged => {
+                                matches!(status, "published" | "updated" | "retired")
+                            }
+                            _ => false,
+                        })
+            }
+            Self::ChannelConfigChanged | Self::ChannelCredentialChanged => {
+                only_keys(
+                    object,
+                    &["eventKey", "channelId", "revision", "status", "observedAt"],
+                ) && valid_event_key_field(object)
+                    && positive_integer("channelId")
+                    && positive_integer("revision")
+                    && positive_integer("observedAt")
+                    && object
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| match self {
+                            Self::ChannelConfigChanged => {
+                                matches!(status, "created" | "updated" | "disabled" | "deleted")
+                            }
+                            Self::ChannelCredentialChanged => {
+                                matches!(status, "configured" | "rotated" | "invalid" | "revoked")
+                            }
+                            _ => false,
+                        })
+            }
+            Self::ExternalAccountBalanceChanged => {
+                only_keys(
+                    object,
+                    &["eventKey", "accountRef", "revision", "status", "observedAt"],
+                ) && valid_event_key_field(object)
+                    && valid_text_field(object, "accountRef", 128)
+                    && positive_integer("revision")
+                    && positive_integer("observedAt")
+                    && object
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| {
+                            matches!(
+                                status,
+                                "observed" | "increased" | "decreased" | "unavailable"
+                            )
+                        })
+            }
+            Self::PluginDeploymentChanged => {
+                only_keys(
+                    object,
+                    &["eventKey", "pluginId", "generation", "status", "observedAt"],
+                ) && valid_event_key_field(object)
+                    && valid_text_field(object, "pluginId", 128)
+                    && positive_integer("generation")
+                    && positive_integer("observedAt")
+                    && object
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| {
+                            matches!(status, "installed" | "ready" | "disabled" | "failed")
+                        })
+            }
+            Self::PluginTaskChanged => {
+                only_keys(
+                    object,
+                    &["eventKey", "taskRef", "revision", "status", "observedAt"],
+                ) && valid_event_key_field(object)
+                    && valid_text_field(object, "taskRef", 128)
+                    && positive_integer("revision")
+                    && positive_integer("observedAt")
+                    && object
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| {
+                            matches!(
+                                status,
+                                "submitted"
+                                    | "queued"
+                                    | "running"
+                                    | "succeeded"
+                                    | "failed"
+                                    | "cancelled"
+                            )
+                        })
+            }
         }
     }
 }
@@ -115,6 +250,18 @@ fn valid_event_key_field(object: &serde_json::Map<String, Value>) -> bool {
         .get("eventKey")
         .and_then(Value::as_str)
         .is_some_and(valid_event_key)
+}
+
+fn valid_text_field(object: &serde_json::Map<String, Value>, key: &str, max_len: usize) -> bool {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .is_some_and(|value| {
+            !value.is_empty()
+                && value.len() <= max_len
+                && value.trim() == value
+                && !value.chars().any(char::is_control)
+        })
 }
 
 fn only_keys(object: &serde_json::Map<String, Value>, expected: &[&str]) -> bool {
@@ -513,6 +660,15 @@ fn event_capability(event_kind: &str) -> Option<(&'static str, u16)> {
     match event_kind {
         "channel.health.changed" => Some(("events.channel-health.changed.consume", 1)),
         "merchant.service.changed" => Some(("events.merchant-service.changed.consume", 1)),
+        "model.catalog.changed" => Some(("events.model-catalog.changed.consume", 1)),
+        "channel.config.changed" => Some(("events.channel-config.changed.consume", 1)),
+        "channel.credential.changed" => Some(("events.channel-credential.changed.consume", 1)),
+        "model.pricing.changed" => Some(("events.model-pricing.changed.consume", 1)),
+        "external.account.balance.changed" => {
+            Some(("events.external-account-balance.changed.consume", 1))
+        }
+        "plugin.deployment.changed" => Some(("events.plugin-deployment.changed.consume", 1)),
+        "plugin.task.changed" => Some(("events.plugin-task.changed.consume", 1)),
         _ => None,
     }
 }
@@ -818,6 +974,7 @@ mod tests {
         let event_key = match kind {
             PluginEventKind::ChannelHealthChanged => "channel:12:revision:4",
             PluginEventKind::MerchantServiceChanged => "merchant:88:revision:7",
+            _ => "event:fixture",
         };
         payload
             .as_object_mut()

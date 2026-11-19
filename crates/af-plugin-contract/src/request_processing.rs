@@ -34,6 +34,26 @@ pub enum RequestProcessingStage {
     Report,
 }
 
+impl RequestProcessingStage {
+    /// Whether this stage may carry a bounded request or response effect.
+    ///
+    /// `reply` and `report` are observation-only: a plugin can still return
+    /// findings or a terminal recommendation, but it cannot rewrite the
+    /// payload after the host has started producing the client response.
+    #[must_use]
+    pub const fn allows_effects(self) -> bool {
+        !matches!(self, Self::Reply | Self::Report)
+    }
+
+    /// Whether a terminal plugin action can stop the host pipeline at this
+    /// stage. The host remains responsible for mapping a reject to its public
+    /// protocol error and for deciding whether a stop is retryable.
+    #[must_use]
+    pub const fn allows_terminal_action(self) -> bool {
+        !matches!(self, Self::Report)
+    }
+}
+
 /// A redacted request/response snapshot supplied to a plugin.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -154,6 +174,20 @@ pub struct RequestProcessingPipelineResult {
     pub outputs: Vec<RequestProcessingOutput>,
 }
 
+impl RequestProcessingPipelineResult {
+    /// Return the terminal output, if a stage requested `reject` or `stop`.
+    #[must_use]
+    pub fn terminal_output(&self) -> Option<&RequestProcessingOutput> {
+        self.outputs.iter().find(|output| output.is_terminal())
+    }
+
+    /// Whether the pipeline reached the end of the requested stages.
+    #[must_use]
+    pub fn completed(&self, stages: &[RequestProcessingStage]) -> bool {
+        self.outputs.len() == stages.len() && self.terminal_output().is_none()
+    }
+}
+
 /// The host action requested by a plugin.  The host may downgrade a proposal
 /// according to administrator policy or a failed stage check.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -243,6 +277,32 @@ pub struct RequestProcessingOutput {
 }
 
 impl RequestProcessingOutput {
+    /// Whether this output asks the host to stop before the next stage.
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(
+            self.action,
+            RequestProcessingAction::Reject | RequestProcessingAction::Stop
+        )
+    }
+
+    /// Apply the output using the host's stage policy.
+    ///
+    /// Terminal outputs are deliberately not applied: a plugin must not be
+    /// able to combine a rejection with a hidden request rewrite. The return
+    /// value indicates whether the caller may continue to the next stage.
+    pub fn apply_to(
+        &self,
+        request: &mut RequestProcessingInput,
+    ) -> Result<bool, ContractValidationError> {
+        self.validate_for(request.stage)?;
+        if self.is_terminal() {
+            return Ok(false);
+        }
+        request.apply_effects(&self.effects)?;
+        Ok(true)
+    }
+
     pub fn validate_for(
         &self,
         stage: RequestProcessingStage,
@@ -255,8 +315,8 @@ impl RequestProcessingOutput {
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
-        if matches!(stage, RequestProcessingStage::Report)
-            && (!self.effects.is_empty() || self.action != RequestProcessingAction::Continue)
+        if (!stage.allows_effects() && !self.effects.is_empty())
+            || (!stage.allows_terminal_action() && self.is_terminal())
         {
             return Err(ContractValidationError::InvalidExternalValue);
         }
@@ -629,5 +689,52 @@ mod tests {
         })];
         assert!(value.apply_effects(&effects).is_err());
         assert_eq!(value, original);
+    }
+
+    #[test]
+    fn terminal_output_is_not_applied_to_request_state() {
+        let mut request = input(RequestProcessingStage::Request);
+        let original = request.clone();
+        let output = RequestProcessingOutput {
+            action: RequestProcessingAction::Reject,
+            effects: vec![RequestProcessingEffect::JsonPatch(JsonPatchEffect {
+                operations: vec![JsonPatchOperation {
+                    op: JsonPatchOperationKind::Replace,
+                    path: vec!["body".to_owned()],
+                    value: Some(serde_json::json!({"blocked": true})),
+                }],
+            })],
+            findings: Vec::new(),
+            message: Some("blocked".to_owned()),
+        };
+        assert!(!output.apply_to(&mut request).unwrap());
+        assert_eq!(request, original);
+    }
+
+    #[test]
+    fn reply_and_report_reject_effects_and_terminal_actions() {
+        let effects = RequestProcessingEffect::HeaderPatch(HeaderPatchEffect {
+            set: BTreeMap::from([("x-plugin".to_owned(), "value".to_owned())]),
+            remove: Vec::new(),
+        });
+        for stage in [
+            RequestProcessingStage::Reply,
+            RequestProcessingStage::Report,
+        ] {
+            let output = RequestProcessingOutput {
+                action: RequestProcessingAction::Continue,
+                effects: vec![effects.clone()],
+                findings: Vec::new(),
+                message: None,
+            };
+            assert!(output.validate_for(stage).is_err());
+        }
+        let output = RequestProcessingOutput {
+            action: RequestProcessingAction::Stop,
+            effects: Vec::new(),
+            findings: Vec::new(),
+            message: None,
+        };
+        assert!(output.validate_for(RequestProcessingStage::Report).is_err());
     }
 }

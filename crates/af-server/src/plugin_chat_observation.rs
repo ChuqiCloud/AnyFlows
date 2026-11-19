@@ -7,9 +7,10 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use af_adapter::{Bytes, HeaderName, HeaderValue, Method};
 use af_admin::AdminPluginSidecarRuntime;
 use af_db::{
     PluginArtifactSourceKind, PluginCatalogRepository, PluginDeploymentQuery,
@@ -18,17 +19,23 @@ use af_db::{
 use af_domain::Protocol;
 use af_http::{ChatService, ChatServiceFuture};
 use af_plugin_contract::{
-    REQUEST_PROCESSING_CAPABILITY, RequestProcessingInput, RequestProcessingOutput,
-    RequestProcessingStage,
+    PROVIDER_LIFECYCLE_CAPABILITY, PluginManifest, PluginProviderOperation, PluginProviderResult,
+    REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingInput,
+    RequestProcessingOutput, RequestProcessingStage,
 };
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::RelayDiagnosticInput;
+use af_relay::{
+    ProviderRelayHook, ProviderRelayRequest, ProviderRelayRequestFuture, ProviderRelayResponse,
+    ProviderRelayResponseFuture,
+};
 use futures_util::future::join_all;
 use serde_json::{Value, json};
 use tokio::{
     sync::{Mutex, Semaphore},
     time::Instant,
 };
+use url::Url;
 
 const OBSERVER_CAPABILITY_VERSION: u16 = 1;
 const OBSERVER_CACHE_TTL: Duration = Duration::from_secs(30);
@@ -52,16 +59,40 @@ pub trait ChatIngressObserver: Send + Sync {
     ) -> ObservationFuture<'a>;
 }
 
+/// Synchronous host-controlled request stage. Unlike the legacy observer this
+/// hook runs before billing and may apply only contract-validated effects.
+pub trait ChatRequestProcessor: Send + Sync {
+    fn process<'a>(
+        &'a self,
+        request_id: &'a str,
+        protocol: Protocol,
+        request: CanonicalRequestEnvelope,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<CanonicalRequestEnvelope, af_domain::AfError>> + Send + 'a>,
+    >;
+}
+
 /// Wraps the billed Chat service while leaving its request, response and errors intact.
 pub struct PluginObservedChatService {
     inner: Arc<dyn ChatService>,
     observer: Arc<dyn ChatIngressObserver>,
+    processor: Option<Arc<dyn ChatRequestProcessor>>,
 }
 
 impl PluginObservedChatService {
     #[must_use]
     pub fn new(inner: Arc<dyn ChatService>, observer: Arc<dyn ChatIngressObserver>) -> Self {
-        Self { inner, observer }
+        Self {
+            inner,
+            observer,
+            processor: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_processor(mut self, processor: Arc<dyn ChatRequestProcessor>) -> Self {
+        self.processor = Some(processor);
+        self
     }
 }
 
@@ -75,6 +106,14 @@ impl ChatService for PluginObservedChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
+            let request = match &self.processor {
+                Some(processor) => {
+                    processor
+                        .process(request_id, response_protocol, request)
+                        .await?
+                }
+                None => request,
+            };
             self.observer
                 .observe(request_id, response_protocol, &request)
                 .await;
@@ -100,6 +139,14 @@ impl ChatService for PluginObservedChatService {
         diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
+            let request = match &self.processor {
+                Some(processor) => {
+                    processor
+                        .process(request_id, response_protocol, request)
+                        .await?
+                }
+                None => request,
+            };
             self.observer
                 .observe(request_id, response_protocol, &request)
                 .await;
@@ -126,6 +173,245 @@ struct ObserverTarget {
 struct CachedTargets {
     refreshed_at: Instant,
     targets: Vec<ObserverTarget>,
+}
+
+#[derive(Clone, Debug)]
+struct ProviderTarget {
+    plugin_id: String,
+    generation: i64,
+    capability_version: u16,
+}
+
+/// Connects the versioned Provider adapter to the actual Relay candidate
+/// request and response points. Discovery is cached; the deployment and grant
+/// are rechecked by the admin runtime for every invocation.
+#[derive(Clone)]
+pub struct DatabasePluginProviderRelayHook {
+    repository: PluginCatalogRepository,
+    runtime: Arc<AdminPluginSidecarRuntime>,
+    target: Arc<Mutex<Option<(Instant, ProviderTarget)>>>,
+}
+
+impl DatabasePluginProviderRelayHook {
+    #[must_use]
+    pub fn new(
+        repository: PluginCatalogRepository,
+        runtime: Arc<AdminPluginSidecarRuntime>,
+    ) -> Self {
+        Self {
+            repository,
+            runtime,
+            target: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    async fn provider_target(&self) -> Option<ProviderTarget> {
+        if let Some((at, target)) = self.target.lock().await.clone()
+            && at.elapsed() < OBSERVER_CACHE_TTL
+        {
+            return Some(target);
+        }
+        let mut before = None;
+        for _ in 0..DEPLOYMENT_PAGE_LIMIT {
+            let query = PluginDeploymentQuery::new(before.clone(), DEPLOYMENT_PAGE_SIZE).ok()?;
+            let page = self.repository.list_deployments(query).await.ok()?;
+            if page.is_empty() {
+                break;
+            }
+            for deployment in &page {
+                if !deployment.enabled
+                    || deployment.artifact.approval.is_none()
+                    || deployment.artifact.revocation.is_some()
+                    || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+                {
+                    continue;
+                }
+                let manifest: PluginManifest =
+                    match serde_json::from_value(deployment.artifact.manifest.clone()) {
+                        Ok(manifest) => manifest,
+                        Err(_) => continue,
+                    };
+                let Some(capability) = manifest
+                    .capabilities
+                    .iter()
+                    .find(|capability| capability.id.as_str() == PROVIDER_LIFECYCLE_CAPABILITY)
+                else {
+                    continue;
+                };
+                if deployment.granted_capabilities.iter().any(|grant| {
+                    grant.id == PROVIDER_LIFECYCLE_CAPABILITY && grant.version == capability.version
+                }) {
+                    let target = ProviderTarget {
+                        plugin_id: deployment.plugin_id.clone(),
+                        generation: deployment.generation,
+                        capability_version: capability.version,
+                    };
+                    *self.target.lock().await = Some((Instant::now(), target.clone()));
+                    return Some(target);
+                }
+            }
+            before = page.last().map(|deployment| deployment.plugin_id.clone());
+            if page.len() < DEPLOYMENT_PAGE_SIZE as usize {
+                break;
+            }
+        }
+        None
+    }
+
+    async fn transform(
+        &self,
+        request: ProviderRelayRequest,
+    ) -> Result<ProviderRelayRequest, af_domain::UpstreamError> {
+        let Some(target) = self.provider_target().await else {
+            return Ok(request);
+        };
+        let Some(body) = request.body.as_ref() else {
+            return Ok(request);
+        };
+        let Ok(body) = serde_json::from_slice::<Value>(body) else {
+            return Ok(request);
+        };
+        let invocation = self.invocation(&target, &request.model, "provider-request");
+        let result = match self
+            .runtime
+            .invoke_provider(
+                &self.repository,
+                &target.plugin_id,
+                target.generation,
+                &invocation,
+                target.capability_version,
+                PluginProviderOperation::Request {
+                    model: request.model.clone(),
+                    request: body,
+                },
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(_) => return Ok(request),
+        };
+        let PluginProviderResult::Request {
+            method,
+            path,
+            headers,
+            body,
+        } = result
+        else {
+            return Ok(request);
+        };
+        let mut target_url =
+            Url::parse(&request.target).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+        let (path_only, query) = path
+            .split_once('?')
+            .map_or((path.as_str(), None), |(path, query)| (path, Some(query)));
+        target_url.set_path(path_only);
+        target_url.set_query(query);
+        let method = Method::from_bytes(method.as_bytes())
+            .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+        let mut header_map = request.headers.clone();
+        for (name, value) in headers {
+            if protected_provider_header(&name) {
+                continue;
+            }
+            let name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+            let value = HeaderValue::from_str(&value)
+                .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+            header_map.insert(name, value);
+        }
+        Ok(ProviderRelayRequest {
+            model: request.model,
+            operation: request.operation,
+            method,
+            target: target_url.to_string(),
+            headers: header_map,
+            body: serde_json::to_vec(&body).ok().map(Bytes::from),
+            response_mode: request.response_mode,
+            response_body_limit: request.response_body_limit,
+        })
+    }
+
+    async fn observe(&self, response: ProviderRelayResponse<'_>) {
+        let Some(target) = self.provider_target().await else {
+            return;
+        };
+        let invocation = self.invocation(&target, response.model, "provider-response");
+        let _ = self
+            .runtime
+            .invoke_provider(
+                &self.repository,
+                &target.plugin_id,
+                target.generation,
+                &invocation,
+                target.capability_version,
+                PluginProviderOperation::Response {
+                    status: response.status.as_u16(),
+                    response: serde_json::json!({ "status": response.status.as_u16() }),
+                },
+            )
+            .await;
+        if !response.status.is_success() {
+            let _ = self
+                .runtime
+                .invoke_provider(
+                    &self.repository,
+                    &target.plugin_id,
+                    target.generation,
+                    &invocation,
+                    target.capability_version,
+                    PluginProviderOperation::ClassifyFailure {
+                        status: Some(response.status.as_u16()),
+                        error: serde_json::json!({ "status": response.status.as_u16() }),
+                    },
+                )
+                .await;
+        }
+    }
+
+    fn invocation(
+        &self,
+        target: &ProviderTarget,
+        model: &str,
+        suffix: &str,
+    ) -> af_plugin_runtime::CapabilityExecutionContext {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
+        af_plugin_runtime::CapabilityExecutionContext::new(
+            format!("provider-relay:{}:{}", target.plugin_id, suffix),
+            af_plugin_contract::InvocationMetadata {
+                request_id: format!("provider-relay:{}", model),
+                deadline_unix_ms: now_ms.saturating_add(120),
+            },
+            serde_json::json!({}),
+            256 * 1024,
+        )
+        .expect("provider relay invocation metadata is bounded")
+    }
+}
+
+impl ProviderRelayHook for DatabasePluginProviderRelayHook {
+    fn transform_request<'a>(
+        &'a self,
+        request: ProviderRelayRequest,
+    ) -> ProviderRelayRequestFuture<'a> {
+        Box::pin(async move { self.transform(request).await })
+    }
+
+    fn observe_response<'a>(
+        &'a self,
+        response: ProviderRelayResponse<'a>,
+    ) -> ProviderRelayResponseFuture<'a> {
+        Box::pin(async move { self.observe(response).await })
+    }
+}
+
+fn protected_provider_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "authorization" | "host" | "content-length" | "cookie" | "proxy-authorization"
+    )
 }
 
 /// Selects explicitly enabled, approved and granted request observers.
@@ -289,6 +575,69 @@ impl ChatIngressObserver for DatabasePluginChatIngressObserver {
                     tracing::debug!(target: "anyflows::plugin_observation", "plugin ingress observer request budget exhausted; request continues");
                 }
             });
+        })
+    }
+}
+
+impl ChatRequestProcessor for DatabasePluginChatIngressObserver {
+    fn process<'a>(
+        &'a self,
+        request_id: &'a str,
+        protocol: Protocol,
+        request: CanonicalRequestEnvelope,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<CanonicalRequestEnvelope, af_domain::AfError>> + Send + 'a>,
+    > {
+        let processor = self.clone();
+        Box::pin(async move {
+            let targets = processor.targets_for_request().await;
+            let Some(target) = targets.first().cloned() else {
+                return Ok(request);
+            };
+            let mut input = chat_observer_input(request_id, protocol, &request);
+            input.stage = RequestProcessingStage::Request;
+            input.body["model"] = Value::String(request.canonical().model.clone());
+            input.body["stream"] = Value::Bool(request.canonical().stream);
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| af_domain::AfError::Internal)?
+                .as_millis() as u64;
+            let deadline = now_ms.saturating_add(OBSERVER_PLUGIN_BUDGET.as_millis() as u64);
+            let output = tokio::time::timeout(
+                OBSERVER_PLUGIN_BUDGET,
+                processor.runtime.process_request_stage_with_deadline(
+                    &processor.repository,
+                    &target.plugin_id,
+                    target.generation,
+                    request_id,
+                    deadline,
+                    input.clone(),
+                ),
+            )
+            .await
+            .map_err(|_| af_domain::AfError::Internal)?
+            .map_err(|_| af_domain::AfError::Internal)?;
+            if matches!(
+                output.action,
+                RequestProcessingAction::Reject | RequestProcessingAction::Stop
+            ) {
+                return Err(af_domain::AfError::InvalidRequest);
+            }
+            output
+                .apply_to(&mut input)
+                .map_err(|_| af_domain::AfError::Internal)?;
+            let Some(model) = input.body.get("model").and_then(Value::as_str) else {
+                return Ok(request);
+            };
+            if model.is_empty() || model.len() > 256 {
+                return Err(af_domain::AfError::InvalidRequest);
+            }
+            if model == request.canonical().model {
+                Ok(request)
+            } else {
+                let sampling = request.canonical().sampling.clone();
+                Ok(request.with_routed_parameters(model.to_owned(), sampling))
+            }
         })
     }
 }

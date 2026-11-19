@@ -2950,6 +2950,14 @@ export type PluginPackageInstallRequest = {
     config?: string | null;
     expected_generation?: number | null;
 };
+export type PluginRouteInvocationResponse = {
+    pluginId: string;
+    routeId: string;
+    deploymentGeneration: number;
+    capabilityId: string;
+    capabilityVersion: number;
+    output: unknown;
+};
 export type PluginRuntimeNodeResponse = {
     nodeId: string;
     hostLabel: string;
@@ -11867,6 +11875,111 @@ export type InvokeAdminPluginCapabilityResponses = {
     200: PluginCapabilityInvocationResponse;
 };
 export type InvokeAdminPluginCapabilityResponse = InvokeAdminPluginCapabilityResponses[keyof InvokeAdminPluginCapabilityResponses];
+export type InvokeAdminPluginRouteDeleteData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeAdminPluginRouteDeleteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginRouteDeleteError = InvokeAdminPluginRouteDeleteErrors[keyof InvokeAdminPluginRouteDeleteErrors];
+export type InvokeAdminPluginRouteDeleteResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeAdminPluginRouteDeleteResponse = InvokeAdminPluginRouteDeleteResponses[keyof InvokeAdminPluginRouteDeleteResponses];
+export type InvokeAdminPluginRouteGetData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeAdminPluginRouteGetErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginRouteGetError = InvokeAdminPluginRouteGetErrors[keyof InvokeAdminPluginRouteGetErrors];
+export type InvokeAdminPluginRouteGetResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeAdminPluginRouteGetResponse = InvokeAdminPluginRouteGetResponses[keyof InvokeAdminPluginRouteGetResponses];
+export type InvokeAdminPluginRoutePatchData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeAdminPluginRoutePatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginRoutePatchError = InvokeAdminPluginRoutePatchErrors[keyof InvokeAdminPluginRoutePatchErrors];
+export type InvokeAdminPluginRoutePatchResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeAdminPluginRoutePatchResponse = InvokeAdminPluginRoutePatchResponses[keyof InvokeAdminPluginRoutePatchResponses];
+export type InvokeAdminPluginRoutePostData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeAdminPluginRoutePostErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginRoutePostError = InvokeAdminPluginRoutePostErrors[keyof InvokeAdminPluginRoutePostErrors];
+export type InvokeAdminPluginRoutePostResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeAdminPluginRoutePostResponse = InvokeAdminPluginRoutePostResponses[keyof InvokeAdminPluginRoutePostResponses];
+export type InvokeAdminPluginRoutePutData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeAdminPluginRoutePutErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginRoutePutError = InvokeAdminPluginRoutePutErrors[keyof InvokeAdminPluginRoutePutErrors];
+export type InvokeAdminPluginRoutePutResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeAdminPluginRoutePutResponse = InvokeAdminPluginRoutePutResponses[keyof InvokeAdminPluginRoutePutResponses];
 export type ProposeAdminPluginCapabilityActionData = {
     body: PluginCapabilityActionProposalRequest;
     path: {

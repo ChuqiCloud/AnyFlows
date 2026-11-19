@@ -531,6 +531,8 @@ fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
         | "/api/model-providers"
         | "/api/account/plugin-models/sources"
         | "/api/account/plugin-models/{plugin_id}" => &["models:read"],
+        "/api/account/plugins/market" => &["plugins:read"],
+        "/api/account/plugins/{plugin_id}/routes/{route_id}" => &["plugins:execute"],
         "/api/token-groups" => &["api_keys:read"],
         "/api/tokens" | "/api/tokens/{id}" => {
             if read {
@@ -707,6 +709,8 @@ fn scope_label(scope: &str) -> &str {
         "api_keys:read" => "读取本人模型 Key",
         "api_keys:write" => "管理本人模型 Key",
         "models:read" => "读取模型目录",
+        "plugins:execute" => "调用已授权的普通用户插件路由",
+        "plugins:read" => "读取插件市场和版本信息",
         "usage:read" => "读取本人用量与审计",
         "billing:read" => "读取本人账单",
         "billing:write" => "管理本人充值与兑换",

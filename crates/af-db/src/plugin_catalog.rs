@@ -45,7 +45,7 @@ pub enum PluginArtifactSourceKind {
 }
 
 impl PluginArtifactSourceKind {
-    const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Builtin => "builtin",
             Self::LocalProcess => "local_process",
