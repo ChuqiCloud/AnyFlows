@@ -14,7 +14,7 @@ use std::{
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorTarget, Bytes, ClientSimulationContext,
     ClientSimulationMiddleware, Credential, HeaderMap, HeaderName, HeaderValue, Method, Operation,
-    RelayContext, ResponseMode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
+    RelayContext, ResponseMode, StatusCode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
     apply_client_simulation,
 };
 use af_domain::{
