@@ -66,6 +66,7 @@ example.afplugin
 | `uiContributions` | 插件管理页静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
 | `uiPages` | 管理员扩展页，最多 32 项；页面数据绑定只读能力，`actions[]` 可绑定经确认、具备幂等语义的 `external_write` 能力。 |
+| `routes[].audience=model_key` | 使用模型调用 Key 的宿主路由，地址为 `/api/plugins/{plugin_id}/routes/{route_id}` 或 `/v1/plugins/{plugin_id}/{route_id}`。 |
 
 视图使用宿主组件渲染，支持 `text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。`list` 最多 16 项，`progress.percent` 必须在 0 到 100 之间；插件不能注入 HTML、CSS、脚本、链接或按钮。复杂内容应组合多个视图，保持数据和展示分离。
 

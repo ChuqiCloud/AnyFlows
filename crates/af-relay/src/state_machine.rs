@@ -45,6 +45,7 @@ pub struct RelayCandidate {
     client_simulation: Option<Arc<dyn ClientSimulationMiddleware>>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
     channel_group: Option<ChannelId>,
+    credential_binding: Option<i64>,
     transport: TransportDispatcher,
     attempt_gate: Option<Arc<dyn RelayAttemptGate>>,
     retry_limit: Option<u8>,
@@ -67,6 +68,7 @@ impl RelayCandidate {
             client_simulation: None,
             client_profile: None,
             channel_group: None,
+            credential_binding: None,
             transport: TransportDispatcher::http(),
             attempt_gate: None,
             retry_limit: None,
@@ -112,6 +114,12 @@ impl RelayCandidate {
     #[must_use]
     pub const fn with_channel_group(mut self, channel_id: ChannelId) -> Self {
         self.channel_group = Some(channel_id);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_credential_binding(mut self, credential_id: i64) -> Self {
+        self.credential_binding = Some(credential_id);
         self
     }
 
@@ -538,6 +546,11 @@ pub struct RelayRequest {
 /// return another validated request projection.
 #[derive(Clone)]
 pub struct ProviderRelayRequest {
+    pub request_id: String,
+    pub credential_id: Option<i64>,
+    pub channel_id: Option<ChannelId>,
+    /// Immutable plugin selection for this attempt; never used as authorization.
+    pub binding: Option<ProviderRelayBinding>,
     pub model: String,
     pub operation: Operation,
     pub method: Method,
@@ -546,6 +559,13 @@ pub struct ProviderRelayRequest {
     pub body: Option<Bytes>,
     pub response_mode: ResponseMode,
     pub response_body_limit: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProviderRelayBinding {
+    pub plugin_id: String,
+    pub generation: i64,
+    pub capability_version: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -558,6 +578,18 @@ pub struct ProviderRelayResponse<'a> {
 pub type ProviderRelayRequestFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ProviderRelayRequest, UpstreamError>> + Send + 'a>>;
 pub type ProviderRelayResponseFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+pub type ProviderRelayTransformFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UpstreamResponse, UpstreamError>> + Send + 'a>>;
+pub type ProviderRelayFailureFuture<'a> =
+    Pin<Box<dyn Future<Output = ProviderRelayFailureAction> + Send + 'a>>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProviderRelayFailureAction {
+    Continue,
+    RetryCurrent { delay: Duration },
+    RouteToNext,
+    Abort,
+}
 
 /// Host adapter for provider lifecycle plugins. It is optional and fail-open:
 /// a plugin failure becomes a normal protocol failure for the current attempt.
@@ -571,6 +603,25 @@ pub trait ProviderRelayHook: Send + Sync {
         &'a self,
         response: ProviderRelayResponse<'a>,
     ) -> ProviderRelayResponseFuture<'a>;
+
+    fn classify_failure<'a>(
+        &'a self,
+        request: &'a ProviderRelayRequest,
+        status: Option<StatusCode>,
+        error: UpstreamError,
+    ) -> ProviderRelayFailureFuture<'a> {
+        let _ = (request, status, error);
+        Box::pin(async { ProviderRelayFailureAction::Continue })
+    }
+
+    fn transform_response<'a>(
+        &'a self,
+        request: &'a ProviderRelayRequest,
+        response: UpstreamResponse,
+    ) -> ProviderRelayTransformFuture<'a> {
+        let _ = request;
+        Box::pin(async { Ok(response) })
+    }
 }
 
 impl RelayRequest {
@@ -872,6 +923,26 @@ fn classify_failure_action(
         FailureAction::RouteToNextCandidate
     } else {
         FailureAction::AbortRequest
+    }
+}
+
+// Suggestions can restrict host policy, but cannot make client/policy errors retryable.
+fn merge_provider_failure(
+    host: FailureAction,
+    advice: ProviderRelayFailureAction,
+) -> FailureAction {
+    match (host, advice) {
+        (FailureAction::AbortRequest, _) | (_, ProviderRelayFailureAction::Abort) => {
+            FailureAction::AbortRequest
+        }
+        (_, ProviderRelayFailureAction::RouteToNext) => FailureAction::RouteToNextCandidate,
+        (action, _) => action,
+    }
+}
+fn provider_retry_delay(advice: ProviderRelayFailureAction, default: Duration) -> Duration {
+    match advice {
+        ProviderRelayFailureAction::RetryCurrent { delay } => delay.min(Duration::from_secs(30)),
+        _ => default,
     }
 }
 
@@ -1276,6 +1347,14 @@ impl RelayStateMachine {
                 request.body.clone()
             };
             let mut provider_request = ProviderRelayRequest {
+                request_id: candidate
+                    .context
+                    .request_id()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("relay-{index}")),
+                credential_id: candidate.credential_binding,
+                channel_id: candidate.channel_group,
+                binding: None,
                 model: candidate_model.to_owned(),
                 operation: request.operation,
                 method: request.method.clone(),
@@ -1459,16 +1538,34 @@ impl RelayStateMachine {
                             .with_client_simulation(client_simulation),
                     );
                     last_error = Some(RelayError::Upstream(mapped));
+                    let provider_action = if let Some(hook) = self.provider_hook.as_ref() {
+                        hook.classify_failure(&provider_request, None, mapped).await
+                    } else {
+                        ProviderRelayFailureAction::Continue
+                    };
+                    if matches!(provider_action, ProviderRelayFailureAction::Abort) {
+                        return Err(RelayExecutionError::new(
+                            RelayError::Upstream(mapped),
+                            failures,
+                        ));
+                    }
                     let limit = candidate
                         .retry_limit
                         .unwrap_or(self.execution_policy.retry_limit);
                     let retry_same_candidate = is_same_candidate_retryable(mapped)
                         && reserve_candidate_retry(&mut retry_counts, index, limit);
-                    match classify_failure_action(mapped, retry_same_candidate, false, false) {
+                    match merge_provider_failure(
+                        classify_failure_action(mapped, retry_same_candidate, false, false),
+                        provider_action,
+                    ) {
                         FailureAction::RetryCurrentCandidate => {
-                            let delay = candidate
-                                .retry_delay_ms
-                                .map_or(self.execution_policy.retry_delay, Duration::from_millis);
+                            let delay = provider_retry_delay(
+                                provider_action,
+                                candidate.retry_delay_ms.map_or(
+                                    self.execution_policy.retry_delay,
+                                    Duration::from_millis,
+                                ),
+                            );
                             if !delay.is_zero() {
                                 sleep(delay).await;
                             }
@@ -1509,6 +1606,25 @@ impl RelayStateMachine {
                     headers: response.headers(),
                 })
                 .await;
+            }
+
+            if response.status().is_success()
+                && let Some(hook) = self.provider_hook.as_ref()
+            {
+                response = match hook.transform_response(&provider_request, response).await {
+                    Ok(response) => response,
+                    Err(error) => {
+                        release_attempt_permit(permit).await;
+                        failures.push(
+                            RelayAttemptFailure::new(index, error, attempt_started_at.elapsed())
+                                .with_diagnostic(diagnostic)
+                                .with_client_simulation(client_simulation),
+                        );
+                        last_error = Some(RelayError::Upstream(error));
+                        index = self.next_candidate_index(index, error);
+                        continue;
+                    }
+                };
             }
 
             if response.status().is_success() {
@@ -1661,11 +1777,23 @@ impl RelayStateMachine {
                 .unwrap_or(self.execution_policy.retry_limit);
             let retry_same_candidate = is_same_candidate_retryable(classified)
                 && reserve_candidate_retry(&mut retry_counts, index, limit);
-            match classify_failure_action(classified, retry_same_candidate, false, false) {
+            let advice = if let Some(hook) = self.provider_hook.as_ref() {
+                hook.classify_failure(&provider_request, Some(status), classified)
+                    .await
+            } else {
+                ProviderRelayFailureAction::Continue
+            };
+            match merge_provider_failure(
+                classify_failure_action(classified, retry_same_candidate, false, false),
+                advice,
+            ) {
                 FailureAction::RetryCurrentCandidate => {
-                    let delay = candidate
-                        .retry_delay_ms
-                        .map_or(self.execution_policy.retry_delay, Duration::from_millis);
+                    let delay = provider_retry_delay(
+                        advice,
+                        candidate
+                            .retry_delay_ms
+                            .map_or(self.execution_policy.retry_delay, Duration::from_millis),
+                    );
                     if !delay.is_zero() {
                         sleep(delay).await;
                     }

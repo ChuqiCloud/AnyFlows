@@ -4,11 +4,17 @@ use serde_json::Value;
 /// Capability used by adapters that own a remote credential lifecycle.
 pub const PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY: &str = "credential.lifecycle";
 
-/// Host-controlled credential lifecycle operation. Secrets are never included
-/// in the operation; the host binds the credential id and secret envelope.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Private material is sent only to the explicitly bound credential adapter.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PluginCredentialOperation {
+    Bound {
+        channel_id: i64,
+        credential_id: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        material: Option<Value>,
+        operation: Box<PluginCredentialOperation>,
+    },
     Login {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         authorization_code: Option<String>,
@@ -26,9 +32,14 @@ pub enum PluginCredentialOperation {
     Balance,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PluginCredentialResult {
+    /// Persist privately in the host vault, then expose only the inner result.
+    Session {
+        material: Value,
+        result: Box<PluginCredentialResult>,
+    },
     Login {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         authorization_url: Option<String>,
@@ -58,6 +69,23 @@ pub enum PluginCredentialResult {
 impl PluginCredentialOperation {
     pub fn validate(&self) -> Result<(), CredentialContractError> {
         match self {
+            Self::Bound {
+                channel_id,
+                credential_id,
+                material,
+                operation,
+            } => {
+                if *channel_id <= 0
+                    || *credential_id <= 0
+                    || matches!(operation.as_ref(), Self::Bound { .. })
+                    || material
+                        .as_ref()
+                        .is_some_and(|value| !valid_material(value))
+                {
+                    return Err(CredentialContractError::InvalidBody);
+                }
+                operation.validate()?;
+            }
             Self::Login {
                 authorization_code,
                 redirect_uri,
@@ -81,6 +109,12 @@ impl PluginCredentialOperation {
 impl PluginCredentialResult {
     pub fn validate(&self) -> Result<(), CredentialContractError> {
         match self {
+            Self::Session { material, result } => {
+                if !valid_material(material) || matches!(result.as_ref(), Self::Session { .. }) {
+                    return Err(CredentialContractError::InvalidBody);
+                }
+                result.validate()?;
+            }
             Self::Login {
                 authorization_url,
                 state,
@@ -103,7 +137,10 @@ impl PluginCredentialResult {
                         return Err(CredentialContractError::InvalidHeader);
                     }
                     validate_text(name, 128, CredentialContractError::InvalidHeader)?;
-                    validate_text(value, 8192, CredentialContractError::InvalidHeader)?;
+                    if value.is_empty() || value.len() > 8192 || value.chars().any(char::is_control)
+                    {
+                        return Err(CredentialContractError::InvalidHeader);
+                    }
                 }
                 if let Some(query) = query {
                     for (name, value) in query {
@@ -170,8 +207,31 @@ fn validate_text(
 fn protected_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "authorization" | "host" | "cookie" | "content-length" | "proxy-authorization"
+        "host"
+            | "cookie"
+            | "content-length"
+            | "proxy-authorization"
+            | "connection"
+            | "transfer-encoding"
+            | "upgrade"
+            | "trailer"
+            | "te"
     )
+}
+
+fn valid_material(value: &Value) -> bool {
+    value.is_object() && serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= 4096)
+}
+
+impl std::fmt::Debug for PluginCredentialOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PluginCredentialOperation(<redacted>)")
+    }
+}
+impl std::fmt::Debug for PluginCredentialResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PluginCredentialResult(<redacted>)")
+    }
 }
 
 #[cfg(test)]

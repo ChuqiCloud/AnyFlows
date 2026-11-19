@@ -2901,6 +2901,8 @@ export type PluginCatalogSourceResponse = {
 };
 export type PluginCredentialInvocationRequest = {
     credential_id: string;
+    channel_id: number;
+    callback_state?: string | null;
     capability_version: number;
     operation: unknown;
 };
@@ -12197,6 +12199,111 @@ export type InvokeUserPluginRoutePutResponses = {
     200: PluginRouteInvocationResponse;
 };
 export type InvokeUserPluginRoutePutResponse = InvokeUserPluginRoutePutResponses[keyof InvokeUserPluginRoutePutResponses];
+export type InvokeModelPluginRouteDeleteData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeModelPluginRouteDeleteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeModelPluginRouteDeleteError = InvokeModelPluginRouteDeleteErrors[keyof InvokeModelPluginRouteDeleteErrors];
+export type InvokeModelPluginRouteDeleteResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeModelPluginRouteDeleteResponse = InvokeModelPluginRouteDeleteResponses[keyof InvokeModelPluginRouteDeleteResponses];
+export type InvokeModelPluginRouteGetData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeModelPluginRouteGetErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeModelPluginRouteGetError = InvokeModelPluginRouteGetErrors[keyof InvokeModelPluginRouteGetErrors];
+export type InvokeModelPluginRouteGetResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeModelPluginRouteGetResponse = InvokeModelPluginRouteGetResponses[keyof InvokeModelPluginRouteGetResponses];
+export type InvokeModelPluginRoutePatchData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeModelPluginRoutePatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeModelPluginRoutePatchError = InvokeModelPluginRoutePatchErrors[keyof InvokeModelPluginRoutePatchErrors];
+export type InvokeModelPluginRoutePatchResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeModelPluginRoutePatchResponse = InvokeModelPluginRoutePatchResponses[keyof InvokeModelPluginRoutePatchResponses];
+export type InvokeModelPluginRoutePostData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeModelPluginRoutePostErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeModelPluginRoutePostError = InvokeModelPluginRoutePostErrors[keyof InvokeModelPluginRoutePostErrors];
+export type InvokeModelPluginRoutePostResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeModelPluginRoutePostResponse = InvokeModelPluginRoutePostResponses[keyof InvokeModelPluginRoutePostResponses];
+export type InvokeModelPluginRoutePutData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeModelPluginRoutePutErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    503: ManagementError;
+};
+export type InvokeModelPluginRoutePutError = InvokeModelPluginRoutePutErrors[keyof InvokeModelPluginRoutePutErrors];
+export type InvokeModelPluginRoutePutResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeModelPluginRoutePutResponse = InvokeModelPluginRoutePutResponses[keyof InvokeModelPluginRoutePutResponses];
 export type ListPluginMarketData = {
     body?: never;
     path?: never;

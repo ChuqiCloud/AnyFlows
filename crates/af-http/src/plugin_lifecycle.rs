@@ -36,6 +36,8 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::{
+    QueryApiKeyPolicy,
+    authentication::{AuthenticationState, authenticate_api_key},
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
     management_error::ManagementError,
@@ -179,6 +181,8 @@ pub(crate) struct PluginCapabilityInvocationRequest {
 pub(crate) struct PluginCredentialInvocationRequest {
     #[schema(min_length = 1, max_length = 128)]
     credential_id: String,
+    channel_id: i64,
+    callback_state: Option<String>,
     #[schema(minimum = 1, maximum = 65535)]
     capability_version: u16,
     #[schema(value_type = serde_json::Value)]
@@ -780,6 +784,9 @@ struct PluginEventResultListQuery {
 pub fn build_plugin_lifecycle_router(
     service: Arc<DatabaseAdminPluginLifecycleService>,
     authenticator: Arc<dyn SessionAuthenticator>,
+    model_authenticator: Arc<dyn af_admin::TokenAuthenticator>,
+    query_api_key_policy: QueryApiKeyPolicy,
+    server_config: &af_config::ServerConfig,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(authenticator),
@@ -853,6 +860,39 @@ pub fn build_plugin_lifecycle_router(
             post(cleanup_artifact),
         )
         .route_layer(middleware::from_fn(authorize_management_admin));
+    let model_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(model_authenticator, query_api_key_policy, server_config),
+        authenticate_api_key,
+    );
+    let model_routes = Router::new()
+        .route("/v1/plugin-tasks", post(submit_model_plugin_task))
+        .route("/v1/plugin-tasks/{task_id}", get(get_model_plugin_task))
+        .route(
+            "/v1/plugin-tasks/{task_id}/cancel",
+            post(cancel_model_plugin_task),
+        )
+        .route(
+            "/v1/plugin-tasks/{task_id}/files/{file_id}",
+            get(get_model_plugin_task_file),
+        )
+        .route(
+            "/api/plugins/{plugin_id}/routes/{route_id}",
+            get(invoke_model_plugin_route_get)
+                .post(invoke_model_plugin_route_post)
+                .put(invoke_model_plugin_route_put)
+                .patch(invoke_model_plugin_route_patch)
+                .delete(invoke_model_plugin_route_delete),
+        )
+        .route(
+            "/v1/plugins/{plugin_id}/{route_id}",
+            get(invoke_model_plugin_route_get)
+                .post(invoke_model_plugin_route_post)
+                .put(invoke_model_plugin_route_put)
+                .patch(invoke_model_plugin_route_patch)
+                .delete(invoke_model_plugin_route_delete),
+        )
+        .route_layer(model_authentication)
+        .layer(DefaultBodyLimit::max(1024 * 1024));
     Router::new()
         .merge(admin)
         .route(
@@ -882,6 +922,7 @@ pub fn build_plugin_lifecycle_router(
             get(catalog_models),
         )
         .route_layer(authentication)
+        .merge(model_routes)
         .layer(middleware::from_fn(ensure_request_id))
         .layer(middleware::from_fn(add_no_store))
         .with_state(PluginLifecycleHttpState { service })
@@ -900,6 +941,8 @@ async fn invoke_credential_lifecycle(
             authentication.principal(),
             &plugin_id,
             &request.credential_id,
+            request.channel_id,
+            request.callback_state.as_deref(),
             request.capability_version,
             request.operation,
             request_id.as_str(),
@@ -1168,6 +1211,214 @@ async fn invoke_user_plugin_route_delete(
         true,
     )
     .await
+}
+
+async fn invoke_model_plugin_route_get(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<af_admin::TokenAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+) -> Result<Response, ManagementError> {
+    invoke_model_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Get,
+        Value::Object(serde_json::Map::new()),
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_model_plugin_route_post(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<af_admin::TokenAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_model_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Post,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_model_plugin_route_put(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<af_admin::TokenAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_model_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Put,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_model_plugin_route_patch(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<af_admin::TokenAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_model_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Patch,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_model_plugin_route_delete(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<af_admin::TokenAuthentication>,
+    PathParam((plugin_id, route_id)): PathParam<(String, String)>,
+    Extension(request_id): Extension<RequestId>,
+    Json(input): Json<Value>,
+) -> Result<Response, ManagementError> {
+    invoke_model_plugin_route_inner(
+        state,
+        authentication,
+        plugin_id,
+        route_id,
+        af_admin::PluginRouteMethod::Delete,
+        input,
+        request_id,
+    )
+    .await
+}
+
+async fn invoke_model_plugin_route_inner(
+    state: PluginLifecycleHttpState,
+    authentication: af_admin::TokenAuthentication,
+    plugin_id: String,
+    route_id: String,
+    method: af_admin::PluginRouteMethod,
+    input: Value,
+    request_id: RequestId,
+) -> Result<Response, ManagementError> {
+    let model = input
+        .get("model")
+        .and_then(Value::as_str)
+        .ok_or(ManagementError::PluginLifecycleInvalidRequest)?;
+    if !authentication.model_policy().allows(model) {
+        return Err(ManagementError::Forbidden);
+    }
+    let result = state
+        .service
+        .invoke_model_plugin_route(
+            af_admin::SessionPrincipal::new(
+                authentication.principal().user_id(),
+                af_admin::SessionRole::User,
+            ),
+            &plugin_id,
+            &route_id,
+            method,
+            input,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(result))
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ModelPluginTaskRequest {
+    plugin_id: String,
+    capability_id: String,
+    capability_version: u16,
+    model: String,
+    idempotency_key: String,
+    #[schema(value_type = serde_json::Value)]
+    request: Value,
+}
+
+async fn submit_model_plugin_task(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(auth): Extension<af_admin::TokenAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    Json(request): Json<ModelPluginTaskRequest>,
+) -> Result<Response, ManagementError> {
+    let result = state
+        .service
+        .submit_model_plugin_task(
+            &auth,
+            &request.plugin_id,
+            &request.capability_id,
+            request.capability_version,
+            &request.model,
+            request.request,
+            &request.idempotency_key,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(result))
+}
+async fn get_model_plugin_task(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(auth): Extension<af_admin::TokenAuthentication>,
+    PathParam(id): PathParam<String>,
+) -> Result<Response, ManagementError> {
+    Ok(no_store_json(
+        state
+            .service
+            .get_model_plugin_task(&auth, &id)
+            .await
+            .map_err(map_service_error)?,
+    ))
+}
+async fn cancel_model_plugin_task(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(auth): Extension<af_admin::TokenAuthentication>,
+    PathParam(id): PathParam<String>,
+    Extension(request_id): Extension<RequestId>,
+) -> Result<Response, ManagementError> {
+    Ok(no_store_json(
+        state
+            .service
+            .cancel_model_plugin_task(&auth, &id, request_id.as_str())
+            .await
+            .map_err(map_service_error)?,
+    ))
+}
+async fn get_model_plugin_task_file(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(auth): Extension<af_admin::TokenAuthentication>,
+    PathParam((id, index)): PathParam<(String, usize)>,
+) -> Result<Response, ManagementError> {
+    let bytes = state
+        .service
+        .get_model_plugin_task_file(&auth, &id, index)
+        .await
+        .map_err(map_service_error)?;
+    Response::builder()
+        .header("content-type", "application/octet-stream")
+        .header("content-disposition", "attachment")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "no-store")
+        .body(axum::body::Body::from(bytes))
+        .map_err(|_| ManagementError::PluginLifecycleUnavailable)
 }
 
 async fn runtime_overview(

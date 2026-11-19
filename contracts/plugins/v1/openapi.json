@@ -1454,7 +1454,8 @@
           "audience": {
             "enum": [
               "user",
-              "admin"
+              "admin",
+              "model_key"
             ]
           },
           "capabilityId": {
@@ -1811,12 +1812,26 @@
               "value": {
                 "additionalProperties": false,
                 "properties": {
+                  "files": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "type": "array"
+                  },
                   "output": {},
+                  "report": {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
                   "task_id": {
                     "maxLength": 512,
                     "minLength": 1,
                     "type": "string"
-                  }
+                  },
+                  "usage": {}
                 },
                 "required": [
                   "task_id",

@@ -1,0 +1,85 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(Alias::new("plugin_host_records"))
+                    .col(ColumnDef::new(Alias::new("kind")).string_len(32).not_null())
+                    .col(
+                        ColumnDef::new(Alias::new("record_id"))
+                            .string_len(128)
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("plugin_id"))
+                            .string_len(128)
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("owner_id"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("revision"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Alias::new("state"))
+                            .string_len(32)
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Alias::new("payload")).json().not_null())
+                    .col(ColumnDef::new(Alias::new("due_at")).big_integer())
+                    .col(
+                        ColumnDef::new(Alias::new("updated_at"))
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .primary_key(
+                        Index::create()
+                            .col(Alias::new("kind"))
+                            .col(Alias::new("record_id")),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_plugin_host_due")
+                    .table(Alias::new("plugin_host_records"))
+                    .col(Alias::new("kind"))
+                    .col(Alias::new("due_at"))
+                    .col(Alias::new("record_id"))
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_plugin_host_owner")
+                    .table(Alias::new("plugin_host_records"))
+                    .col(Alias::new("owner_id"))
+                    .col(Alias::new("kind"))
+                    .col(Alias::new("record_id"))
+                    .to_owned(),
+            )
+            .await
+    }
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(Alias::new("plugin_host_records"))
+                    .to_owned(),
+            )
+            .await
+    }
+}

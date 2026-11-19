@@ -534,3 +534,65 @@ Chat 模型请求已接入 `request` 同步处理和 `ingress` 只读观察。�
 ### 市场发布
 
 插件可以发布到 GitHub Release 或固定 commit 的仓库。市场索引格式和安装约束见 [插件市场](plugin-market.md)。Release 包必须提供完整 SHA-256；Git 源必须固定 40 位 commit。市场只负责发现，安装仍复用管理员审批、能力授权和多节点分发。生产节点只下载预构建 `.afplugin`，不会执行仓库中的构建脚本。
+### 其他语言 SDK
+
+仓库同时提供三种最小 SDK：
+
+- `tools/plugins/sdk/typescript/anyflows-plugin.ts`
+- `tools/plugins/sdk/go/anyflows_plugin.go`
+- `tools/plugins/sdk/rust/anyflows_plugin.rs`
+
+它们都实现相同的 JSON Lines 握手、健康检查和能力调用外层。业务代码只需要实现 handler；协议字段、能力 Schema 和错误边界仍以 `contracts/plugins/v1/schema.json` 为准。
+
+协议文件由 Rust 契约导出，再用以下命令生成语言无关副本和 SDK 元数据：
+
+```bash
+cargo run --package af-plugin-contract --example export_contract -- export
+python tools/plugins/generate-protocol-sdk.py
+```
+
+生成器只复制协议 Schema，不执行插件构建脚本。
+
+### 模型 Key 路由
+
+清单路由的 `audience` 可以使用 `model_key`。这类路由同时提供 `/api/plugins/{plugin_id}/routes/{route_id}` 和 `/v1/plugins/{plugin_id}/{route_id}`，使用模型调用 Key 鉴权；请求仍经过清单中的输入 Schema、能力授权、超时和输出校验。它不能读取浏览器会话、钱包或模型 Key 明文。
+
+Provider 插件可以在部署公开配置中声明选择范围：
+
+```json
+{
+  "providerSelection": {
+    "priority": 100,
+    "models": ["vendor-model"],
+    "channelIds": [12, 18]
+  }
+}
+```
+
+同一模型有多个插件时按 `priority` 降序、插件 ID 升序选择；未填写 `models` 或 `channelIds` 表示不限制。宿主仍负责上游地址、认证、计费和最终候选切换。
+
+## 数据面接入
+
+Provider 插件通过部署配置中的 `providerSelection` 绑定渠道。选择器可同时指定 `pluginId`、模型、`channelIds`、优先级和多个候选；每次 Relay 尝试会冻结插件代次，插件返回的请求、响应和失败分类都只作用于这次候选。宿主仍负责 API Key、模型策略、重试上限和计费。
+
+凭据生命周期使用宿主绑定的 `channelId` 与 `credentialId`。`login` 首次调用返回授权地址，回调必须带一次性 `state`；`refresh`、`revoke`、`balance` 和 `sign` 都由宿主在 CAS 状态下执行。插件返回的会话材料由宿主加密保存，插件和普通能力不能读取数据库或钱包。
+
+模型 Key 可调用以下固定入口：
+
+- `POST /v1/plugin-tasks` 提交任务，必须带 `idempotencyKey`、模型和插件能力。
+- `GET /v1/plugin-tasks/{taskId}` 查询状态、用量、报告和文件清单。
+- `GET /v1/plugin-tasks/{taskId}/files/{fileId}` 下载已完成文件。
+- `POST /v1/plugin-tasks/{taskId}/cancel` 请求取消。
+- `/v1/plugins/{pluginId}/{routeId}` 调用清单中声明的 model-key 路由。
+
+任务提交时宿主按管理员配置的费率预留额度；状态、文件、报告和 `PluginTaskUsage` 回来后，宿主校验上限并用同一预留号结算。外部提交出现未知结果时任务进入 `unknown`，不会自动重放。
+
+请求处理插件可声明 `request.processing.read`，阶段包括 `ingress`、`request`、`outbound`、`egress`、`reply` 和 `report`。`reply` 可以观察响应但不能改写，`report` 只能生成结论。流式响应按事件边界处理，客户端取消或上游断流会生成未完成报告。
+
+协议生成器运行：
+
+```text
+python tools/plugins/generate-protocol-sdk.py
+```
+
+它会生成 JSON Schema、结果类型映射、帧大小和 schema 摘要到 `tools/plugins/sdk/generated/`；TypeScript、Go、Rust 和 Python SDK 都使用相同的 `manifest`、`health`、`invoke_capability`、`invoke_task`、`invoke_provider`、`invoke_credential`、`plugin_route` 七种操作。

@@ -42,7 +42,7 @@ pub use manifest::{
 };
 pub use market::{
     PluginMarketEngines, PluginMarketEntry, PluginMarketError, PluginMarketIndex,
-    PluginMarketSource, PluginMarketVersion,
+    PluginMarketSignature, PluginMarketSource, PluginMarketVersion,
 };
 pub use proposal::HostActionProposal;
 pub use provider::{
@@ -65,7 +65,7 @@ pub use storage::{
 pub use task::{
     MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskCompletion,
     PluginTaskFile, PluginTaskFinding, PluginTaskFindingSeverity, PluginTaskOperation,
-    PluginTaskReport, PluginTaskResult, PluginTaskState, TaskContractError,
+    PluginTaskReport, PluginTaskResult, PluginTaskState, PluginTaskUsage, TaskContractError,
 };
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,

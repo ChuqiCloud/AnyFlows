@@ -1842,14 +1842,33 @@ impl Bootstrap<RelayReady> {
         ))
         .with_debug_trace_runtime(debug_trace_runtime.clone());
         let route_service = match plugin_sidecar_runtime.as_ref() {
-            Some(runtime) => route_service.with_provider_hook(Arc::new(
-                crate::plugin_chat_observation::DatabasePluginProviderRelayHook::new(
+            Some(runtime) => {
+                let lifecycle = af_admin::DatabaseAdminPluginLifecycleService::new(
                     af_db::PluginCatalogRepository::new(
                         self.stage.infrastructure.infrastructure.database.clone(),
                     ),
-                    Arc::clone(runtime),
-                ),
-            )),
+                    Arc::clone(&self.stage.infrastructure.platform_audit_service),
+                )
+                .with_sidecar_runtime(Some(Arc::clone(runtime)))
+                .with_data_plane(
+                    af_db::PluginHostRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    ),
+                    self.stage.infrastructure.system_secret_cipher.clone(),
+                    Arc::new(QuotaRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    )),
+                );
+                route_service.with_provider_hook(Arc::new(
+                    crate::plugin_chat_observation::DatabasePluginProviderRelayHook::new(
+                        af_db::PluginCatalogRepository::new(
+                            self.stage.infrastructure.infrastructure.database.clone(),
+                        ),
+                        Arc::clone(runtime),
+                    )
+                    .with_lifecycle(Arc::new(lifecycle)),
+                ))
+            }
             None => route_service,
         };
         let route_service = match sticky_store {
@@ -2860,12 +2879,29 @@ impl Bootstrap<Supervised> {
                 self.stage.infrastructure.infrastructure.database.clone(),
             )),
         ));
+        let plugin_quota =
+            QuotaRepository::new(self.stage.infrastructure.infrastructure.database.clone());
+        let plugin_quota = match self.stage.infrastructure.extensions.quota.as_ref() {
+            Some(extension) => plugin_quota.with_extension(Arc::clone(extension)),
+            None => plugin_quota,
+        };
+        let plugin_quota = match self.stage.infrastructure.extensions.quota_funding.as_ref() {
+            Some(extension) => plugin_quota.with_funding_extension(Arc::clone(extension)),
+            None => plugin_quota,
+        };
         let plugin_lifecycle_service = Arc::new(
             af_admin::DatabaseAdminPluginLifecycleService::new(
                 af_db::PluginCatalogRepository::new(
                     self.stage.infrastructure.infrastructure.database.clone(),
                 ),
                 Arc::clone(&self.stage.infrastructure.platform_audit_service),
+            )
+            .with_data_plane(
+                af_db::PluginHostRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                ),
+                self.stage.infrastructure.system_secret_cipher.clone(),
+                Arc::new(plugin_quota),
             )
             .with_market_clients(self.stage.upstream_clients.clone())
             .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone())
@@ -2891,6 +2927,18 @@ impl Bootstrap<Supervised> {
                     }
                 });
 
+            let service = Arc::clone(&plugin_lifecycle_service);
+            self.stage.supervisor.spawn("plugin-data-plane", move |shutdown| {
+                let service = Arc::clone(&service);
+                async move {
+                    let mut interval = tokio::time::interval(Duration::from_secs(5));
+                    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                    loop { tokio::select! {
+                        () = shutdown.cancelled() => return,
+                        _ = interval.tick() => { service.refresh_plugin_credentials().await; service.poll_plugin_tasks().await; }
+                    }}
+                }
+            });
             let worker = af_admin::PluginEventDeliveryWorker::new(
                 event_delivery_repository.clone(),
                 Arc::clone(&plugin_lifecycle_service),
@@ -3354,6 +3402,9 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_plugin_lifecycle_router(
                 Arc::clone(&plugin_lifecycle_service),
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
+                Arc::clone(&self.stage.infrastructure.authenticator),
+                self.stage.infrastructure.query_api_key_policy,
+                self.config.server(),
             ));
         let Bootstrap {
             config,
