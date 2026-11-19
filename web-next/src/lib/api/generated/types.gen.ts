@@ -2899,6 +2899,17 @@ export type PluginCatalogSourceResponse = {
     generation: number;
     supportsSearch: boolean;
 };
+export type PluginCredentialInvocationRequest = {
+    credential_id: string;
+    capability_version: number;
+    operation: unknown;
+};
+export type PluginCredentialInvocationResponse = {
+    pluginId: string;
+    deploymentGeneration: number;
+    credentialId: string;
+    result: unknown;
+};
 export type PluginDeploymentDisableRequest = {
     expected_generation: number;
 };
@@ -2945,6 +2956,22 @@ export type PluginEventResultResponse = {
         [key: string]: unknown;
     };
 };
+export type PluginMarketEntryResponse = {
+    pluginId: string;
+    displayName: string;
+    pluginVersion: string;
+    digest: string;
+    sourceKind: string;
+    capabilities: Array<string>;
+    icon?: string | null;
+    repository?: string | null;
+    publishedAt: number;
+    official: boolean;
+};
+export type PluginMarketPageResponse = {
+    plugins: Array<PluginMarketEntryResponse>;
+    nextBeforeId?: number | null;
+};
 export type PluginPackageInstallRequest = {
     package: Blob | File;
     config?: string | null;
@@ -2980,6 +3007,16 @@ export type PluginRuntimeStateResponse = {
     errorCode?: string | null;
     updatedAt: number;
     nodeLastSeenAt: number;
+};
+export type PluginTaskInvocationRequest = {
+    capability_id: string;
+    capability_version: number;
+    task: unknown;
+};
+export type PluginTaskInvocationResponse = {
+    pluginId: string;
+    deploymentGeneration: number;
+    result: unknown;
 };
 export type PluginUninstallResponse = {
     pluginId: string;
@@ -11875,6 +11912,44 @@ export type InvokeAdminPluginCapabilityResponses = {
     200: PluginCapabilityInvocationResponse;
 };
 export type InvokeAdminPluginCapabilityResponse = InvokeAdminPluginCapabilityResponses[keyof InvokeAdminPluginCapabilityResponses];
+export type InvokeAdminPluginCredentialLifecycleData = {
+    body: PluginCredentialInvocationRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/credential-lifecycle';
+};
+export type InvokeAdminPluginCredentialLifecycleErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginCredentialLifecycleError = InvokeAdminPluginCredentialLifecycleErrors[keyof InvokeAdminPluginCredentialLifecycleErrors];
+export type InvokeAdminPluginCredentialLifecycleResponses = {
+    200: PluginCredentialInvocationResponse;
+};
+export type InvokeAdminPluginCredentialLifecycleResponse = InvokeAdminPluginCredentialLifecycleResponses[keyof InvokeAdminPluginCredentialLifecycleResponses];
+export type InvokeAdminPluginTaskData = {
+    body: PluginTaskInvocationRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/tasks';
+};
+export type InvokeAdminPluginTaskErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type InvokeAdminPluginTaskError = InvokeAdminPluginTaskErrors[keyof InvokeAdminPluginTaskErrors];
+export type InvokeAdminPluginTaskResponses = {
+    200: PluginTaskInvocationResponse;
+};
+export type InvokeAdminPluginTaskResponse = InvokeAdminPluginTaskResponses[keyof InvokeAdminPluginTaskResponses];
 export type InvokeAdminPluginRouteDeleteData = {
     body?: never;
     path: {
@@ -11980,6 +12055,124 @@ export type InvokeAdminPluginRoutePutResponses = {
     200: PluginRouteInvocationResponse;
 };
 export type InvokeAdminPluginRoutePutResponse = InvokeAdminPluginRoutePutResponses[keyof InvokeAdminPluginRoutePutResponses];
+export type InvokeUserPluginRouteDeleteData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/account/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeUserPluginRouteDeleteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type InvokeUserPluginRouteDeleteError = InvokeUserPluginRouteDeleteErrors[keyof InvokeUserPluginRouteDeleteErrors];
+export type InvokeUserPluginRouteDeleteResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeUserPluginRouteDeleteResponse = InvokeUserPluginRouteDeleteResponses[keyof InvokeUserPluginRouteDeleteResponses];
+export type InvokeUserPluginRouteGetData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/account/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeUserPluginRouteGetErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    503: ManagementError;
+};
+export type InvokeUserPluginRouteGetError = InvokeUserPluginRouteGetErrors[keyof InvokeUserPluginRouteGetErrors];
+export type InvokeUserPluginRouteGetResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeUserPluginRouteGetResponse = InvokeUserPluginRouteGetResponses[keyof InvokeUserPluginRouteGetResponses];
+export type InvokeUserPluginRoutePatchData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/account/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeUserPluginRoutePatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type InvokeUserPluginRoutePatchError = InvokeUserPluginRoutePatchErrors[keyof InvokeUserPluginRoutePatchErrors];
+export type InvokeUserPluginRoutePatchResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeUserPluginRoutePatchResponse = InvokeUserPluginRoutePatchResponses[keyof InvokeUserPluginRoutePatchResponses];
+export type InvokeUserPluginRoutePostData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/account/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeUserPluginRoutePostErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type InvokeUserPluginRoutePostError = InvokeUserPluginRoutePostErrors[keyof InvokeUserPluginRoutePostErrors];
+export type InvokeUserPluginRoutePostResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeUserPluginRoutePostResponse = InvokeUserPluginRoutePostResponses[keyof InvokeUserPluginRoutePostResponses];
+export type InvokeUserPluginRoutePutData = {
+    body: PluginCapabilityInvocationRequest;
+    path: {
+        plugin_id: string;
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/account/plugins/{plugin_id}/routes/{route_id}';
+};
+export type InvokeUserPluginRoutePutErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type InvokeUserPluginRoutePutError = InvokeUserPluginRoutePutErrors[keyof InvokeUserPluginRoutePutErrors];
+export type InvokeUserPluginRoutePutResponses = {
+    200: PluginRouteInvocationResponse;
+};
+export type InvokeUserPluginRoutePutResponse = InvokeUserPluginRoutePutResponses[keyof InvokeUserPluginRoutePutResponses];
+export type ListPluginMarketData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before_id?: number;
+        limit?: number;
+    };
+    url: '/api/account/plugins/market';
+};
+export type ListPluginMarketErrors = {
+    400: ManagementError;
+    401: ManagementError;
+};
+export type ListPluginMarketError = ListPluginMarketErrors[keyof ListPluginMarketErrors];
+export type ListPluginMarketResponses = {
+    200: PluginMarketPageResponse;
+};
+export type ListPluginMarketResponse = ListPluginMarketResponses[keyof ListPluginMarketResponses];
 export type ProposeAdminPluginCapabilityActionData = {
     body: PluginCapabilityActionProposalRequest;
     path: {
