@@ -533,4 +533,4 @@ Chat 模型请求已接入 `request` 同步处理和 `ingress` 只读观察。�
 
 ### 市场发布
 
-插件可以发布到 GitHub Release 或固定 commit 的仓库。市场索引格式和安装约束见 [插件市场](plugin-market.md)。Release 包必须提供完整 SHA-256；Git 源必须固定 40 位 commit。市场只负责发现，安装仍复用管理员审批、能力授权和多节点分发。
+插件可以发布到 GitHub Release 或固定 commit 的仓库。市场索引格式和安装约束见 [插件市场](plugin-market.md)。Release 包必须提供完整 SHA-256；Git 源必须固定 40 位 commit。市场只负责发现，安装仍复用管理员审批、能力授权和多节点分发。生产节点只下载预构建 `.afplugin`，不会执行仓库中的构建脚本。

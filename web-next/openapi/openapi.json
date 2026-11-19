@@ -32736,6 +32736,108 @@
         ]
       }
     },
+    "/api/admin/plugins/market/install": {
+      "post": {
+        "tags": [
+          "插件市场"
+        ],
+        "summary": "从已验证的市场来源下载并安装插件",
+        "operationId": "installAdminMarketPlugin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginMarketInstallHttpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已下载、校验并安装启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "来源、摘要、插件身份或配置无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件身份或部署代次冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "远程插件包超过大小上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "市场下载器或插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:install_admin_market_plugin:execute"
+        ]
+      }
+    },
     "/api/admin/plugins/artifacts": {
       "get": {
         "tags": [
@@ -34357,6 +34459,87 @@
           },
           "401": {
             "description": "需要登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "plugins:read"
+        ]
+      }
+    },
+    "/api/account/plugins/market/index": {
+      "get": {
+        "tags": [
+          "插件市场"
+        ],
+        "summary": "读取并校验远程插件市场索引",
+        "operationId": "fetchPluginMarketIndex",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "经过宿主校验的市场索引",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "索引地址或内容无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "索引超过大小上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "市场下载器不可用",
             "content": {
               "application/json": {
                 "schema": {
@@ -54719,6 +54902,44 @@
           }
         }
       },
+      "PluginMarketInstallHttpRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "plugin_version",
+          "source",
+          "config"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 3
+          },
+          "plugin_version": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 5
+          },
+          "source": {
+            "$ref": "#/components/schemas/PluginMarketSourceRequest"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
+          },
+          "expected_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "PluginMarketPageResponse": {
         "type": "object",
         "required": [
@@ -54739,6 +54960,55 @@
             "format": "int64"
           }
         }
+      },
+      "PluginMarketSourceRequest": {
+        "type": "object",
+        "required": [
+          "kind",
+          "archive_url",
+          "sha256"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1
+          },
+          "archive_url": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 8
+          },
+          "sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40,
+            "minLength": 40
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 900
+          }
+        },
+        "additionalProperties": false
       },
       "PluginPackageInstallRequest": {
         "type": "object",

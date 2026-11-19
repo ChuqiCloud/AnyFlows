@@ -42,7 +42,7 @@ pub use manifest::{
 };
 pub use market::{
     PluginMarketEngines, PluginMarketEntry, PluginMarketError, PluginMarketIndex,
-    PluginMarketVersion,
+    PluginMarketSource, PluginMarketVersion,
 };
 pub use proposal::HostActionProposal;
 pub use provider::{

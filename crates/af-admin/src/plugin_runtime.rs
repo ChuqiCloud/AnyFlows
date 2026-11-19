@@ -1518,6 +1518,9 @@ where
 struct LocalArtifactSource {
     package_path: String,
     executable_path: String,
+    #[serde(default)]
+    #[serde(rename = "origin")]
+    _origin: Option<serde_json::Value>,
 }
 
 fn prepare_staging_parent(artifact_root: &Path) -> Result<(), AdminPluginLifecycleError> {

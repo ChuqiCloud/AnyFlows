@@ -5,9 +5,11 @@ import {
   approveAdminPluginArtifact,
   deployAdminPluginArtifact,
   disableAdminPluginDeployment,
+  fetchPluginMarketIndex,
   listAdminPluginArtifacts,
   listAdminPluginDeployments,
   listAdminPluginDeploymentHistory,
+  installAdminMarketPlugin,
   registerAdminVerifiedPluginArtifact,
   revokeAdminPluginArtifact,
   rollbackAdminPluginDeployment,
@@ -16,6 +18,7 @@ import type {
   PluginArtifactRegistrationRequestWritable,
   PluginDeploymentResponse,
   PluginDeploymentRequestWritable,
+  PluginMarketInstallHttpRequestWritable,
 } from '@/lib/api/generated/types.gen'
 
 const root = ['admin-plugin-lifecycle'] as const
@@ -149,6 +152,37 @@ export type PluginCatalogModel = {
   tags: string[]
 }
 
+export type PluginMarketIndex = {
+  format: number
+  title: string
+  description?: string | null
+  plugins: Array<{
+    id: string
+    title: string
+    description?: string | null
+    icon?: string | null
+    author?: string | null
+    repository?: string | null
+    versions: Array<{
+      version: string
+      archiveUrl: string
+      sha256: string
+      source?: {
+        kind: string
+        archiveUrl: string
+        sha256: string
+        repository?: string | null
+        commit?: string | null
+        path?: string | null
+      } | null
+      commit?: string | null
+      engines?: { anyflows?: string | null } | null
+      capabilities: Array<string>
+      publishedAt?: string | null
+    }>
+  }>
+}
+
 export function usePluginCatalogSources(enabled = true) {
   return useInfiniteQuery({
     queryKey: ['plugin-model-catalog', 'sources'],
@@ -164,6 +198,23 @@ export function usePluginCatalogSources(enabled = true) {
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 30_000,
+    retry: false,
+  })
+}
+
+export function usePluginMarketIndex(indexUrl: string) {
+  return useQuery({
+    queryKey: ['plugin-market', 'index', indexUrl],
+    enabled: Boolean(indexUrl),
+    queryFn: async ({ signal }) => {
+      const { data } = await fetchPluginMarketIndex({
+        client: apiClient,
+        query: { url: indexUrl },
+        signal,
+      })
+      return data as PluginMarketIndex
+    },
+    staleTime: 60_000,
     retry: false,
   })
 }
@@ -334,6 +385,18 @@ export function useInstallPlugin() {
         ],
       }) as unknown as { data: PluginDeploymentResponse }
       return result.data
+    },
+    onSuccess: () => invalidate(client),
+    onError: () => invalidate(client),
+  })
+}
+
+export function useInstallMarketPlugin() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: PluginMarketInstallHttpRequestWritable) => {
+      const { data } = await installAdminMarketPlugin({ client: apiClient, body })
+      return data
     },
     onSuccess: () => invalidate(client),
     onError: () => invalidate(client),
