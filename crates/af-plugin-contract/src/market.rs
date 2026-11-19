@@ -151,21 +151,22 @@ impl PluginMarketIndex {
 }
 
 fn valid_https_url(value: &str) -> bool {
-    let Ok(url) = url::Url::parse(value) else {
+    let Some(rest) = value.strip_prefix("https://") else {
         return false;
     };
-    url.scheme() == "https"
-        && url.username().is_empty()
-        && url.password().is_none()
-        && url.query().is_none()
-        && url.fragment().is_none()
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    !authority.is_empty()
+        && authority.len() <= 255
+        && authority
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
 }
 
 fn host_is(value: &str, expected: &str) -> bool {
-    url::Url::parse(value)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        .is_some_and(|host| host == expected)
+    value
+        .strip_prefix("https://")
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+        .is_some_and(|host| host.eq_ignore_ascii_case(expected))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

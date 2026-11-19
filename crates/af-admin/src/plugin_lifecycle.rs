@@ -222,9 +222,32 @@ pub struct AdminPluginMarketEntry {
 pub struct PluginMarketInstallRequest {
     pub plugin_id: String,
     pub plugin_version: String,
-    pub source: PluginMarketSource,
+    pub source: PluginMarketInstallSource,
     pub config: Value,
     pub expected_generation: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PluginMarketInstallSource {
+    pub kind: String,
+    pub archive_url: String,
+    pub sha256: String,
+    pub repository: Option<String>,
+    pub commit: Option<String>,
+    pub path: Option<String>,
+}
+
+impl PluginMarketInstallSource {
+    fn into_contract(self) -> PluginMarketSource {
+        PluginMarketSource {
+            kind: self.kind,
+            archive_url: self.archive_url,
+            sha256: self.sha256,
+            repository: self.repository,
+            commit: self.commit,
+            path: self.path,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1892,8 +1915,8 @@ impl DatabaseAdminPluginLifecycleService {
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
-        request
-            .source
+        let source = request.source.clone().into_contract();
+        source
             .validate()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let clients = self
@@ -1903,7 +1926,7 @@ impl DatabaseAdminPluginLifecycleService {
         let client = clients
             .get(Some(Duration::from_secs(60)))
             .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-        let response = execute_market_get(&client, &request.source.archive_url)
+        let response = execute_market_get(&client, &source.archive_url)
             .await
             .map_err(|_| AdminPluginLifecycleError::Internal)?;
         if !response.status().is_success() {
@@ -1921,7 +1944,7 @@ impl DatabaseAdminPluginLifecycleService {
             .bind_market_source(
                 request.plugin_id.clone(),
                 request.plugin_version.clone(),
-                request.source.clone(),
+                source.clone(),
             );
         let mut stream = response.into_bytes_stream();
         let mut hasher = Sha256::new();
@@ -1936,7 +1959,7 @@ impl DatabaseAdminPluginLifecycleService {
             upload.write_chunk(&chunk).await?;
         }
         let digest = format!("{:x}", hasher.finalize());
-        if digest != request.source.sha256 {
+        if digest != source.sha256 {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
         let result = self

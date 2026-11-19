@@ -455,7 +455,8 @@ pub use plugin_lifecycle::{
     AdminPluginRouteInvocationResult, AdminPluginTaskInvocationResult,
     DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
     MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand, PluginDeploymentCommand,
-    PluginEventDeliveryWorker, PluginMarketInstallRequest, PluginPackageUpload,
+    PluginEventDeliveryWorker, PluginMarketInstallRequest, PluginMarketInstallSource,
+    PluginPackageUpload,
 };
 pub use plugin_operations::{
     AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,

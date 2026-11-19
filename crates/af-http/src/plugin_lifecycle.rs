@@ -11,12 +11,12 @@ use af_admin::{
     AdminPluginRouteInvocationResult, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
-    PluginMarketInstallRequest, PluginPackageUpload, SessionAuthentication, SessionAuthenticator,
+    PluginMarketInstallRequest, PluginMarketInstallSource, PluginPackageUpload,
+    SessionAuthentication, SessionAuthenticator,
 };
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
 };
-use af_plugin_contract::PluginMarketSource;
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
@@ -1397,7 +1397,7 @@ async fn install_market_package(
             PluginMarketInstallRequest {
                 plugin_id: request.plugin_id,
                 plugin_version: request.plugin_version,
-                source: PluginMarketSource {
+                source: PluginMarketInstallSource {
                     kind: request.source.kind,
                     archive_url: request.source.archive_url,
                     sha256: request.source.sha256,
