@@ -365,6 +365,7 @@ dependencies = [
  "af-httpclient",
  "af-launcher",
  "af-plugin-contract",
+ "af-plugin-runtime",
  "af-protocol",
  "af-relay",
  "af-scheduler",
