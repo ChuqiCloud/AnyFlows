@@ -41,7 +41,7 @@
 
 生产环境发布 GitHub Release 的 `.afplugin` 文件，并在同一 Release 上传 `.sha256` 文件。GitHub Action 可以生成压缩包、SHA-256 和索引；服务端只下载已发布的包，不在服务器执行仓库脚本。
 
-从 Git 仓库安装时必须固定完整 commit，并指定插件子目录。分支名和短 commit 不能作为生产安装来源。私有仓库通过服务端 GitHub App 或部署凭据访问，浏览器不提交 GitHub PAT。
+从 Git 仓库安装时必须固定完整 commit，并指定插件子目录。分支名和短 commit 不能作为生产安装来源。受限仓库通过服务端 GitHub App 或部署凭据访问，浏览器不提交 GitHub PAT。
 
 ## 安装流程
 
