@@ -1,4 +1,6 @@
-//! Bounded, read-only plugin observation for authenticated Chat requests.
+//! Host-controlled plugin stages and Provider adapters for authenticated requests.
+
+mod processing;
 
 use std::{
     future::Future,
@@ -10,7 +12,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use af_adapter::{Bytes, HeaderName, HeaderValue, Method};
+use af_adapter::{Bytes, HeaderName, HeaderValue, Method, StatusCode, UpstreamResponse};
 use af_admin::AdminPluginSidecarRuntime;
 use af_db::{
     PluginArtifactSourceKind, PluginCatalogRepository, PluginDeploymentQuery,
@@ -19,15 +21,17 @@ use af_db::{
 use af_domain::Protocol;
 use af_http::{ChatService, ChatServiceFuture};
 use af_plugin_contract::{
-    PROVIDER_LIFECYCLE_CAPABILITY, PluginManifest, PluginProviderOperation, PluginProviderResult,
-    REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingInput,
-    RequestProcessingOutput, RequestProcessingStage,
+    PROVIDER_LIFECYCLE_CAPABILITY, PluginManifest, PluginProviderFailureClass,
+    PluginProviderOperation, PluginProviderResult, REQUEST_PROCESSING_CAPABILITY,
+    RequestProcessingAction, RequestProcessingInput, RequestProcessingOutput,
+    RequestProcessingStage,
 };
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::RelayDiagnosticInput;
 use af_relay::{
-    ProviderRelayHook, ProviderRelayRequest, ProviderRelayRequestFuture, ProviderRelayResponse,
-    ProviderRelayResponseFuture,
+    ProviderRelayBinding, ProviderRelayFailureAction, ProviderRelayHook, ProviderRelayRequest,
+    ProviderRelayRequestFuture, ProviderRelayResponse, ProviderRelayResponseFuture,
+    ProviderRelayTransformFuture,
 };
 use futures_util::future::join_all;
 use serde_json::{Value, json};
@@ -180,6 +184,9 @@ struct ProviderTarget {
     plugin_id: String,
     generation: i64,
     capability_version: u16,
+    priority: i32,
+    models: Vec<String>,
+    channels: Vec<i64>,
 }
 
 /// Connects the versioned Provider adapter to the actual Relay candidate
@@ -189,7 +196,9 @@ struct ProviderTarget {
 pub struct DatabasePluginProviderRelayHook {
     repository: PluginCatalogRepository,
     runtime: Arc<AdminPluginSidecarRuntime>,
-    target: Arc<Mutex<Option<(Instant, ProviderTarget)>>>,
+    target: Arc<Mutex<Option<(Instant, Vec<ProviderTarget>)>>>,
+    lifecycle: Option<Arc<af_admin::DatabaseAdminPluginLifecycleService>>,
+    processor: DatabasePluginChatIngressObserver,
 }
 
 impl DatabasePluginProviderRelayHook {
@@ -199,22 +208,39 @@ impl DatabasePluginProviderRelayHook {
         runtime: Arc<AdminPluginSidecarRuntime>,
     ) -> Self {
         Self {
+            processor: DatabasePluginChatIngressObserver::new(repository.clone(), runtime.clone()),
             repository,
             runtime,
             target: Arc::new(Mutex::new(None)),
+            lifecycle: None,
         }
     }
 
-    async fn provider_target(&self) -> Option<ProviderTarget> {
-        if let Some((at, target)) = self.target.lock().await.clone()
+    #[must_use]
+    pub fn with_lifecycle(
+        mut self,
+        lifecycle: Arc<af_admin::DatabaseAdminPluginLifecycleService>,
+    ) -> Self {
+        self.lifecycle = Some(lifecycle);
+        self
+    }
+
+    async fn provider_targets(&self) -> Vec<ProviderTarget> {
+        if let Some((at, targets)) = self.target.lock().await.clone()
             && at.elapsed() < OBSERVER_CACHE_TTL
         {
-            return Some(target);
+            return targets;
         }
         let mut before = None;
+        let mut targets = Vec::new();
         for _ in 0..DEPLOYMENT_PAGE_LIMIT {
-            let query = PluginDeploymentQuery::new(before.clone(), DEPLOYMENT_PAGE_SIZE).ok()?;
-            let page = self.repository.list_deployments(query).await.ok()?;
+            let Some(query) = PluginDeploymentQuery::new(before.clone(), DEPLOYMENT_PAGE_SIZE).ok()
+            else {
+                break;
+            };
+            let Ok(page) = self.repository.list_deployments(query).await else {
+                break;
+            };
             if page.is_empty() {
                 break;
             }
@@ -241,13 +267,36 @@ impl DatabasePluginProviderRelayHook {
                 if deployment.granted_capabilities.iter().any(|grant| {
                     grant.id == PROVIDER_LIFECYCLE_CAPABILITY && grant.version == capability.version
                 }) {
-                    let target = ProviderTarget {
+                    let selection = deployment.config.get("providerSelection");
+                    let priority = selection
+                        .and_then(|value| value.get("priority"))
+                        .and_then(Value::as_i64)
+                        .and_then(|value| i32::try_from(value).ok())
+                        .unwrap_or_default();
+                    let models = selection
+                        .and_then(|value| value.get("models"))
+                        .and_then(Value::as_array)
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let channels = selection
+                        .and_then(|value| value.get("channelIds"))
+                        .and_then(Value::as_array)
+                        .map(|items| items.iter().filter_map(Value::as_i64).collect())
+                        .unwrap_or_default();
+                    targets.push(ProviderTarget {
                         plugin_id: deployment.plugin_id.clone(),
                         generation: deployment.generation,
                         capability_version: capability.version,
-                    };
-                    *self.target.lock().await = Some((Instant::now(), target.clone()));
-                    return Some(target);
+                        priority,
+                        models,
+                        channels,
+                    });
                 }
             }
             before = page.last().map(|deployment| deployment.plugin_id.clone());
@@ -255,41 +304,62 @@ impl DatabasePluginProviderRelayHook {
                 break;
             }
         }
-        None
+        targets.sort_by(|left, right| {
+            right
+                .priority
+                .cmp(&left.priority)
+                .then_with(|| left.plugin_id.cmp(&right.plugin_id))
+        });
+        *self.target.lock().await = Some((Instant::now(), targets.clone()));
+        targets
     }
 
     async fn transform(
         &self,
         request: ProviderRelayRequest,
     ) -> Result<ProviderRelayRequest, af_domain::UpstreamError> {
-        let Some(target) = self.provider_target().await else {
+        let targets = self.provider_targets().await;
+        let candidates: Vec<_> = targets
+            .into_iter()
+            .filter(|target| target_matches(target, &request))
+            .take(8)
+            .collect();
+        if candidates.is_empty() {
             return Ok(request);
-        };
-        let Some(body) = request.body.as_ref() else {
-            return Ok(request);
-        };
-        let Ok(body) = serde_json::from_slice::<Value>(body) else {
-            return Ok(request);
-        };
-        let invocation = self.invocation(&target, &request.model, "provider-request");
-        let result = match self
-            .runtime
-            .invoke_provider(
-                &self.repository,
-                &target.plugin_id,
-                target.generation,
-                &invocation,
-                target.capability_version,
-                PluginProviderOperation::Request {
-                    model: request.model.clone(),
-                    request: body,
-                },
+        }
+        let body = request
+            .body
+            .as_ref()
+            .and_then(|body| serde_json::from_slice::<Value>(body).ok())
+            .ok_or(af_domain::UpstreamError::ProtocolError)?;
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let mut selected = None;
+        for target in candidates {
+            let invocation = self.invocation(&target, &request.model, "provider-request");
+            let result = tokio::time::timeout_at(
+                deadline,
+                self.runtime.invoke_provider(
+                    &self.repository,
+                    &target.plugin_id,
+                    target.generation,
+                    &invocation,
+                    target.capability_version,
+                    PluginProviderOperation::Request {
+                        model: request.model.clone(),
+                        request: body.clone(),
+                    },
+                ),
             )
-            .await
-        {
-            Ok(result) => result,
-            Err(_) => return Ok(request),
-        };
+            .await;
+            if let Ok(Ok(result @ PluginProviderResult::Request { .. })) = result {
+                selected = Some((target, result));
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
+        }
+        let (selected, result) = selected.ok_or(af_domain::UpstreamError::ProtocolError)?;
         let PluginProviderResult::Request {
             method,
             path,
@@ -297,7 +367,7 @@ impl DatabasePluginProviderRelayHook {
             body,
         } = result
         else {
-            return Ok(request);
+            unreachable!()
         };
         let mut target_url =
             Url::parse(&request.target).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
@@ -319,7 +389,15 @@ impl DatabasePluginProviderRelayHook {
                 .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
             header_map.insert(name, value);
         }
-        Ok(ProviderRelayRequest {
+        let projected = ProviderRelayRequest {
+            request_id: request.request_id,
+            credential_id: request.credential_id,
+            channel_id: request.channel_id,
+            binding: Some(ProviderRelayBinding {
+                plugin_id: selected.plugin_id,
+                generation: selected.generation,
+                capability_version: selected.capability_version,
+            }),
             model: request.model,
             operation: request.operation,
             method,
@@ -328,15 +406,78 @@ impl DatabasePluginProviderRelayHook {
             body: serde_json::to_vec(&body).ok().map(Bytes::from),
             response_mode: request.response_mode,
             response_body_limit: request.response_body_limit,
-        })
+        };
+        Ok(projected)
     }
 
-    async fn observe(&self, response: ProviderRelayResponse<'_>) {
-        let Some(target) = self.provider_target().await else {
-            return;
+    async fn sign_request(
+        &self,
+        mut projected: ProviderRelayRequest,
+    ) -> Result<ProviderRelayRequest, af_domain::UpstreamError> {
+        let url =
+            Url::parse(&projected.target).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+        let sign_path = match url.query() {
+            Some(query) => format!("{}?{query}", url.path()),
+            None => url.path().to_owned(),
         };
-        let invocation = self.invocation(&target, response.model, "provider-response");
-        let _ = self
+        let sign_body = projected
+            .body
+            .as_ref()
+            .and_then(|body| serde_json::from_slice(body).ok());
+        if let (Some(lifecycle), Some(channel), Some(credential)) = (
+            &self.lifecycle,
+            projected.channel_id,
+            projected.credential_id,
+        ) && let Some(af_plugin_contract::PluginCredentialResult::Signed {
+            headers,
+            query,
+            body,
+        }) = lifecycle
+            .sign_bound_plugin_request(
+                channel.get(),
+                credential,
+                projected.method.as_str(),
+                &sign_path,
+                sign_body,
+            )
+            .await
+            .map_err(|_| af_domain::UpstreamError::ProtocolError)?
+        {
+            for (name, value) in headers {
+                let name = HeaderName::from_bytes(name.as_bytes())
+                    .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+                let value = HeaderValue::from_str(&value)
+                    .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+                projected.headers.insert(name, value);
+            }
+            if let Some(query) = query {
+                let mut url = Url::parse(&projected.target)
+                    .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+                url.query_pairs_mut().extend_pairs(query);
+                projected.target = url.to_string();
+            }
+            if let Some(body) = body {
+                projected.body = Some(Bytes::from(
+                    serde_json::to_vec(&body)
+                        .map_err(|_| af_domain::UpstreamError::ProtocolError)?,
+                ));
+            }
+        }
+        Ok(projected)
+    }
+
+    async fn classify(
+        &self,
+        request: &ProviderRelayRequest,
+        status: Option<StatusCode>,
+        error: af_domain::UpstreamError,
+    ) -> ProviderRelayFailureAction {
+        let Some(binding) = &request.binding else {
+            return ProviderRelayFailureAction::Continue;
+        };
+        let target = ProviderTarget::from(binding);
+        let invocation = self.invocation(&target, &request.model, "provider-failure");
+        let Ok(result) = self
             .runtime
             .invoke_provider(
                 &self.repository,
@@ -344,27 +485,35 @@ impl DatabasePluginProviderRelayHook {
                 target.generation,
                 &invocation,
                 target.capability_version,
-                PluginProviderOperation::Response {
-                    status: response.status.as_u16(),
-                    response: serde_json::json!({ "status": response.status.as_u16() }),
+                PluginProviderOperation::ClassifyFailure {
+                    status: status.map(|value| value.as_u16()),
+                    error: json!({ "kind": format!("{error:?}") }),
                 },
             )
-            .await;
-        if !response.status.is_success() {
-            let _ = self
-                .runtime
-                .invoke_provider(
-                    &self.repository,
-                    &target.plugin_id,
-                    target.generation,
-                    &invocation,
-                    target.capability_version,
-                    PluginProviderOperation::ClassifyFailure {
-                        status: Some(response.status.as_u16()),
-                        error: serde_json::json!({ "status": response.status.as_u16() }),
-                    },
-                )
-                .await;
+            .await
+        else {
+            return ProviderRelayFailureAction::Continue;
+        };
+        match result {
+            PluginProviderResult::Retry {
+                retryable: true,
+                delay_ms,
+                ..
+            } => ProviderRelayFailureAction::RetryCurrent {
+                delay: Duration::from_millis(u64::from(delay_ms)),
+            },
+            PluginProviderResult::Failure {
+                class:
+                    PluginProviderFailureClass::Unavailable
+                    | PluginProviderFailureClass::Timeout
+                    | PluginProviderFailureClass::RateLimited,
+                ..
+            } => ProviderRelayFailureAction::RouteToNext,
+            PluginProviderResult::Failure { .. }
+            | PluginProviderResult::Retry {
+                retryable: false, ..
+            } => ProviderRelayFailureAction::Abort,
+            _ => ProviderRelayFailureAction::Continue,
         }
     }
 
@@ -396,15 +545,58 @@ impl ProviderRelayHook for DatabasePluginProviderRelayHook {
         &'a self,
         request: ProviderRelayRequest,
     ) -> ProviderRelayRequestFuture<'a> {
-        Box::pin(async move { self.transform(request).await })
+        Box::pin(async move {
+            let request = self.process_outbound(request).await?;
+            let request = self.transform(request).await?;
+            self.sign_request(request).await
+        })
     }
 
     fn observe_response<'a>(
         &'a self,
         response: ProviderRelayResponse<'a>,
     ) -> ProviderRelayResponseFuture<'a> {
-        Box::pin(async move { self.observe(response).await })
+        Box::pin(async move {
+            let _ = response;
+        })
     }
+
+    fn classify_failure<'a>(
+        &'a self,
+        request: &'a ProviderRelayRequest,
+        status: Option<StatusCode>,
+        error: af_domain::UpstreamError,
+    ) -> af_relay::ProviderRelayFailureFuture<'a> {
+        Box::pin(async move { self.classify(request, status, error).await })
+    }
+    fn transform_response<'a>(
+        &'a self,
+        request: &'a ProviderRelayRequest,
+        response: UpstreamResponse,
+    ) -> ProviderRelayTransformFuture<'a> {
+        Box::pin(async move { self.process_response(request, response).await })
+    }
+}
+
+impl From<&ProviderRelayBinding> for ProviderTarget {
+    fn from(binding: &ProviderRelayBinding) -> Self {
+        Self {
+            plugin_id: binding.plugin_id.clone(),
+            generation: binding.generation,
+            capability_version: binding.capability_version,
+            priority: 0,
+            models: vec![],
+            channels: vec![],
+        }
+    }
+}
+
+fn target_matches(target: &ProviderTarget, request: &ProviderRelayRequest) -> bool {
+    (target.models.is_empty() || target.models.iter().any(|model| model == &request.model))
+        && (!target.channels.is_empty()
+            && request
+                .channel_id
+                .is_some_and(|channel| target.channels.contains(&channel.get())))
 }
 
 fn protected_provider_header(name: &str) -> bool {
@@ -591,41 +783,45 @@ impl ChatRequestProcessor for DatabasePluginChatIngressObserver {
         let processor = self.clone();
         Box::pin(async move {
             let targets = processor.targets_for_request().await;
-            let Some(target) = targets.first().cloned() else {
+            if targets.is_empty() {
                 return Ok(request);
-            };
+            }
             let mut input = chat_observer_input(request_id, protocol, &request);
             input.stage = RequestProcessingStage::Request;
             input.body["model"] = Value::String(request.canonical().model.clone());
             input.body["stream"] = Value::Bool(request.canonical().stream);
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let total_deadline = Instant::now() + OBSERVER_REQUEST_BUDGET;
+            for target in targets.into_iter().take(OBSERVER_MAX_PLUGINS_PER_REQUEST) {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|_| af_domain::AfError::Internal)?
+                    .as_millis() as u64;
+                let remaining = total_deadline.saturating_duration_since(Instant::now());
+                let deadline = now_ms.saturating_add(remaining.as_millis() as u64);
+                let output = tokio::time::timeout_at(
+                    total_deadline,
+                    processor.runtime.process_request_stage_with_deadline(
+                        &processor.repository,
+                        &target.plugin_id,
+                        target.generation,
+                        request_id,
+                        deadline,
+                        input.clone(),
+                    ),
+                )
+                .await
                 .map_err(|_| af_domain::AfError::Internal)?
-                .as_millis() as u64;
-            let deadline = now_ms.saturating_add(OBSERVER_PLUGIN_BUDGET.as_millis() as u64);
-            let output = tokio::time::timeout(
-                OBSERVER_PLUGIN_BUDGET,
-                processor.runtime.process_request_stage_with_deadline(
-                    &processor.repository,
-                    &target.plugin_id,
-                    target.generation,
-                    request_id,
-                    deadline,
-                    input.clone(),
-                ),
-            )
-            .await
-            .map_err(|_| af_domain::AfError::Internal)?
-            .map_err(|_| af_domain::AfError::Internal)?;
-            if matches!(
-                output.action,
-                RequestProcessingAction::Reject | RequestProcessingAction::Stop
-            ) {
-                return Err(af_domain::AfError::InvalidRequest);
-            }
-            output
-                .apply_to(&mut input)
                 .map_err(|_| af_domain::AfError::Internal)?;
+                if matches!(
+                    output.action,
+                    RequestProcessingAction::Reject | RequestProcessingAction::Stop
+                ) {
+                    return Err(af_domain::AfError::InvalidRequest);
+                }
+                output
+                    .apply_to(&mut input)
+                    .map_err(|_| af_domain::AfError::Internal)?;
+            }
             let Some(model) = input.body.get("model").and_then(Value::as_str) else {
                 return Ok(request);
             };
@@ -635,8 +831,7 @@ impl ChatRequestProcessor for DatabasePluginChatIngressObserver {
             if model == request.canonical().model {
                 Ok(request)
             } else {
-                let sampling = request.canonical().sampling.clone();
-                Ok(request.with_routed_parameters(model.to_owned(), sampling))
+                Err(af_domain::AfError::InvalidRequest)
             }
         })
     }

@@ -265,6 +265,7 @@ mod plugin_distribution_tests;
 mod plugin_event_delivery;
 #[cfg(test)]
 mod plugin_event_delivery_tests;
+mod plugin_host;
 mod plugin_storage;
 pub use plugin_action_proposals::{
     PluginActionProposalCreate, PluginActionProposalRecord, PluginActionProposalRepository,
@@ -283,6 +284,7 @@ pub use plugin_event_delivery::{
     PluginEventDeliveryResultQuery, PluginEventDeliveryResultRecord, PluginEventFailureKind,
     PluginEventKind, enqueue_plugin_event_delivery,
 };
+pub use plugin_host::{PluginHostError, PluginHostRecord, PluginHostRepository};
 pub use plugin_storage::{
     MAX_PLUGIN_STORAGE_LIST_LIMIT, MAX_PLUGIN_STORAGE_VALUE_BYTES, PluginStorageRecord,
     PluginStorageRepository, PluginStorageRepositoryError,

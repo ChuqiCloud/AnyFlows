@@ -125,7 +125,28 @@ pub enum PluginTaskResult {
     },
     /// Host-safe terminal output. Billing facts are deliberately not part of
     /// this value and remain owned by the host.
-    Result { task_id: String, output: Value },
+    Result {
+        task_id: String,
+        output: Value,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        files: Vec<PluginTaskFile>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        report: Option<PluginTaskReport>,
+        /// Provider usage projection; the host owns billing and settlement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        usage: Option<PluginTaskUsage>,
+    },
+}
+
+/// Consumption facts; rates and reservation ceilings belong to the host.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskUsage {
+    pub units: u64,
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
 }
 
 /// A bounded file produced by a completed task. The host stores bytes and
@@ -143,8 +164,17 @@ pub struct PluginTaskFile {
 impl PluginTaskFile {
     pub fn validate(&self) -> Result<(), TaskContractError> {
         validate_text(&self.name, 256, TaskContractError::InvalidFile)?;
+        if self.name.contains('/')
+            || self.name.contains('\\')
+            || matches!(self.name.as_str(), "." | "..")
+        {
+            return Err(TaskContractError::InvalidFile);
+        }
         validate_text(&self.media_type, 128, TaskContractError::InvalidFile)?;
-        if self.bytes_base64.is_empty() || self.bytes_base64.len() > 64 * 1024 * 1024 {
+        if self.bytes_base64.is_empty() || self.bytes_base64.len() > 512 * 1024 {
+            return Err(TaskContractError::InvalidFile);
+        }
+        if !valid_base64_shape(&self.bytes_base64) {
             return Err(TaskContractError::InvalidFile);
         }
         if self.sha256.as_ref().is_some_and(|digest| {
@@ -202,14 +232,14 @@ impl PluginTaskCompletion {
             file.validate()?;
         }
         if let Some(report) = &self.report {
-            validate_text(&report.title, 256, TaskContractError::InvalidReport)?;
-            validate_text(&report.summary, 16 * 1024, TaskContractError::InvalidReport)?;
+            validate_prose(&report.title, 256, TaskContractError::InvalidReport)?;
+            validate_prose(&report.summary, 16 * 1024, TaskContractError::InvalidReport)?;
             if report.findings.len() > 1024 {
                 return Err(TaskContractError::InvalidReport);
             }
             for finding in &report.findings {
                 validate_text(&finding.code, 128, TaskContractError::InvalidReport)?;
-                validate_text(&finding.message, 4096, TaskContractError::InvalidReport)?;
+                validate_prose(&finding.message, 4096, TaskContractError::InvalidReport)?;
             }
         }
         Ok(())
@@ -259,9 +289,47 @@ impl PluginTaskResult {
                     return Err(TaskContractError::InvalidRetryAdvice);
                 }
             }
-            Self::Result { task_id, output } => {
+            Self::Result {
+                task_id,
+                output,
+                files,
+                report,
+                usage,
+            } => {
                 validate_task_id(task_id)?;
                 if output.is_null() {
+                    return Err(TaskContractError::InvalidResponse);
+                }
+                if files.len() > 64 {
+                    return Err(TaskContractError::InvalidFile);
+                }
+                for file in files {
+                    file.validate()?;
+                }
+                if files
+                    .iter()
+                    .map(|file| file.bytes_base64.len())
+                    .try_fold(0usize, usize::checked_add)
+                    .is_none_or(|bytes| bytes > 1_500_000)
+                {
+                    return Err(TaskContractError::InvalidFile);
+                }
+                if let Some(report) = report {
+                    validate_prose(&report.title, 256, TaskContractError::InvalidReport)?;
+                    validate_prose(&report.summary, 16 * 1024, TaskContractError::InvalidReport)?;
+                    if report.findings.len() > 1024 {
+                        return Err(TaskContractError::InvalidReport);
+                    }
+                    for finding in &report.findings {
+                        validate_text(&finding.code, 128, TaskContractError::InvalidReport)?;
+                        validate_prose(&finding.message, 2048, TaskContractError::InvalidReport)?;
+                    }
+                }
+                if usage.as_ref().is_some_and(|value| {
+                    value.units > i64::MAX as u64
+                        || value.input_tokens > i64::MAX as u64
+                        || value.output_tokens > i64::MAX as u64
+                }) {
                     return Err(TaskContractError::InvalidResponse);
                 }
             }
@@ -325,6 +393,41 @@ fn validate_text(
     } else {
         Ok(())
     }
+}
+
+fn validate_prose(
+    value: &str,
+    max: usize,
+    error: TaskContractError,
+) -> Result<(), TaskContractError> {
+    if value.trim().is_empty()
+        || value.len() > max
+        || value
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        Err(error)
+    } else {
+        Ok(())
+    }
+}
+
+fn valid_base64_shape(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
+        return false;
+    }
+    let first_padding = bytes.iter().position(|byte| *byte == b'=');
+    if let Some(index) = first_padding
+        && (index < bytes.len().saturating_sub(2)
+            || bytes[index..].iter().any(|byte| *byte != b'=')
+            || bytes.len() - index > 2)
+    {
+        return false;
+    }
+    bytes
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'+' || *byte == b'/' || *byte == b'=')
 }
 
 fn validate_progress(value: Option<u16>) -> Result<(), TaskContractError> {

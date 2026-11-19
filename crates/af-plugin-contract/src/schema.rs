@@ -124,7 +124,7 @@ pub fn schema_document() -> Value {
                     "schemaVersion": { "type": "integer", "const": 1 },
                     "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
                     "path": { "type": "string", "pattern": "^/[A-Za-z0-9._/-]+$", "maxLength": 160 },
-                    "audience": { "enum": ["user", "admin"] },
+                    "audience": { "enum": ["user", "admin", "model_key"] },
                     "capabilityId": { "type": "string", "maxLength": 128 },
                     "capabilityVersion": { "type": "integer", "minimum": 1, "maximum": 65535 },
                     "maxBodyBytes": { "type": "integer", "minimum": 1, "maximum": 1048576, "default": 262144 },
@@ -466,7 +466,10 @@ pub fn schema_document() -> Value {
                                 "required": ["task_id", "output"],
                                 "properties": {
                                     "task_id": { "type": "string", "minLength": 1, "maxLength": 512 },
-                                    "output": {}
+                                    "output": {},
+                                    "files": { "type": "array", "maxItems": 64, "items": { "type": "object" } },
+                                    "report": { "type": ["object", "null"] },
+                                    "usage": {}
                                 }
                             }
                         }

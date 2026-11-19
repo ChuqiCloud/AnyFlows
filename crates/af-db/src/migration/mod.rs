@@ -148,6 +148,7 @@ mod m20261116_000184_create_plugin_event_deliveries;
 mod m20261116_000185_create_plugin_action_proposals;
 mod m20261118_000186_create_plugin_capability_actions;
 mod m20261119_000187_create_plugin_storage;
+mod m20261119_000188_create_plugin_host_records;
 mod schema;
 
 #[cfg(test)]
@@ -569,6 +570,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261116_000185_create_plugin_action_proposals::Migration),
             Box::new(m20261118_000186_create_plugin_capability_actions::Migration),
             Box::new(m20261119_000187_create_plugin_storage::Migration),
+            Box::new(m20261119_000188_create_plugin_host_records::Migration),
         ]
     }
 }

@@ -544,37 +544,12 @@ class Plugin:
                 raise PluginError("invalid_response")
             if "retry_after_seconds" in payload and (payload.get("retryable") is not True or type(payload["retry_after_seconds"]) is not int or not 0 <= payload["retry_after_seconds"] <= 86400):
                 raise PluginError("invalid_response")
-        elif set(payload) - {"task_id", "output"} or not isinstance(payload.get("task_id"), str) or not 1 <= len(payload["task_id"].encode("utf-8")) <= 512 or not payload["task_id"].strip() or payload["task_id"].strip() != payload["task_id"] or any(character.isspace() or ord(character) < 32 for character in payload["task_id"]) or "output" not in payload or payload["output"] is None:
+        elif set(payload) - {"task_id", "output", "files", "report", "usage"} or not isinstance(payload.get("task_id"), str) or not 1 <= len(payload["task_id"].encode("utf-8")) <= 512 or not payload["task_id"].strip() or payload["task_id"].strip() != payload["task_id"] or any(character.isspace() or ord(character) < 32 for character in payload["task_id"]) or "output" not in payload or payload["output"] is None:
             raise PluginError("invalid_response")
 
     @staticmethod
     def _validate_provider_result(value: Any) -> None:
         if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code"}:
-            raise PluginError("invalid_response")
-
-    @staticmethod
-    def _validate_credential_result(value: Any) -> None:
-        if not isinstance(value, dict) or not isinstance(value.get("kind"), str):
-            raise PluginError("invalid_response")
-        kind = value["kind"]
-        if kind == "login":
-            if set(value) - {"kind", "authorization_url", "state", "complete"} or type(value.get("complete")) is not bool:
-                raise PluginError("invalid_response")
-        elif kind == "refreshed":
-            if set(value) - {"kind", "expires_at_unix_ms"}:
-                raise PluginError("invalid_response")
-        elif kind == "revoked":
-            if set(value) != {"kind"}:
-                raise PluginError("invalid_response")
-        elif kind == "signed":
-            if set(value) - {"kind", "headers", "query", "body"} or not isinstance(value.get("headers"), dict):
-                raise PluginError("invalid_response")
-            if any(str(name).lower() in {"authorization", "host", "cookie", "content-length", "proxy-authorization"} for name in value["headers"]):
-                raise PluginError("invalid_response")
-        elif kind == "balance":
-            if set(value) - {"kind", "amount", "currency", "as_of_unix_ms"} or not isinstance(value.get("amount"), str) or not isinstance(value.get("currency"), str):
-                raise PluginError("invalid_response")
-        else:
             raise PluginError("invalid_response")
         kind = value.get("kind")
         if kind == "models":
@@ -597,6 +572,37 @@ class Plugin:
                 raise PluginError("invalid_response")
         elif kind == "retry":
             if type(value.get("retryable")) is not bool or type(value.get("delay_ms")) is not int or not 0 <= value["delay_ms"] <= 86400000 or not isinstance(value.get("reason_code"), str) or not value["reason_code"].strip():
+                raise PluginError("invalid_response")
+        else:
+            raise PluginError("invalid_response")
+
+
+    @staticmethod
+    def _validate_credential_result(value: Any) -> None:
+        if not isinstance(value, dict) or not isinstance(value.get("kind"), str):
+            raise PluginError("invalid_response")
+        kind = value["kind"]
+        if kind == "session":
+            if set(value) != {"kind", "material", "result"} or not isinstance(value["material"], dict) or Plugin._json_size(value["material"]) > 4096 or not isinstance(value["result"], dict) or value["result"].get("kind") == "session":
+                raise PluginError("invalid_response")
+            Plugin._validate_credential_result(value["result"])
+            return
+        if kind == "login":
+            if set(value) - {"kind", "authorization_url", "state", "complete"} or type(value.get("complete")) is not bool:
+                raise PluginError("invalid_response")
+        elif kind == "refreshed":
+            if set(value) - {"kind", "expires_at_unix_ms"}:
+                raise PluginError("invalid_response")
+        elif kind == "revoked":
+            if set(value) != {"kind"}:
+                raise PluginError("invalid_response")
+        elif kind == "signed":
+            if set(value) - {"kind", "headers", "query", "body"} or not isinstance(value.get("headers"), dict):
+                raise PluginError("invalid_response")
+            if any(str(name).lower() in {"host", "cookie", "content-length", "proxy-authorization", "connection", "transfer-encoding", "upgrade"} for name in value["headers"]):
+                raise PluginError("invalid_response")
+        elif kind == "balance":
+            if set(value) - {"kind", "amount", "currency", "as_of_unix_ms"} or not isinstance(value.get("amount"), str) or not isinstance(value.get("currency"), str):
                 raise PluginError("invalid_response")
         else:
             raise PluginError("invalid_response")
@@ -724,7 +730,7 @@ class Plugin:
             credential = operation["credential"]
             if (
                 not isinstance(credential, dict)
-                or credential.get("kind") not in {"login", "refresh", "revoke", "sign", "balance"}
+                or credential.get("kind") not in {"bound", "login", "refresh", "revoke", "sign", "balance"}
                 or self._json_size(credential) > self.max_response_bytes
             ):
                 raise ProtocolError("invalid credential operation")

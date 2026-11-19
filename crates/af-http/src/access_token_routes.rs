@@ -424,6 +424,31 @@ fn registry() -> &'static BTreeMap<String, AccessTokenRoutePolicy> {
                 "/api/explorer/catalog/{operation_id}",
                 "getApiExplorerOperation",
             ),
+            (
+                "GET",
+                "/api/plugins/{plugin_id}/routes/{route_id}",
+                "getModelPluginRoute",
+            ),
+            (
+                "POST",
+                "/api/plugins/{plugin_id}/routes/{route_id}",
+                "invokeModelPluginRoute",
+            ),
+            (
+                "PUT",
+                "/api/plugins/{plugin_id}/routes/{route_id}",
+                "replaceModelPluginRoute",
+            ),
+            (
+                "PATCH",
+                "/api/plugins/{plugin_id}/routes/{route_id}",
+                "patchModelPluginRoute",
+            ),
+            (
+                "DELETE",
+                "/api/plugins/{plugin_id}/routes/{route_id}",
+                "deleteModelPluginRoute",
+            ),
         ] {
             registry
                 .entry(route_key(method, path))
@@ -532,7 +557,8 @@ fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
         | "/api/account/plugin-models/sources"
         | "/api/account/plugin-models/{plugin_id}" => &["models:read"],
         "/api/account/plugins/market" | "/api/account/plugins/market/index" => &["plugins:read"],
-        "/api/account/plugins/{plugin_id}/routes/{route_id}" => &["plugins:execute"],
+        "/api/account/plugins/{plugin_id}/routes/{route_id}"
+        | "/api/plugins/{plugin_id}/routes/{route_id}" => &["plugins:execute"],
         "/api/token-groups" => &["api_keys:read"],
         "/api/tokens" | "/api/tokens/{id}" => {
             if read {

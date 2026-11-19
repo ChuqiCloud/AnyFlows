@@ -20,6 +20,12 @@ pub struct PluginMarketEntry {
     pub icon: Option<String>,
     pub author: Option<String>,
     pub repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downloads: Option<u64>,
     pub versions: Vec<PluginMarketVersion>,
 }
 
@@ -35,6 +41,25 @@ pub struct PluginMarketVersion {
     pub engines: Option<PluginMarketEngines>,
     pub capabilities: Vec<String>,
     pub published_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changelog: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_host_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_host_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<PluginMarketSignature>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginMarketSignature {
+    pub signer_key_id: String,
+    pub signature_base64: String,
 }
 
 /// A remotely installable, immutable plugin artifact.
@@ -144,6 +169,22 @@ impl PluginMarketIndex {
                 }) {
                     return Err(PluginMarketError::InvalidVersion);
                 }
+                if version
+                    .changelog
+                    .as_ref()
+                    .is_some_and(|value| value.len() > 64 * 1024)
+                    || version
+                        .runtime
+                        .as_ref()
+                        .is_some_and(|value| value.len() > 64)
+                    || version.signature.as_ref().is_some_and(|signature| {
+                        signature.signer_key_id.is_empty()
+                            || signature.signer_key_id.len() > 128
+                            || signature.signature_base64.len() > 512
+                    })
+                {
+                    return Err(PluginMarketError::InvalidVersion);
+                }
             }
         }
         Ok(())
@@ -227,6 +268,9 @@ mod tests {
                 icon: None,
                 author: None,
                 repository: None,
+                homepage: None,
+                categories: Vec::new(),
+                downloads: None,
                 versions: vec![PluginMarketVersion {
                     version: "1.0.0".to_owned(),
                     archive_url: "https://example.com/plugin.afplugin".to_owned(),
@@ -236,6 +280,12 @@ mod tests {
                     engines: None,
                     capabilities: Vec::new(),
                     published_at: None,
+                    changelog: None,
+                    min_host_version: None,
+                    max_host_version: None,
+                    download_bytes: None,
+                    runtime: None,
+                    signature: None,
                 }],
             }],
         };

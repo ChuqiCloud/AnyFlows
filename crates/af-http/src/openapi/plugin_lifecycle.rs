@@ -287,6 +287,70 @@ fn invoke_user_plugin_route_delete() {}
 
 #[utoipa::path(
     get,
+    path = "/api/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeModelPluginRouteGet",
+    tag = "模型插件路由",
+    summary = "使用模型 Key 调用插件 GET 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 401, description = "模型 Key 无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 404, description = "插件或路由不存在", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn invoke_model_plugin_route_get() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeModelPluginRoutePost",
+    tag = "模型插件路由",
+    summary = "使用模型 Key 调用插件 POST 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "模型 Key 无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn invoke_model_plugin_route_post() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeModelPluginRoutePut",
+    tag = "模型插件路由",
+    summary = "使用模型 Key 调用插件 PUT 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "模型 Key 无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn invoke_model_plugin_route_put() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeModelPluginRoutePatch",
+    tag = "模型插件路由",
+    summary = "使用模型 Key 调用插件 PATCH 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "模型 Key 无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn invoke_model_plugin_route_patch() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeModelPluginRouteDelete",
+    tag = "模型插件路由",
+    summary = "使用模型 Key 调用插件 DELETE 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "模型 Key 无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn invoke_model_plugin_route_delete() {}
+
+#[utoipa::path(
+    get,
     path = "/api/account/plugins/market",
     operation_id = "listPluginMarket",
     tag = "插件市场",
@@ -640,6 +704,11 @@ fn list_plugin_catalog_models() {}
         invoke_user_plugin_route_put,
         invoke_user_plugin_route_patch,
         invoke_user_plugin_route_delete,
+        invoke_model_plugin_route_get,
+        invoke_model_plugin_route_post,
+        invoke_model_plugin_route_put,
+        invoke_model_plugin_route_patch,
+        invoke_model_plugin_route_delete,
         list_plugin_market,
         fetch_plugin_market_index,
         propose_admin_plugin_capability_action,

@@ -182,6 +182,7 @@ impl ScheduledChatService {
                 let mut relay_candidate = RelayCandidate::new(adaptor.clone(), context, credential)
                     .with_header_overrides(headers.clone())
                     .with_channel_group(target.channel_id())
+                    .with_credential_binding(credential_id.get())
                     .with_retry_limit(target.relay_retry_limit())
                     .with_retry_delay_ms(target.relay_retry_delay_ms())
                     .with_race_width(target.relay_race_width());

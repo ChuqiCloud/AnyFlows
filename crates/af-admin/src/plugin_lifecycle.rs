@@ -4,6 +4,8 @@
 //! attribution. Runtime activation is deliberately handled by a separate host
 //! runtime coordinator.
 
+mod data_plane;
+
 use std::{
     fmt,
     sync::Arc,
@@ -25,8 +27,8 @@ use af_httpclient::{
 };
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata,
-    PluginCredentialOperation, PluginId, PluginManifest, PluginMarketIndex, PluginMarketSource,
-    PluginRouteMethod, PluginTaskOperation, PluginTaskResult, SideEffectClass,
+    PluginCredentialOperation, PluginCredentialResult, PluginId, PluginManifest, PluginMarketIndex,
+    PluginMarketSource, PluginRouteMethod, PluginTaskOperation, PluginTaskResult, SideEffectClass,
 };
 use af_plugin_runtime::{
     PluginStorageDispatcher, VerifiedPluginArtifact, validate_capability_schemas,
@@ -849,6 +851,7 @@ pub enum AdminPluginLifecycleError {
 
 /// Admin-only access to the durable plugin catalog and its optional sidecar runtime.
 pub struct DatabaseAdminPluginLifecycleService {
+    data_plane: Option<data_plane::DataPlane>,
     repository: PluginCatalogRepository,
     audit: Arc<dyn PlatformAuditService>,
     market_clients: Option<HttpClientProvider>,
@@ -892,6 +895,7 @@ impl DatabaseAdminPluginLifecycleService {
         Self {
             repository,
             audit,
+            data_plane: None,
             market_clients: None,
             sidecar_runtime: None,
             storage_dispatcher: None,
@@ -1172,6 +1176,31 @@ impl DatabaseAdminPluginLifecycleService {
         .await
     }
 
+    /// Invoke a model-key route with the already authenticated user identity.
+    /// Model-key routes use a separate manifest audience so they cannot be
+    /// reached through the browser session endpoints by accident.
+    pub async fn invoke_model_plugin_route(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        route_id: &str,
+        method: PluginRouteMethod,
+        input: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginRouteInvocationResult, AdminPluginLifecycleError> {
+        self.invoke_plugin_route_for_audience(
+            principal,
+            plugin_id,
+            route_id,
+            method,
+            input,
+            request_id,
+            af_plugin_contract::PluginRouteAudience::ModelKey,
+            "/api/plugins/{pluginId}/routes/{routeId}",
+        )
+        .await
+    }
+
     #[allow(
         clippy::too_many_arguments,
         reason = "插件路由调用同时携带认证、路由、受众和审计上下文"
@@ -1368,48 +1397,61 @@ impl DatabaseAdminPluginLifecycleService {
         Ok((deployment, invocation))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "凭据生命周期入口需要固定携带绑定、回调和审计上下文"
+    )]
     pub async fn invoke_plugin_credential(
         &self,
         principal: SessionPrincipal,
         plugin_id: &str,
         credential_id: &str,
+        channel_id: i64,
+        callback_state: Option<&str>,
         capability_version: u16,
         operation: PluginCredentialOperation,
         request_id: &str,
     ) -> Result<AdminPluginCredentialInvocationResult, AdminPluginLifecycleError> {
         self.authorize(principal).await?;
-        if credential_id.is_empty()
-            || credential_id.len() > 128
-            || credential_id.chars().any(char::is_whitespace)
-        {
-            return Err(AdminPluginLifecycleError::InvalidInput);
-        }
-        operation
-            .validate()
+        let credential = credential_id
+            .parse::<i64>()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        let (deployment, invocation) = self
-            .prepare_plugin_operation(
+        self.bind_plugin_credential(
+            principal,
+            plugin_id,
+            channel_id,
+            credential,
+            capability_version,
+            request_id,
+        )
+        .await?;
+        let mut result = self
+            .credential_operation(
                 plugin_id,
-                af_plugin_contract::PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY,
-                capability_version,
-                request_id,
-                PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
-            )
-            .await?;
-        let runtime = self
-            .sidecar_runtime
-            .as_ref()
-            .ok_or(AdminPluginLifecycleError::RuntimeUnavailable)?;
-        let result = runtime
-            .invoke_credential(
-                &self.repository,
-                plugin_id,
-                deployment.generation,
-                &invocation,
-                capability_version,
+                channel_id,
+                credential,
                 operation,
+                callback_state,
+                request_id,
             )
             .await?;
+        // Signing material is only consumed on the internal Relay path.
+        if let PluginCredentialResult::Signed {
+            headers,
+            query,
+            body,
+        } = &mut result
+        {
+            headers.clear();
+            *query = None;
+            *body = None;
+        }
+        let deployment = self
+            .repository
+            .get_deployment(plugin_id)
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
         Ok(AdminPluginCredentialInvocationResult {
             plugin_id: plugin_id.to_owned(),
             deployment_generation: deployment.generation,

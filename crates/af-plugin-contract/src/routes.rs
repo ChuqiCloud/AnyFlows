@@ -41,6 +41,8 @@ impl PluginRouteMethod {
 pub enum PluginRouteAudience {
     User,
     Admin,
+    /// API-key callers authenticated by the model gateway.
+    ModelKey,
 }
 
 /// A route declared in `anyflows-plugin.json`.

@@ -42,7 +42,7 @@ impl RequestProcessingStage {
     /// payload after the host has started producing the client response.
     #[must_use]
     pub const fn allows_effects(self) -> bool {
-        !matches!(self, Self::Reply | Self::Report)
+        !matches!(self, Self::Report)
     }
 
     /// Whether a terminal plugin action can stop the host pipeline at this
@@ -318,9 +318,6 @@ impl RequestProcessingOutput {
         if (!stage.allows_effects() && !self.effects.is_empty())
             || (!stage.allows_terminal_action() && self.is_terminal())
         {
-            return Err(ContractValidationError::InvalidExternalValue);
-        }
-        if matches!(stage, RequestProcessingStage::Reply) && !self.effects.is_empty() {
             return Err(ContractValidationError::InvalidExternalValue);
         }
         if self.findings.iter().any(|finding| {
@@ -717,18 +714,13 @@ mod tests {
             set: BTreeMap::from([("x-plugin".to_owned(), "value".to_owned())]),
             remove: Vec::new(),
         });
-        for stage in [
-            RequestProcessingStage::Reply,
-            RequestProcessingStage::Report,
-        ] {
-            let output = RequestProcessingOutput {
-                action: RequestProcessingAction::Continue,
-                effects: vec![effects.clone()],
-                findings: Vec::new(),
-                message: None,
-            };
-            assert!(output.validate_for(stage).is_err());
-        }
+        let output = RequestProcessingOutput {
+            action: RequestProcessingAction::Continue,
+            effects: vec![effects],
+            findings: Vec::new(),
+            message: None,
+        };
+        assert!(output.validate_for(RequestProcessingStage::Report).is_err());
         let output = RequestProcessingOutput {
             action: RequestProcessingAction::Stop,
             effects: Vec::new(),

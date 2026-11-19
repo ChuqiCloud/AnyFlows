@@ -1,0 +1,2582 @@
+{
+  "$defs": {
+    "CapabilityDeclaration": {
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sideEffect": {
+                "const": "external_write"
+              }
+            },
+            "required": [
+              "sideEffect"
+            ]
+          },
+          "then": {
+            "properties": {
+              "access": {
+                "const": "write"
+              }
+            },
+            "required": [
+              "writeSemantics"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sideEffect": {
+                "enum": [
+                  "none",
+                  "external_read"
+                ]
+              }
+            },
+            "required": [
+              "sideEffect"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "writeSemantics"
+              ]
+            }
+          }
+        }
+      ],
+      "dependentRequired": {
+        "inputSchema": [
+          "outputSchema"
+        ],
+        "outputSchema": [
+          "inputSchema"
+        ]
+      },
+      "properties": {
+        "access": {
+          "enum": [
+            "read",
+            "write"
+          ]
+        },
+        "id": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "inputSchema": {
+          "type": "object"
+        },
+        "outputSchema": {
+          "type": "object"
+        },
+        "sideEffect": {
+          "enum": [
+            "none",
+            "external_read",
+            "external_write"
+          ]
+        },
+        "version": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "writeSemantics": {
+          "$ref": "#/$defs/ExternalWriteSemantics"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "access",
+        "sideEffect"
+      ],
+      "type": "object"
+    },
+    "CapabilityInvocation": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "input": {}
+      },
+      "required": [
+        "capabilityVersion",
+        "input"
+      ],
+      "type": "object"
+    },
+    "CapabilityResult": {
+      "additionalProperties": false,
+      "properties": {
+        "output": {}
+      },
+      "required": [
+        "output"
+      ],
+      "type": "object"
+    },
+    "ConnectorError": {
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_configuration",
+            "unsupported",
+            "authentication_required",
+            "forbidden",
+            "rate_limited",
+            "temporarily_unavailable",
+            "conflict",
+            "upstream_failure",
+            "partial_success",
+            "outcome_unknown",
+            "invalid_response"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "not_applied",
+            "applied",
+            "unknown"
+          ]
+        },
+        "retryAfterMs": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "ConnectorHealth": {
+      "additionalProperties": true,
+      "properties": {
+        "checkedAtUnixMs": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "errorCode": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "healthy",
+            "degraded",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "checkedAtUnixMs"
+      ],
+      "type": "object"
+    },
+    "ConnectorLimits": {
+      "additionalProperties": true,
+      "properties": {
+        "maxConcurrency": {
+          "maximum": 1024,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxPageSize": {
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxResponseBytes": {
+          "maximum": 16777216,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "requestTimeoutMs": {
+          "maximum": 300000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maxConcurrency",
+        "requestTimeoutMs",
+        "maxResponseBytes",
+        "maxPageSize"
+      ],
+      "type": "object"
+    },
+    "ContractVersion": {
+      "additionalProperties": true,
+      "properties": {
+        "major": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "minor": {
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "type": "object"
+    },
+    "ContractVersionRange": {
+      "additionalProperties": true,
+      "properties": {
+        "maximum": {
+          "$ref": "#/$defs/ContractVersion"
+        },
+        "minimum": {
+          "$ref": "#/$defs/ContractVersion"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "type": "object"
+    },
+    "ExternalAccountProfile": {
+      "additionalProperties": true,
+      "properties": {
+        "displayName": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "subject": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject"
+      ],
+      "type": "object"
+    },
+    "ExternalBalanceSnapshot": {
+      "additionalProperties": true,
+      "properties": {
+        "amount": {
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "observedAtUnixMs": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "unit": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "unit",
+        "observedAtUnixMs"
+      ],
+      "type": "object"
+    },
+    "ExternalWriteSemantics": {
+      "additionalProperties": true,
+      "properties": {
+        "nativeIdempotencyKey": {
+          "type": "boolean"
+        },
+        "reconciliation": {
+          "type": "boolean"
+        },
+        "resultLookup": {
+          "enum": [
+            "none",
+            "by_request_id",
+            "by_external_reference"
+          ]
+        }
+      },
+      "required": [
+        "nativeIdempotencyKey",
+        "resultLookup",
+        "reconciliation"
+      ],
+      "type": "object"
+    },
+    "HostHttpMethod": {
+      "enum": [
+        "GET",
+        "HEAD"
+      ],
+      "type": "string"
+    },
+    "HostHttpRequestProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "endpointId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/$defs/HostHttpMethod"
+        },
+        "query": {
+          "additionalProperties": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "maxProperties": 32,
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "endpointId",
+        "method"
+      ],
+      "type": "object"
+    },
+    "HostHttpResponseProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {},
+        "statusCode": {
+          "maximum": 299,
+          "minimum": 200,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "statusCode",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "JsonPatchOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "enum": [
+            "add",
+            "remove",
+            "replace"
+          ]
+        },
+        "path": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "value": {}
+      },
+      "required": [
+        "op",
+        "path"
+      ],
+      "type": "object"
+    },
+    "PluginEventDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "eventKind": {
+          "enum": [
+            "channel.health.changed",
+            "merchant.service.changed",
+            "model.catalog.changed",
+            "channel.config.changed",
+            "channel.credential.changed",
+            "model.pricing.changed",
+            "external.account.balance.changed",
+            "plugin.deployment.changed",
+            "plugin.task.changed"
+          ]
+        },
+        "filterFields": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "payloadSchema": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "eventKind",
+        "capabilityId",
+        "capabilityVersion",
+        "payloadSchema",
+        "filterFields"
+      ],
+      "type": "object"
+    },
+    "PluginEventSubscription": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "channel.health.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.channel-health.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              },
+              "filters": {
+                "properties": {
+                  "status": {
+                    "items": {
+                      "enum": [
+                        "down",
+                        "recovered"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "merchant.service.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.merchant-service.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              },
+              "filters": {
+                "properties": {
+                  "status": {
+                    "items": {
+                      "enum": [
+                        "active",
+                        "paused"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "model.catalog.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.model-catalog.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "channel.config.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.channel-config.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "channel.credential.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.channel-credential.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "model.pricing.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.model-pricing.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "external.account.balance.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.external-account-balance.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "plugin.deployment.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.plugin-deployment.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "eventKind": {
+                "const": "plugin.task.changed"
+              }
+            },
+            "required": [
+              "eventKind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "capabilityId": {
+                "const": "events.plugin-task.changed.consume"
+              },
+              "capabilityVersion": {
+                "const": 1
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "eventKind": {
+          "enum": [
+            "channel.health.changed",
+            "merchant.service.changed",
+            "model.catalog.changed",
+            "channel.config.changed",
+            "channel.credential.changed",
+            "model.pricing.changed",
+            "external.account.balance.changed",
+            "plugin.deployment.changed",
+            "plugin.task.changed"
+          ]
+        },
+        "filters": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "items": {
+                "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              "maxItems": 6,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "eventKind",
+        "capabilityId",
+        "capabilityVersion"
+      ],
+      "type": "object"
+    },
+    "PluginHostOperation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "manifest"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "const": "health"
+            }
+          },
+          "required": [
+            "operation"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilityId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+              "type": "string"
+            },
+            "capabilityVersion": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "connectionId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "input": {},
+            "operation": {
+              "const": "invoke_capability"
+            },
+            "publicConfig": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "operation",
+            "connectionId",
+            "publicConfig",
+            "capabilityId",
+            "capabilityVersion",
+            "input"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilityId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+              "type": "string"
+            },
+            "capabilityVersion": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "connectionId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "operation": {
+              "const": "invoke_task"
+            },
+            "publicConfig": {
+              "type": "object"
+            },
+            "task": {
+              "$ref": "#/$defs/PluginTaskOperation"
+            }
+          },
+          "required": [
+            "operation",
+            "connectionId",
+            "publicConfig",
+            "capabilityId",
+            "capabilityVersion",
+            "task"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilityId": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "capabilityVersion": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "connectionId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "operation": {
+              "const": "invoke_provider"
+            },
+            "provider": {
+              "type": "object"
+            },
+            "publicConfig": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "operation",
+            "connectionId",
+            "publicConfig",
+            "capabilityId",
+            "capabilityVersion",
+            "provider"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilityId": {
+              "maxLength": 128,
+              "type": "string"
+            },
+            "capabilityVersion": {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "connectionId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "input": {},
+            "operation": {
+              "const": "plugin_route"
+            },
+            "publicConfig": {
+              "type": "object"
+            },
+            "routeId": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "connectionId",
+            "publicConfig",
+            "capabilityId",
+            "capabilityVersion",
+            "routeId",
+            "input"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginHostProtocol": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "const": "utf-8-json"
+        },
+        "framing": {
+          "const": "one-json-object-per-line"
+        },
+        "maxFrameBytes": {
+          "maximum": 16777216,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "operations": {
+          "const": [
+            "manifest",
+            "health",
+            "invoke_capability",
+            "invoke_task",
+            "invoke_provider",
+            "plugin_route"
+          ]
+        }
+      },
+      "required": [
+        "encoding",
+        "framing",
+        "maxFrameBytes",
+        "operations"
+      ],
+      "type": "object"
+    },
+    "PluginHostRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "deadlineUnixMs": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "operation": {
+          "$ref": "#/$defs/PluginHostOperation"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "deadlineUnixMs",
+        "operation"
+      ],
+      "type": "object"
+    },
+    "PluginHostResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "maxLength": 128,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+          "type": "string"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/PluginHostResult"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "result"
+      ],
+      "type": "object"
+    },
+    "PluginHostResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "manifest"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginManifest"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "health"
+            },
+            "value": {
+              "$ref": "#/$defs/ConnectorHealth"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "capability"
+            },
+            "value": {
+              "$ref": "#/$defs/CapabilityResult"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "task"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginTaskResult"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "provider"
+            },
+            "value": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "error"
+            },
+            "value": {
+              "$ref": "#/$defs/ConnectorError"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginManifest": {
+      "additionalProperties": true,
+      "properties": {
+        "authenticationModes": {
+          "items": {
+            "maxLength": 128,
+            "pattern": "^[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*$",
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/CapabilityDeclaration"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "type": "array"
+        },
+        "configSchema": {
+          "type": "object"
+        },
+        "contractRange": {
+          "$ref": "#/$defs/ContractVersionRange"
+        },
+        "displayName": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "eventSubscriptions": {
+          "items": {
+            "$ref": "#/$defs/PluginEventSubscription"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "limits": {
+          "$ref": "#/$defs/ConnectorLimits"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginVersion"
+        },
+        "routes": {
+          "items": {
+            "$ref": "#/$defs/PluginRoute"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "uiContributions": {
+          "items": {
+            "$ref": "#/$defs/PluginUiContribution"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "uiPages": {
+          "items": {
+            "$ref": "#/$defs/PluginUiPage"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "uiViews": {
+          "items": {
+            "$ref": "#/$defs/PluginUiView"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "pluginId",
+        "pluginVersion",
+        "contractRange",
+        "capabilities",
+        "authenticationModes",
+        "limits",
+        "configSchema"
+      ],
+      "type": "object"
+    },
+    "PluginProxyError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "authentication_required",
+            "forbidden",
+            "rate_limited",
+            "temporarily_unavailable",
+            "unsupported",
+            "invalid_response"
+          ]
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "PluginProxyRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginVersion"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "proxyRequestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/HostHttpRequestProposal"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "capabilityId",
+        "capabilityVersion",
+        "proxyRequestId",
+        "request"
+      ],
+      "type": "object"
+    },
+    "PluginProxyResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deploymentGeneration": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "pluginId": {
+          "maxLength": 128,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+          "type": "string"
+        },
+        "pluginVersion": {
+          "$ref": "#/$defs/PluginVersion"
+        },
+        "protocolVersion": {
+          "const": 1
+        },
+        "proxyRequestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/PluginProxyResult"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "pluginId",
+        "pluginVersion",
+        "artifactSha256",
+        "deploymentGeneration",
+        "requestId",
+        "capabilityId",
+        "capabilityVersion",
+        "proxyRequestId",
+        "result"
+      ],
+      "type": "object"
+    },
+    "PluginProxyResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "response"
+            },
+            "value": {
+              "$ref": "#/$defs/HostHttpResponseProjection"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "error"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginProxyError"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginRoute": {
+      "additionalProperties": false,
+      "properties": {
+        "audience": {
+          "enum": [
+            "user",
+            "admin",
+            "model_key"
+          ]
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "maxBodyBytes": {
+          "default": 262144,
+          "maximum": 1048576,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "maxLength": 160,
+          "pattern": "^/[A-Za-z0-9._/-]+$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "integer"
+        },
+        "timeoutMs": {
+          "default": 30000,
+          "maximum": 120000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "method",
+        "path",
+        "audience",
+        "capabilityId",
+        "capabilityVersion"
+      ],
+      "type": "object"
+    },
+    "PluginStorageKey": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._/-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "PluginStorageOperation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/PluginStorageKey"
+            },
+            "operation": {
+              "const": "get"
+            }
+          },
+          "required": [
+            "operation",
+            "key"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/PluginStorageKey"
+            },
+            "operation": {
+              "const": "put"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginStorageValue"
+            }
+          },
+          "required": [
+            "operation",
+            "key",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/PluginStorageKey"
+            },
+            "operation": {
+              "const": "delete"
+            }
+          },
+          "required": [
+            "operation",
+            "key"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "operation": {
+              "const": "list"
+            },
+            "prefix": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "limit"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginStorageValue": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAtUnixMs": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "value": {}
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    },
+    "PluginTaskOperation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "idempotency_key": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "submit"
+            },
+            "model": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "request": {}
+          },
+          "required": [
+            "kind",
+            "model",
+            "request"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "status"
+            },
+            "task_id": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "task_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "cancel"
+            },
+            "reason": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "task_id": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "task_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "result"
+            },
+            "response": {},
+            "task_id": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "task_id",
+            "response"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginTaskResult": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "submitted"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "progress_basis_points": {
+                  "maximum": 10000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "state": {
+                  "enum": [
+                    "submitted",
+                    "queued",
+                    "running"
+                  ]
+                },
+                "task_id": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task_id",
+                "state"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "status"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "failure_code": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "progress_basis_points": {
+                  "maximum": 10000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "retry_after_seconds": {
+                  "maximum": 86400,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "retryable": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "enum": [
+                    "submitted",
+                    "queued",
+                    "running",
+                    "succeeded",
+                    "failed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "result"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "output": {},
+                "files": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "report": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "usage": {},
+                "task_id": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "task_id",
+                "output"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginUiAction": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "input": {},
+        "schemaVersion": {
+          "const": 1
+        },
+        "title": {
+          "$ref": "#/$defs/PluginUiText"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "title",
+        "capabilityId",
+        "capabilityVersion"
+      ],
+      "type": "object"
+    },
+    "PluginUiBlock": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "tone": {
+              "$ref": "#/$defs/PluginUiTone"
+            },
+            "type": {
+              "const": "badge"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "tone"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "metric"
+            },
+            "value": {
+              "$ref": "#/$defs/PluginUiText"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "items": {
+                "$ref": "#/$defs/PluginUiText"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "type": "array"
+            },
+            "rows": {
+              "items": {
+                "items": {
+                  "$ref": "#/$defs/PluginUiText"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            "type": {
+              "const": "table"
+            }
+          },
+          "required": [
+            "type",
+            "columns",
+            "rows"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "$ref": "#/$defs/PluginUiText"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "type": {
+              "const": "list"
+            }
+          },
+          "required": [
+            "type",
+            "items"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "title": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "tone": {
+              "$ref": "#/$defs/PluginUiTone"
+            },
+            "type": {
+              "const": "notice"
+            }
+          },
+          "required": [
+            "type",
+            "title",
+            "tone"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "percent": {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "progress"
+            }
+          },
+          "required": [
+            "type",
+            "label",
+            "percent"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "title": {
+              "$ref": "#/$defs/PluginUiText"
+            },
+            "type": {
+              "const": "info_card"
+            }
+          },
+          "required": [
+            "type",
+            "title"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PluginUiContribution": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "enum": [
+            "info_card"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "slot": {
+          "enum": [
+            "plugin_management"
+          ]
+        },
+        "title": {
+          "$ref": "#/$defs/PluginUiText"
+        }
+      },
+      "required": [
+        "id",
+        "slot",
+        "component",
+        "title"
+      ],
+      "type": "object"
+    },
+    "PluginUiPage": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/PluginUiAction"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "capabilityId": {
+          "maxLength": 128,
+          "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9-]*[a-z0-9])?)*$",
+          "type": "string"
+        },
+        "capabilityVersion": {
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "input": {},
+        "schemaVersion": {
+          "const": 1
+        },
+        "title": {
+          "$ref": "#/$defs/PluginUiText"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "title",
+        "capabilityId",
+        "capabilityVersion"
+      ],
+      "type": "object"
+    },
+    "PluginUiText": {
+      "additionalProperties": false,
+      "maxProperties": 2,
+      "minProperties": 1,
+      "properties": {
+        "en": {
+          "maxLength": 512,
+          "minLength": 1,
+          "not": {
+            "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
+          },
+          "type": "string"
+        },
+        "zh": {
+          "maxLength": 512,
+          "minLength": 1,
+          "not": {
+            "pattern": "[<>]|[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Ww][Ww][Ww][.]"
+          },
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PluginUiTone": {
+      "enum": [
+        "neutral",
+        "success",
+        "warning",
+        "danger"
+      ],
+      "type": "string"
+    },
+    "PluginUiView": {
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/PluginUiBlock"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "slot": {
+          "$ref": "#/$defs/PluginUiViewSlot"
+        }
+      },
+      "required": [
+        "id",
+        "schemaVersion",
+        "slot",
+        "blocks"
+      ],
+      "type": "object"
+    },
+    "PluginUiViewSlot": {
+      "enum": [
+        "plugin_management",
+        "channel_monitor",
+        "channel_model_mapping",
+        "merchant_service",
+        "external_account"
+      ],
+      "type": "string"
+    },
+    "PluginVersion": {
+      "maxLength": 128,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+      "type": "string"
+    },
+    "ProviderHeaderPatch": {
+      "additionalProperties": false,
+      "properties": {
+        "remove": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "set": {
+          "additionalProperties": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxProperties": 32,
+          "type": "object"
+        }
+      },
+      "required": [
+        "set",
+        "remove"
+      ],
+      "type": "object"
+    },
+    "ProviderRequestTransformInput": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {},
+        "headers": {
+          "additionalProperties": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "model": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^/[^?#\\\\]*$",
+          "type": "string"
+        },
+        "protocol": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9_]+$",
+          "type": "string"
+        },
+        "upstreamModel": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "method",
+        "path",
+        "model",
+        "headers",
+        "body"
+      ],
+      "type": "object"
+    },
+    "ProviderRequestTransformOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "continue",
+            "reject"
+          ]
+        },
+        "body": {},
+        "headers": {
+          "$ref": "#/$defs/ProviderHeaderPatch"
+        },
+        "path": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^/[^?#\\\\]*$",
+          "type": "string"
+        },
+        "rejection": {
+          "$ref": "#/$defs/ProviderTransformRejection"
+        }
+      },
+      "required": [
+        "action",
+        "headers"
+      ],
+      "type": "object"
+    },
+    "ProviderTransformRejection": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "RequestProcessingEffect": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "json_patch"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "operations": {
+                  "items": {
+                    "$ref": "#/$defs/JsonPatchOperation"
+                  },
+                  "maxItems": 128,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "operations"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "header_patch"
+            },
+            "value": {
+              "additionalProperties": false,
+              "properties": {
+                "remove": {
+                  "items": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                },
+                "set": {
+                  "additionalProperties": {
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "maxProperties": 64,
+                  "type": "object"
+                }
+              },
+              "required": [
+                "set",
+                "remove"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RequestProcessingFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "recommendation": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "info",
+            "warning",
+            "fail"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "status",
+        "message"
+      ],
+      "type": "object"
+    },
+    "RequestProcessingInput": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {},
+        "format": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "maxProperties": 64,
+          "type": "object"
+        },
+        "model": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "responseBody": {},
+        "responseStatus": {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "stage": {
+          "enum": [
+            "ingress",
+            "request",
+            "outbound",
+            "egress",
+            "reply",
+            "report"
+          ]
+        },
+        "upstreamModel": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "usage": {}
+      },
+      "required": [
+        "stage",
+        "requestId",
+        "format",
+        "path",
+        "headers",
+        "body"
+      ],
+      "type": "object"
+    },
+    "RequestProcessingOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "continue",
+            "reject",
+            "stop"
+          ]
+        },
+        "effects": {
+          "items": {
+            "$ref": "#/$defs/RequestProcessingEffect"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/RequestProcessingFinding"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "message": {
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "effects",
+        "findings"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:anyflows:plugin-contract:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PluginManifest"
+    },
+    {
+      "$ref": "#/$defs/ExternalAccountProfile"
+    },
+    {
+      "$ref": "#/$defs/ExternalBalanceSnapshot"
+    },
+    {
+      "$ref": "#/$defs/ConnectorHealth"
+    },
+    {
+      "$ref": "#/$defs/ConnectorError"
+    },
+    {
+      "$ref": "#/$defs/CapabilityInvocation"
+    },
+    {
+      "$ref": "#/$defs/CapabilityResult"
+    },
+    {
+      "$ref": "#/$defs/PluginTaskOperation"
+    },
+    {
+      "$ref": "#/$defs/PluginTaskResult"
+    },
+    {
+      "$ref": "#/$defs/PluginEventDefinition"
+    },
+    {
+      "$ref": "#/$defs/ProviderRequestTransformInput"
+    },
+    {
+      "$ref": "#/$defs/ProviderRequestTransformOutput"
+    },
+    {
+      "$ref": "#/$defs/RequestProcessingInput"
+    },
+    {
+      "$ref": "#/$defs/RequestProcessingOutput"
+    },
+    {
+      "$ref": "#/$defs/PluginProxyRequest"
+    },
+    {
+      "$ref": "#/$defs/PluginProxyResponse"
+    },
+    {
+      "$ref": "#/$defs/PluginHostRequest"
+    },
+    {
+      "$ref": "#/$defs/PluginHostResponse"
+    },
+    {
+      "$ref": "#/$defs/PluginHostProtocol"
+    },
+    {
+      "$ref": "#/$defs/PluginUiView"
+    },
+    {
+      "$ref": "#/$defs/PluginUiPage"
+    },
+    {
+      "$ref": "#/$defs/PluginUiAction"
+    },
+    {
+      "$ref": "#/$defs/PluginUiBlock"
+    },
+    {
+      "$ref": "#/$defs/PluginRoute"
+    },
+    {
+      "$ref": "#/$defs/PluginStorageOperation"
+    }
+  ],
+  "title": "AnyFlows Plugin Contract v1"
+}

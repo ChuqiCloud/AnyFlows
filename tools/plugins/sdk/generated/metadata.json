@@ -1,0 +1,27 @@
+{
+  "protocolVersion": 1,
+  "operations": [
+    "manifest",
+    "health",
+    "invoke_capability",
+    "invoke_task",
+    "invoke_provider",
+    "invoke_credential",
+    "plugin_route"
+  ],
+  "resultKinds": {
+    "invoke_capability": "capability",
+    "plugin_route": "capability",
+    "invoke_task": "task",
+    "invoke_provider": "provider",
+    "invoke_credential": "credential"
+  },
+  "frameLimitBytes": 1048576,
+  "schemaSha256": "754da81ae3201dbb1fc5e3514645219479d3575ab7ce0f3581c5e975c9db72d3",
+  "sdkSources": {
+    "typescript": "typescript/anyflows-plugin.ts",
+    "go": "go/anyflows_plugin.go",
+    "rust": "rust/anyflows_plugin.rs",
+    "python": "python/anyflows_plugin.py"
+  }
+}

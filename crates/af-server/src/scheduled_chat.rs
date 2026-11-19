@@ -622,6 +622,7 @@ impl ScheduledChatService {
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
                         .with_channel_group(target.channel_id())
+                        .with_credential_binding(credential_id.get())
                         .with_first_output_timeout(
                             target.timeout().map_or(
                                 self.clients

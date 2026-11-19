@@ -342,7 +342,8 @@ impl UpstreamResponse {
         Self::full_with_limit(status, headers, body, MAX_UPSTREAM_RESPONSE_BODY_BYTES)
     }
 
-    fn full_with_limit(
+    /// Construct a buffered response while applying the caller's checked limit.
+    pub fn full_with_limit(
         status: StatusCode,
         headers: HeaderMap,
         body: Bytes,

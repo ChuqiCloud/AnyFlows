@@ -34406,6 +34406,538 @@
         ]
       }
     },
+    "/api/plugins/{plugin_id}/routes/{route_id}": {
+      "get": {
+        "tags": [
+          "模型插件路由"
+        ],
+        "summary": "使用模型 Key 调用插件 GET 路由",
+        "operationId": "invokeModelPluginRouteGet",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "route_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "插件路由输出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRouteInvocationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "模型 Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由授权不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "插件或路由不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件部署代次已变更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "plugins:execute"
+        ]
+      },
+      "put": {
+        "tags": [
+          "模型插件路由"
+        ],
+        "summary": "使用模型 Key 调用插件 PUT 路由",
+        "operationId": "invokeModelPluginRoutePut",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "route_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginCapabilityInvocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件路由输出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRouteInvocationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "模型 Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由授权不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件部署代次已变更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "plugins:execute"
+        ]
+      },
+      "post": {
+        "tags": [
+          "模型插件路由"
+        ],
+        "summary": "使用模型 Key 调用插件 POST 路由",
+        "operationId": "invokeModelPluginRoutePost",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "route_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginCapabilityInvocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件路由输出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRouteInvocationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "模型 Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由授权不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件部署代次已变更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "plugins:execute"
+        ]
+      },
+      "delete": {
+        "tags": [
+          "模型插件路由"
+        ],
+        "summary": "使用模型 Key 调用插件 DELETE 路由",
+        "operationId": "invokeModelPluginRouteDelete",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "route_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginCapabilityInvocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件路由输出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRouteInvocationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "模型 Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由授权不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件部署代次已变更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "plugins:execute"
+        ]
+      },
+      "patch": {
+        "tags": [
+          "模型插件路由"
+        ],
+        "summary": "使用模型 Key 调用插件 PATCH 路由",
+        "operationId": "invokeModelPluginRoutePatch",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "route_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginCapabilityInvocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件路由输出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginRouteInvocationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "模型 Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "路由授权不满足要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "插件部署代次已变更",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "插件运行时不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "plugins:execute"
+        ]
+      }
+    },
     "/api/account/plugins/market": {
       "get": {
         "tags": [
@@ -54586,6 +55118,7 @@
         "type": "object",
         "required": [
           "credential_id",
+          "channel_id",
           "capability_version",
           "operation"
         ],
@@ -54594,6 +55127,16 @@
             "type": "string",
             "maxLength": 128,
             "minLength": 1
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "callback_state": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "capability_version": {
             "type": "integer",
