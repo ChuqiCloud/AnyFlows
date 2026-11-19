@@ -1001,6 +1001,10 @@ impl DatabaseAdminPluginLifecycleService {
         .await
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件路由调用同时携带认证、路由、受众和审计上下文"
+    )]
     async fn invoke_plugin_route_for_audience(
         &self,
         principal: SessionPrincipal,
