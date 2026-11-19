@@ -16,6 +16,7 @@ use af_admin::{
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
 };
+use af_plugin_contract::PluginMarketSource;
 use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
@@ -1396,7 +1397,7 @@ async fn install_market_package(
             PluginMarketInstallRequest {
                 plugin_id: request.plugin_id,
                 plugin_version: request.plugin_version,
-                source: af_plugin_contract::PluginMarketSource {
+                source: PluginMarketSource {
                     kind: request.source.kind,
                     archive_url: request.source.archive_url,
                     sha256: request.source.sha256,

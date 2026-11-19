@@ -303,7 +303,7 @@ fn list_plugin_market() {}
     operation_id = "fetchPluginMarketIndex",
     tag = "插件市场",
     summary = "读取并校验远程插件市场索引",
-    params((url = String, Query, max_length = 4096)),
+    params(("url" = String, Query, max_length = 4096)),
     responses(
         (status = 200, description = "经过宿主校验的市场索引", body = serde_json::Value),
         (status = 400, description = "索引地址或内容无效", body = ManagementErrorBody),
