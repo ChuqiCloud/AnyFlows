@@ -7,10 +7,10 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use af_adapter::{Bytes, HeaderMap, HeaderName, HeaderValue, Method};
+use af_adapter::{Bytes, HeaderName, HeaderValue, Method};
 use af_admin::AdminPluginSidecarRuntime;
 use af_db::{
     PluginArtifactSourceKind, PluginCatalogRepository, PluginDeploymentQuery,
@@ -374,10 +374,10 @@ impl DatabasePluginProviderRelayHook {
         model: &str,
         suffix: &str,
     ) -> af_plugin_runtime::CapabilityExecutionContext {
-        let now_ms = time::OffsetDateTime::now_utc()
-            .unix_timestamp_nanos()
-            .max(0) as u64
-            / 1_000_000;
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
         af_plugin_runtime::CapabilityExecutionContext::new(
             format!("provider-relay:{}:{}", target.plugin_id, suffix),
             af_plugin_contract::InvocationMetadata {

@@ -1782,20 +1782,21 @@ impl Bootstrap<RelayReady> {
                 }
                 None => (None, None, None),
             };
-        let plugin_sidecar_runtime = config
+        let plugin_sidecar_runtime = self
+            .config
             .server()
             .plugin_artifact_directory()
             .map(|directory| {
                 Arc::new(
                     af_admin::AdminPluginSidecarRuntime::new(
                         directory,
-                        config.server().plugin_trusted_signers(),
+                        self.config.server().plugin_trusted_signers(),
                     )
                     .and_then(|runtime| {
-                        runtime.with_official_signers(config.server().plugin_official_signers())
+                        runtime.with_official_signers(self.config.server().plugin_official_signers())
                     })
                     .expect("插件信任配置已在应用配置校验阶段验证")
-                    .with_configured_isolation(config.server().plugin_isolation())
+                    .with_configured_isolation(self.config.server().plugin_isolation())
                     .expect("插件隔离策略已在应用配置校验阶段验证"),
                 )
             });
@@ -1842,7 +1843,7 @@ impl Bootstrap<RelayReady> {
             Some(runtime) => route_service.with_provider_hook(Arc::new(
                 crate::plugin_chat_observation::DatabasePluginProviderRelayHook::new(
                     af_db::PluginCatalogRepository::new(
-                        infrastructure.infrastructure.database.clone(),
+                        self.stage.infrastructure.infrastructure.database.clone(),
                     ),
                     Arc::clone(runtime),
                 ),
@@ -2250,6 +2251,23 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
+        let plugin_sidecar_runtime = config
+            .server()
+            .plugin_artifact_directory()
+            .map(|directory| {
+                Arc::new(
+                    af_admin::AdminPluginSidecarRuntime::new(
+                        directory,
+                        config.server().plugin_trusted_signers(),
+                    )
+                    .and_then(|runtime| {
+                        runtime.with_official_signers(config.server().plugin_official_signers())
+                    })
+                    .expect("插件信任配置已在应用配置校验阶段验证")
+                    .with_configured_isolation(config.server().plugin_isolation())
+                    .expect("插件隔离策略已在应用配置校验阶段验证"),
+                )
+            });
         spawn_access_token_cleanup_task(
             &mut supervisor,
             infrastructure.personal_access_token_repository.clone(),
