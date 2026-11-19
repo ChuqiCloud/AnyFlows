@@ -51,9 +51,10 @@ use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{CanonicalRequestEnvelope, ClientSimulationBodyPatch, UtcDate};
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
-    OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
-    RelayStateMachine, relay_anthropic_with_report, relay_conversation_with_report,
-    relay_gemini_with_report, relay_openai_chat_with_report, relay_openai_responses_with_report,
+    OpenAiResponsesRequestOverrides, ProviderRelayHook, RelayCandidate, RelayCandidateRequest,
+    RelayDiagnosticInput, RelayStateMachine, relay_anthropic_with_report,
+    relay_conversation_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
+    relay_openai_responses_with_report,
 };
 use af_scheduler::{
     ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
@@ -162,6 +163,7 @@ pub(crate) struct ScheduledChatService {
     utc_date_clock: Arc<UtcDateClock>,
     relay_settings: RelaySettings,
     credential_sequences: Arc<std::sync::Mutex<BTreeMap<ChannelId, u64>>>,
+    provider_hook: Option<Arc<dyn ProviderRelayHook>>,
 }
 
 impl ScheduledChatService {
@@ -196,6 +198,7 @@ impl ScheduledChatService {
             utc_date_clock: Arc::new(crate::utc_time::current_utc_date),
             relay_settings: RelaySettings::default(),
             credential_sequences: Arc::default(),
+            provider_hook: None,
         }
     }
 
@@ -207,6 +210,11 @@ impl ScheduledChatService {
 
     pub(crate) fn with_relay_settings(mut self, settings: RelaySettings) -> Self {
         self.relay_settings = settings;
+        self
+    }
+
+    pub(crate) fn with_provider_hook(mut self, hook: Arc<dyn ProviderRelayHook>) -> Self {
+        self.provider_hook = Some(hook);
         self
     }
 
@@ -696,6 +704,10 @@ impl ScheduledChatService {
         let machine = RelayStateMachine::new(relay_candidates)
             .map_err(|_| AfError::Internal)?
             .with_execution_policy(self.relay_execution_policy());
+        let machine = match &self.provider_hook {
+            Some(hook) => machine.with_provider_hook(Arc::clone(hook)),
+            None => machine,
+        };
         Ok(ScheduledChatExecution {
             merchant_local_usage: false,
             target_group_id,

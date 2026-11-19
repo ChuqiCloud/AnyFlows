@@ -1782,6 +1782,26 @@ impl Bootstrap<RelayReady> {
                 }
                 None => (None, None, None),
             };
+        let plugin_sidecar_runtime =
+            self.config
+                .server()
+                .plugin_artifact_directory()
+                .map(|directory| {
+                    Arc::new(
+                        af_admin::AdminPluginSidecarRuntime::new(
+                            directory,
+                            self.config.server().plugin_trusted_signers(),
+                        )
+                        .and_then(|runtime| {
+                            runtime.with_official_signers(
+                                self.config.server().plugin_official_signers(),
+                            )
+                        })
+                        .expect("插件信任配置已在应用配置校验阶段验证")
+                        .with_configured_isolation(self.config.server().plugin_isolation())
+                        .expect("插件隔离策略已在应用配置校验阶段验证"),
+                    )
+                });
         let route_service = ScheduledChatService::new(
             IndexedWeightedScheduler::new(channel_index.clone()),
             decryptor,
@@ -1821,6 +1841,17 @@ impl Bootstrap<RelayReady> {
             self.stage.infrastructure.infrastructure.database.clone(),
         ))
         .with_debug_trace_runtime(debug_trace_runtime.clone());
+        let route_service = match plugin_sidecar_runtime.as_ref() {
+            Some(runtime) => route_service.with_provider_hook(Arc::new(
+                crate::plugin_chat_observation::DatabasePluginProviderRelayHook::new(
+                    af_db::PluginCatalogRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    ),
+                    Arc::clone(runtime),
+                ),
+            )),
+            None => route_service,
+        };
         let route_service = match sticky_store {
             Some(store) => route_service.with_sticky_sessions(store, StickyWaitPolicy::default()),
             None => route_service,
@@ -2222,6 +2253,23 @@ impl Bootstrap<BillingReady> {
             debug_trace_worker,
             analytics_export_repository,
         } = stage;
+        let plugin_sidecar_runtime = config
+            .server()
+            .plugin_artifact_directory()
+            .map(|directory| {
+                Arc::new(
+                    af_admin::AdminPluginSidecarRuntime::new(
+                        directory,
+                        config.server().plugin_trusted_signers(),
+                    )
+                    .and_then(|runtime| {
+                        runtime.with_official_signers(config.server().plugin_official_signers())
+                    })
+                    .expect("插件信任配置已在应用配置校验阶段验证")
+                    .with_configured_isolation(config.server().plugin_isolation())
+                    .expect("插件隔离策略已在应用配置校验阶段验证"),
+                )
+            });
         spawn_access_token_cleanup_task(
             &mut supervisor,
             infrastructure.personal_access_token_repository.clone(),
@@ -2469,37 +2517,22 @@ impl Bootstrap<BillingReady> {
                 probe,
             );
         }
-        let plugin_sidecar_runtime = config
-            .server()
-            .plugin_artifact_directory()
-            .map(|directory| {
-                Arc::new(
-                    af_admin::AdminPluginSidecarRuntime::new(
-                        directory,
-                        config.server().plugin_trusted_signers(),
-                    )
-                    .and_then(|runtime| {
-                        runtime.with_official_signers(config.server().plugin_official_signers())
-                    })
-                    .expect("插件信任配置已在应用配置校验阶段验证")
-                    .with_configured_isolation(config.server().plugin_isolation())
-                    .expect("插件隔离策略已在应用配置校验阶段验证"),
-                )
-            });
         let chat: Arc<dyn ChatService> = match plugin_sidecar_runtime.as_ref() {
-            Some(runtime) => Arc::new(
+            Some(runtime) => Arc::new({
+                let observer = Arc::new(
+                    crate::plugin_chat_observation::DatabasePluginChatIngressObserver::new(
+                        af_db::PluginCatalogRepository::new(
+                            infrastructure.infrastructure.database.clone(),
+                        ),
+                        Arc::clone(runtime),
+                    ),
+                );
                 crate::plugin_chat_observation::PluginObservedChatService::new(
                     chat,
-                    Arc::new(
-                        crate::plugin_chat_observation::DatabasePluginChatIngressObserver::new(
-                            af_db::PluginCatalogRepository::new(
-                                infrastructure.infrastructure.database.clone(),
-                            ),
-                            Arc::clone(runtime),
-                        ),
-                    ),
-                ),
-            ),
+                    observer.clone(),
+                )
+                .with_processor(observer)
+            }),
             None => chat,
         };
         Bootstrap {
@@ -2822,6 +2855,11 @@ impl Bootstrap<Supervised> {
             Duration::from_secs(2),
         )
         .expect("plugin event repository requires a non-zero operation timeout");
+        let plugin_storage_dispatcher = Arc::new(af_admin::DatabasePluginStorageDispatcher::new(
+            Arc::new(af_db::PluginStorageRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+            )),
+        ));
         let plugin_lifecycle_service = Arc::new(
             af_admin::DatabaseAdminPluginLifecycleService::new(
                 af_db::PluginCatalogRepository::new(
@@ -2830,6 +2868,7 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.platform_audit_service),
             )
             .with_sidecar_runtime(self.stage.plugin_sidecar_runtime.clone())
+            .with_storage_dispatcher(Some(plugin_storage_dispatcher))
             .with_event_delivery_repository(Some(event_delivery_repository.clone())),
         );
         if plugin_lifecycle_service.capability_runtime().is_some() {

@@ -195,17 +195,31 @@ impl DatabaseAdminPluginLifecycleService {
                 MAX_CATALOG_BYTES,
             )
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-            let response = runtime
-                .invoke_capability(
-                    repository,
-                    plugin_id,
-                    deployment.generation,
-                    &context,
-                    capability,
-                    1,
-                    json!({"query": query.search, "cursor": query.cursor, "limit": query.limit}),
-                )
-                .await?;
+            let response = match self.storage_dispatcher() {
+                Some(storage_dispatcher) => runtime
+                    .invoke_capability_with_storage(
+                        repository,
+                        plugin_id,
+                        deployment.generation,
+                        &context,
+                        capability,
+                        1,
+                        json!({"query": query.search, "cursor": query.cursor, "limit": query.limit}),
+                        storage_dispatcher,
+                    )
+                    .await?,
+                None => runtime
+                    .invoke_capability(
+                        repository,
+                        plugin_id,
+                        deployment.generation,
+                        &context,
+                        capability,
+                        1,
+                        json!({"query": query.search, "cursor": query.cursor, "limit": query.limit}),
+                    )
+                    .await?,
+            };
             let parsed = decode_catalog(response.output, &query)?;
             // A concurrent disable, revoke, upgrade, or grant change must take
             // effect before this response is allowed to leave the host.

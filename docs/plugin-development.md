@@ -24,7 +24,7 @@
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
-插件不能自行注册服务端路由、模型、渠道、价卡、Webhook 或计划任务。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
+插件不能注册任意服务端路由、模型、渠道、价卡、Webhook 或计划任务。需要 HTTP 入口时，只能使用清单中的 `routes` 声明式路由；当前已接入管理员路由入口，普通用户入口沿用同一契约后续开放。路由仍由宿主固定前缀、认证和能力授权统一管理。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
 
 ```http
 POST /api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke
@@ -318,6 +318,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | `uiContributions` | 插件管理页的静态信息卡，最多 16 张。 |
 | `uiViews` | 固定业务页面的静态视图，最多 8 项。 |
 | `uiPages` | 插件管理页中的管理员扩展页入口，最多 32 项。页面本身绑定只读能力；页面动作可另外绑定具备幂等语义的写能力。 |
+| `routes` | 插件自己的声明式 HTTP 入口，统一挂在 `/api/plugins/{plugin_id}` 下，最多 64 条；每条路由绑定一个已声明能力。 |
 
 `uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。`list` 最多 16 项，`notice` 使用 `tone` 标记提示级别，`progress` 使用 0–100 的 `percent`。需要更复杂的页面时，把数据拆成多个视图和组件组合，不要把前端代码塞进插件包。
 
@@ -384,6 +385,36 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 槽位表示 AnyFlows 哪个页面可以展示视图；插件不能自行注册 URL 或任意导航项。平台要增加新的业务页面槽位时，需要在契约中增加槽位，并在对应页面接入宿主渲染器。管理员扩展页通过 `uiPages` 单独接入，只能调用已授权的只读能力。两种方式都不执行第三方前端脚本。
 
+### 插件路由
+
+需要让管理员通过 HTTP 调用插件自有业务时，在清单中声明 `routes`。当前宿主入口为 `/api/admin/plugins/{plugin_id}/routes/{route_id}`，请求方法和 JSON 输入会按清单中的路由声明校验，再转交绑定能力；插件只收到路由绑定能力的 JSON 输入，返回值必须符合该能力的 `outputSchema`。路由不能声明完整 URL、查询串、脚本或任意宿主路径。
+
+```json
+{
+  "routes": [
+    {
+      "id": "preview",
+      "schemaVersion": 1,
+      "method": "POST",
+      "path": "/preview",
+      "audience": "user",
+      "capabilityId": "com.example.preview.run",
+      "capabilityVersion": 1,
+      "maxBodyBytes": 262144,
+      "timeoutMs": 30000
+    }
+  ]
+}
+```
+
+`GET` 只能绑定 `access=read` 能力；`POST`、`PUT`、`PATCH` 和 `DELETE` 必须绑定写能力，并继续遵守现有幂等、确认和授权规则。当前管理员入口只接受管理员会话或管理员 PAT。宿主负责认证、限流、请求体大小、超时、审计和节点代次校验；插件不能选择上游主机、读取认证头、修改钱包或访问数据库。
+
+### 插件状态存储
+
+插件可以通过 `PluginStorageOperation` 使用宿主提供的命名空间 JSON 存储。每个插件只能读写自己的键空间，键最长 128 字节，值最长 64 KiB，可设置过期时间；支持 `get`、`put`、`delete` 和带前缀的 `list`。状态适合保存同步游标、Webhook 去重键和任务辅助状态，不适合保存凭据、钱包事实或宿主任务记录。宿主负责事务、并发、过期清理和多节点共享，插件不能执行 SQL 或获取数据库连接。
+
+Python SDK 在能力处理函数中提供 `context.storage(operation)`。它通过当前 Sidecar 调用的关联帧访问宿主存储，宿主会重新校验插件 ID、generation、键和值大小；插件不能伪造其他插件的命名空间。存储不可用时返回固定错误码，插件不应把存储当作计费或资金事实来源。
+
 ## 8. Python 处理函数
 
 SDK 负责启动握手、健康检查、JSON Lines 协议、超时和结果校验。业务代码只需要实现处理函数。
@@ -440,7 +471,7 @@ def review_live_balance(capability_id, public_config, value, context):
 }
 ```
 
-当前内置事件目录可通过插件契约的 `plugin_event_catalog()` 查询，包含事件名、输入 Schema、能力名和可过滤字段。过滤条件由宿主在入队前执行；插件不会收到不符合条件的事件。清单中的事件必须存在于目录，并且对应 capability 必须同时声明为 `read` + `none`。新增宿主事件时，需要同步登记契约目录、数据库投递映射和安全投影，再增加业务 producer；不需要改持久队列表结构。
+当前内置事件目录可通过插件契约的 `plugin_event_catalog()` 查询，包含事件名、输入 Schema、能力名和可过滤字段。过滤条件由宿主在入队前执行；插件不会收到不符合条件的事件。清单中的事件必须存在于目录，并且对应 capability 必须同时声明为 `read` + `none`。当前目录包括：`channel.health.changed`、`merchant.service.changed`、`model.catalog.changed`、`channel.config.changed`、`channel.credential.changed`、`model.pricing.changed`、`external.account.balance.changed`、`plugin.deployment.changed` 和 `plugin.task.changed`。事件只包含脱敏引用、版本、状态和时间，不包含 Key、Cookie、钱包金额或任务原文。新增宿主事件时，需要同步登记契约目录、Schema、数据库投递映射和安全投影，再增加业务 producer；不需要改持久队列表结构。
 
 ### 外部账户
 
@@ -468,14 +499,38 @@ def review_live_balance(capability_id, public_config, value, context):
 
 `provider.request.transform` 为渠道适配提供受限转换入口。插件只能处理宿主过滤后的协议、方法、路径、模型、普通请求头和 JSON 请求体，返回继续或拒绝，以及受限的路径、请求体和普通请求头变更。认证头、Cookie、渠道密钥、上游主机、模型计费字段、钱包和结算事实始终由宿主控制。本契约不授予插件任意 HTTP 客户端。
 
+### Provider 生命周期适配
+
+Provider 插件可以实现模型发现、请求构造、响应投影、失败分类和重试建议。请求构造只能返回相对路径、普通 Header 和 JSON 请求体；宿主负责凭据、上游主机、实际网络请求、路由、计费和最终重试决定。插件不能读取 Key、选择主机或返回钱包事实。
+
 ### 异步任务适配
 
-`invoke_task` 支持 `submit`、`status` 和 `result` 三种任务操作。插件负责把宿主投影的 Provider 响应转换为统一任务状态；宿主负责公开任务 ID、凭据、发送请求、轮询、持久化、重试和结算。插件不得返回价格、配额、钱包或扣费事实。
+`invoke_task` 支持 `submit`、`status`、`cancel` 和 `result` 四种任务操作。插件负责把宿主投影的 Provider 响应转换为统一任务状态；宿主负责公开任务 ID、凭据、发送请求、轮询、持久化、取消是否对用户可见、最终重试和结算。`status` 失败时可以返回 `retryable` 和不超过 86400 秒的 `retryAfterSeconds` 建议，宿主可以缩短或忽略该建议。插件不得返回价格、配额、钱包或扣费事实。
 
 ### 请求处理
 
 `request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。
 
-当前已接入 Chat 模型请求的 `ingress` 只读观察阶段。已启用且精确获授该能力的本地插件会收到协议、模型、流式标记和消息/工具/附件数量，不会收到提示词、工具参数、原始 Header 或凭据。宿主只记录 finding 的代码和状态，忽略插件返回的拒绝、停止及所有修改提案；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。其余五个阶段以及 Responses、图像、音频和异步任务转发尚未接入实时请求链路。
+Chat 模型请求已接入 `request` 同步处理和 `ingress` 只读观察。请求阶段只传递协议、模型、流式标记和消息/工具/附件数量；插件可以通过合法的 JSON Patch 修改模型，或拒绝当前请求，不会收到提示词、工具参数、原始 Header 或凭据。宿主仍控制计费和路由；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。`outbound`、`reply`、`report` 的完整流水线以及 Responses、图像、音频和异步任务转发仍按各自服务逐步接入。
 
 当宿主显式执行多个阶段时，`continue` 结果中的 `json_patch` 和 `header_patch` 会按顺序应用到下一阶段输入。JSON Patch 只支持 `add`、`replace`、`remove`；中间路径必须存在，`replace` 和 `remove` 的目标项也必须存在，`add` 可新增对象字段或插入数组项。缺失路径、根替换和受保护字段都会使整批提案失败，且不会留下部分修改。头部修改按不区分大小写的名称合并，认证、Cookie、Host、内容长度和协议控制头不能修改。插件只能影响这条插件处理流水线的快照，真实转发、路由、计费和结算仍由宿主决定。
+
+### 凭据生命周期
+
+需要登录外部平台的插件声明 `credential.lifecycle` 能力。宿主按当前凭据调用 `login`、`refresh`、`revoke`、`sign` 和 `balance` 操作。插件收到的是脱敏的操作参数，不会收到其他用户的凭据、钱包或会话。登录结果可以是授权地址和短期 state；刷新和撤销必须幂等；签名结果只能包含受限 Header、Query 和 Body，不能覆盖 `Authorization`、`Host`、`Cookie` 等宿主保护字段；余额只返回快照，不得修改 AnyFlows 钱包。
+
+### 普通用户路由
+
+清单中的 `routes[].audience` 可以设置为 `user`。这类路由通过 `/api/account/plugins/{plugin_id}/routes/{route_id}` 调用，使用当前用户会话或 PAT，并且只获得宿主授予的 capability。`admin` 路由只能通过 `/api/admin/plugins/...` 调用。两种受众的输入、输出 Schema、超时、部署代次和存储命名空间都由宿主复核；插件不会收到用户会话、模型 Key 或钱包密文。
+
+### 任务文件和报告
+
+任务进入 `succeeded` 后，可以在 `result.output` 中返回 `taskId`、`files` 和 `report`。文件以 base64 传输，单个文件和总数量受宿主限制；宿主校验 SHA-256 后写入受控存储，客户端得到短期下载引用。报告包含标题、摘要和有限数量的 finding，不能携带凭据、价格或内部路径。
+
+### Relay Provider
+
+声明 `provider.lifecycle` 后，插件会在候选发送前收到规范化的模型、请求方法、相对路径、非敏感 Header 和 JSON Body。插件可以返回新的相对路径、Body 和普通 Header。宿主重新绑定上游主机和认证，并过滤保护字段。响应结束后宿主会回调 `response`；非成功响应还会回调 `classify_failure`。插件的失败不会绕过 Relay 的重试、路由或计费权。
+
+### 市场发布
+
+插件可以发布到 GitHub Release 或固定 commit 的仓库。市场索引格式和安装约束见 [插件市场](plugin-market.md)。Release 包必须提供完整 SHA-256；Git 源必须固定 40 位 commit。市场只负责发现，安装仍复用管理员审批、能力授权和多节点分发。

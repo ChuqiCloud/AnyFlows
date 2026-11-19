@@ -13,15 +13,17 @@ use std::{
 use crate::sidecar_isolation::spawn_windows_sidecar;
 use crate::{
     CapabilityContext, CapabilityExecutionContext, CapabilityHandler, ConnectorRegistration,
-    PlatformConnector, PluginProxyDispatcher,
+    PlatformConnector, PluginProxyDispatcher, PluginStorageDispatcher,
     schema::CompiledJsonSchema,
     sidecar_isolation::{SidecarIsolationLevel, SidecarIsolationPolicy, prepare_sidecar_launch},
 };
 use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
-    InvocationMetadata, PluginHostOperation, PluginHostRequest, PluginHostResponse,
-    PluginHostResult, PluginId, PluginManifest, PluginProxyRequest, PluginProxyResult,
+    InvocationMetadata, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PROVIDER_LIFECYCLE_CAPABILITY,
+    PluginCredentialOperation, PluginCredentialResult, PluginHostOperation, PluginHostRequest,
+    PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProviderOperation,
+    PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginStorageRequest,
     PluginTaskOperation, PluginTaskResult, PluginVersion, SideEffectClass,
 };
 use async_trait::async_trait;
@@ -793,6 +795,7 @@ struct SidecarProcess {
 
 enum SidecarOutputFrame {
     ProxyRequest(PluginProxyRequest),
+    StorageRequest(PluginStorageRequest),
     Response(PluginHostResponse),
 }
 
@@ -1367,11 +1370,16 @@ impl SidecarSession {
             capability_version,
             input,
             None,
+            None,
             false,
         )
         .await
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "内部调用同时携带 generation、请求上下文、能力和两个请求级回调"
+    )]
     async fn invoke_internal(
         &self,
         deployment_generation: u64,
@@ -1380,6 +1388,7 @@ impl SidecarSession {
         capability_version: u16,
         input: Value,
         proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
         allow_external_write: bool,
     ) -> Result<CapabilityResult, SidecarError> {
         self.ensure_generation(deployment_generation)?;
@@ -1447,7 +1456,7 @@ impl SidecarSession {
         )
         .map_err(|_| SidecarError::FrameTooLarge)?;
         match self
-            .exchange(
+            .exchange_with_dispatchers(
                 PluginHostOperation::InvokeCapability {
                     connection_id: invocation.connection_id().to_owned(),
                     public_config: self.public_config.clone(),
@@ -1458,6 +1467,7 @@ impl SidecarSession {
                 self.limits.request_timeout,
                 Some(invocation.metadata()),
                 proxy_dispatcher,
+                storage_dispatcher,
             )
             .await?
         {
@@ -1519,6 +1529,157 @@ impl SidecarSession {
         Ok(result)
     }
 
+    /// Invoke a capability while allowing the plugin to use its own bounded
+    /// namespaced storage through a host-owned callback.
+    pub async fn invoke_host_capability_with_storage(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+        storage_dispatcher: Arc<dyn PluginStorageDispatcher>,
+    ) -> Result<CapabilityResult, SidecarError> {
+        let context = CapabilityContext::from_execution_context(invocation);
+        crate::ensure_json_payload_within_limit(&input, invocation.max_response_bytes as usize)
+            .map_err(|_| SidecarError::FrameTooLarge)?;
+        let result = self
+            .invoke_internal(
+                deployment_generation,
+                &context,
+                capability_id,
+                capability_version,
+                input,
+                None,
+                Some(storage_dispatcher),
+                false,
+            )
+            .await?;
+        crate::ensure_json_payload_within_limit(
+            &result.output,
+            invocation.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        Ok(result)
+    }
+
+    /// Invoke a manifest-declared route through the same bounded capability
+    /// channel. The HTTP host owns the route prefix and caller authorization;
+    /// the sidecar only receives the route identity and validated JSON input.
+    pub async fn invoke_host_route(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+    ) -> Result<CapabilityResult, SidecarError> {
+        self.invoke_host_route_with_storage(
+            deployment_generation,
+            invocation,
+            route_id,
+            capability_id,
+            capability_version,
+            input,
+            None,
+        )
+        .await
+    }
+
+    /// Invoke a manifest-declared route with an optional host-owned storage
+    /// callback. The route transport remains identical; storage is scoped to
+    /// the current plugin and invocation by the callback implementation.
+    pub async fn invoke_host_route_with_storage(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        input: Value,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
+    ) -> Result<CapabilityResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if route_id.is_empty()
+            || route_id.len() > 64
+            || !route_id.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+            })
+            || self.granted_capabilities.get(capability_id) != Some(&capability_version)
+        {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        let route = self
+            .manifest
+            .routes
+            .iter()
+            .find(|route| route.id == route_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        if route.capability_id != *capability_id || route.capability_version != capability_version {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        let input_validator = declaration
+            .input_schema
+            .as_ref()
+            .ok_or(SidecarError::CapabilityNotDeclared)
+            .and_then(|schema| {
+                CompiledJsonSchema::compile(schema).map_err(|_| SidecarError::InvalidHandshake)
+            })?;
+        input_validator
+            .validate(&input)
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        crate::ensure_json_payload_within_limit(&input, route.max_body_bytes as usize)
+            .map_err(|_| SidecarError::FrameTooLarge)?;
+        let result = self
+            .exchange_with_dispatchers(
+                PluginHostOperation::PluginRoute {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    route_id: route_id.to_owned(),
+                    input,
+                },
+                Duration::from_millis(u64::from(route.timeout_ms)),
+                Some(invocation.metadata()),
+                None,
+                storage_dispatcher,
+            )
+            .await?;
+        match result {
+            PluginHostResult::Capability(result) => {
+                crate::ensure_json_payload_within_limit(
+                    &result.output,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
+                if contains_sensitive_fields(&result.output) {
+                    self.stop().await;
+                    return Err(SidecarError::SensitivePayload);
+                }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&result.output)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
     /// Invoke the task adapter while retaining task identity, credentials and
     /// settlement state in the host.
     pub async fn invoke_host_task(
@@ -1541,8 +1702,11 @@ impl SidecarSession {
             .iter()
             .find(|capability| capability.id == *capability_id)
             .ok_or(SidecarError::CapabilityNotDeclared)?;
-        let submit = matches!(&task, PluginTaskOperation::Submit { .. });
-        if (submit
+        let mutating = matches!(
+            &task,
+            PluginTaskOperation::Submit { .. } | PluginTaskOperation::Cancel { .. }
+        );
+        if (mutating
             && (declaration.access != CapabilityAccess::Write
                 || declaration.side_effect != SideEffectClass::ExternalWrite
                 || declaration.write_semantics.is_none()))
@@ -1613,6 +1777,204 @@ impl SidecarSession {
         }
     }
 
+    /// Invoke a credential lifecycle adapter. Credential callbacks are a
+    /// dedicated host operation so OAuth codes and refresh material do not
+    /// get mistaken for public capability input. The host still binds the
+    /// credential identity and stores the secret envelope.
+    pub async fn invoke_host_credential(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        credential: PluginCredentialOperation,
+    ) -> Result<PluginCredentialResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        credential
+            .validate()
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        if capability_id.as_str() != PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        if declaration.version != capability_version
+            || !matches!(
+                declaration.access,
+                CapabilityAccess::Read | CapabilityAccess::Write
+            )
+            || !matches!(
+                declaration.side_effect,
+                SideEffectClass::None
+                    | SideEffectClass::ExternalRead
+                    | SideEffectClass::ExternalWrite
+            )
+        {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let value =
+            serde_json::to_value(&credential).map_err(|_| SidecarError::InvalidConfiguration)?;
+        if contains_sensitive_fields(&self.public_config) {
+            return Err(SidecarError::SensitivePayload);
+        }
+        crate::ensure_json_payload_within_limit(
+            &value,
+            self.manifest.limits.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            CompiledJsonSchema::compile(schema)
+                .map_err(|_| SidecarError::InvalidHandshake)?
+                .validate(&value)
+                .map_err(|_| SidecarError::InvalidConfiguration)?;
+        }
+        match self
+            .exchange(
+                PluginHostOperation::InvokeCredential {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    credential,
+                },
+                self.limits.request_timeout,
+                Some(invocation.metadata()),
+                None,
+            )
+            .await?
+        {
+            PluginHostResult::Credential(result) => {
+                result
+                    .validate()
+                    .map_err(|_| SidecarError::ProtocolViolation)?;
+                let value =
+                    serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
+                crate::ensure_json_payload_within_limit(
+                    &value,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&value)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
+    /// Invoke a provider lifecycle adapter. The adapter receives only the
+    /// host-projected operation; credentials, upstream host selection and all
+    /// network I/O remain owned by the host.
+    pub async fn invoke_host_provider(
+        &self,
+        deployment_generation: u64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &CapabilityId,
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    ) -> Result<PluginProviderResult, SidecarError> {
+        self.ensure_generation(deployment_generation)?;
+        if self.granted_capabilities.get(capability_id) != Some(&capability_version) {
+            return Err(SidecarError::CapabilityNotGranted);
+        }
+        provider
+            .validate()
+            .map_err(|_| SidecarError::InvalidConfiguration)?;
+        let declaration = self
+            .manifest
+            .capabilities
+            .iter()
+            .find(|capability| capability.id == *capability_id)
+            .ok_or(SidecarError::CapabilityNotDeclared)?;
+        if capability_id.as_str() != PROVIDER_LIFECYCLE_CAPABILITY
+            || declaration.version != capability_version
+            || declaration.access != CapabilityAccess::Read
+            || !matches!(
+                declaration.side_effect,
+                SideEffectClass::None | SideEffectClass::ExternalRead
+            )
+        {
+            return Err(SidecarError::CapabilityNotDeclared);
+        }
+        let provider_value =
+            serde_json::to_value(&provider).map_err(|_| SidecarError::InvalidConfiguration)?;
+        if contains_sensitive_fields(&self.public_config)
+            || contains_sensitive_fields(&provider_value)
+        {
+            return Err(SidecarError::SensitivePayload);
+        }
+        if let Some(schema) = declaration.input_schema.as_ref() {
+            CompiledJsonSchema::compile(schema)
+                .map_err(|_| SidecarError::InvalidHandshake)?
+                .validate(&provider_value)
+                .map_err(|_| SidecarError::InvalidConfiguration)?;
+        }
+        crate::ensure_json_payload_within_limit(
+            &provider_value,
+            self.manifest.limits.max_response_bytes as usize,
+        )
+        .map_err(|_| SidecarError::FrameTooLarge)?;
+        match self
+            .exchange(
+                PluginHostOperation::InvokeProvider {
+                    connection_id: invocation.connection_id().to_owned(),
+                    public_config: self.public_config.clone(),
+                    capability_id: capability_id.as_str().to_owned(),
+                    capability_version,
+                    provider,
+                },
+                self.limits.request_timeout,
+                Some(invocation.metadata()),
+                None,
+            )
+            .await?
+        {
+            PluginHostResult::Provider(result) => {
+                result
+                    .validate()
+                    .map_err(|_| SidecarError::ProtocolViolation)?;
+                let value =
+                    serde_json::to_value(&result).map_err(|_| SidecarError::ProtocolViolation)?;
+                crate::ensure_json_payload_within_limit(
+                    &value,
+                    self.manifest.limits.max_response_bytes as usize,
+                )
+                .map_err(|_| SidecarError::FrameTooLarge)?;
+                if contains_sensitive_fields(&value) {
+                    self.stop().await;
+                    return Err(SidecarError::SensitivePayload);
+                }
+                if let Some(schema) = declaration.output_schema.as_ref() {
+                    CompiledJsonSchema::compile(schema)
+                        .map_err(|_| SidecarError::InvalidHandshake)?
+                        .validate(&value)
+                        .map_err(|_| SidecarError::ProtocolViolation)?;
+                }
+                Ok(result)
+            }
+            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            _ => {
+                self.stop().await;
+                Err(SidecarError::ProtocolViolation)
+            }
+        }
+    }
+
     /// Invoke an external-read capability through a host-owned, per-invocation
     /// dispatcher. The dispatcher itself is never sent to the sidecar.
     pub async fn invoke_host_capability_with_proxy(
@@ -1635,6 +1997,7 @@ impl SidecarSession {
                 capability_version,
                 input,
                 proxy_dispatcher,
+                None,
                 false,
             )
             .await?;
@@ -1668,6 +2031,7 @@ impl SidecarSession {
                 capability_version,
                 input,
                 None,
+                None,
                 true,
             )
             .await?;
@@ -1690,6 +2054,24 @@ impl SidecarSession {
         requested_timeout: Duration,
         metadata: Option<&InvocationMetadata>,
         proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+    ) -> Result<PluginHostResult, SidecarError> {
+        self.exchange_with_dispatchers(
+            operation,
+            requested_timeout,
+            metadata,
+            proxy_dispatcher,
+            None,
+        )
+        .await
+    }
+
+    async fn exchange_with_dispatchers(
+        &self,
+        operation: PluginHostOperation,
+        requested_timeout: Duration,
+        metadata: Option<&InvocationMetadata>,
+        proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     ) -> Result<PluginHostResult, SidecarError> {
         let deployment_generation = self.deployment_generation;
         if deployment_generation == 0 {
@@ -1850,6 +2232,50 @@ impl SidecarSession {
                             .await
                             .map_err(|_| SidecarError::ProcessExited)?;
                     }
+                    SidecarOutputFrame::StorageRequest(storage_request) => {
+                        storage_request
+                            .validate(now_unix_millis().unwrap_or_default())
+                            .map_err(|_| SidecarError::ProtocolViolation)?;
+                        if storage_request.protocol_version != request.protocol_version
+                            || storage_request.plugin_id != request.plugin_id
+                            || storage_request.plugin_version != request.plugin_version
+                            || storage_request.artifact_sha256 != request.artifact_sha256
+                            || storage_request.deployment_generation
+                                != request.deployment_generation
+                            || storage_request.request_id != request.request_id
+                        {
+                            return Err(SidecarError::ProtocolViolation);
+                        }
+                        let dispatcher = storage_dispatcher
+                            .as_ref()
+                            .ok_or(SidecarError::CapabilityNotGranted)?;
+                        let storage_response = dispatcher.dispatch(storage_request.clone()).await;
+                        if !storage_response.matches_request(&storage_request)
+                            || storage_response
+                                .validate(self.manifest.limits.max_response_bytes as usize)
+                                .is_err()
+                        {
+                            return Err(SidecarError::ProtocolViolation);
+                        }
+                        let mut storage_frame = serde_json::to_vec(&storage_response)
+                            .map_err(|_| SidecarError::ProtocolViolation)?;
+                        if storage_frame.len() + 1 > self.limits.max_frame_bytes {
+                            return Err(SidecarError::FrameTooLarge);
+                        }
+                        storage_frame.push(b'\n');
+                        exchange_guard
+                            .process
+                            .stdin
+                            .write_all(&storage_frame)
+                            .await
+                            .map_err(|_| SidecarError::ProcessExited)?;
+                        exchange_guard
+                            .process
+                            .stdin
+                            .flush()
+                            .await
+                            .map_err(|_| SidecarError::ProcessExited)?;
+                    }
                     SidecarOutputFrame::Response(response) => {
                         if response.protocol_version != SIDE_CAR_PROTOCOL_VERSION
                             || response.request_id != request_id
@@ -1887,8 +2313,11 @@ impl SidecarSession {
         if let Ok(response) = serde_json::from_slice::<PluginHostResponse>(frame) {
             return Ok(SidecarOutputFrame::Response(response));
         }
-        serde_json::from_slice::<PluginProxyRequest>(frame)
-            .map(SidecarOutputFrame::ProxyRequest)
+        if let Ok(proxy) = serde_json::from_slice::<PluginProxyRequest>(frame) {
+            return Ok(SidecarOutputFrame::ProxyRequest(proxy));
+        }
+        serde_json::from_slice::<PluginStorageRequest>(frame)
+            .map(SidecarOutputFrame::StorageRequest)
             .map_err(|_| SidecarError::ProtocolViolation)
     }
 
@@ -2247,6 +2676,7 @@ mod tests {
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
             ui_pages: Vec::new(),
+            routes: Vec::new(),
         }
     }
 

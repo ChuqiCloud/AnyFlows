@@ -189,6 +189,7 @@ fn manifest() -> PluginManifest {
         ui_contributions: Vec::new(),
         ui_views: Vec::new(),
         ui_pages: Vec::new(),
+        routes: Vec::new(),
     }
 }
 

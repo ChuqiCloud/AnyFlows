@@ -23,7 +23,7 @@ class PluginError(Exception):
         if code not in {
             "invalid_configuration", "unsupported", "authentication_required", "forbidden",
             "rate_limited", "temporarily_unavailable", "conflict", "upstream_failure",
-            "invalid_response",
+            "invalid_response", "invalid_key", "not_found", "storage_unavailable",
         }:
             raise ValueError("unsupported connector error code")
         self.code = code
@@ -55,6 +55,7 @@ class PluginInvocationContext:
         self._source = source
         self._target = target
         self._proxy_count = 0
+        self._storage_count = 0
 
     def proxy_read(
         self,
@@ -186,6 +187,77 @@ class PluginInvocationContext:
             raise ProtocolError("proxy projection exceeds capability limit")
         return payload
 
+    def storage(self, operation: dict[str, Any]) -> Any:
+        """Use the plugin's host-owned namespace storage for this invocation.
+
+        The host binds the namespace to the current plugin deployment. The
+        operation contains only a relative key and a bounded JSON value; it
+        never carries a table name, SQL, database handle, or another plugin ID.
+        """
+        if self._source is None or self._target is None:
+            raise PluginError("unsupported")
+        if not isinstance(operation, dict) or operation.get("operation") not in {
+            "get", "put", "delete", "list"
+        }:
+            raise PluginError("invalid_configuration")
+        self._storage_count += 1
+        if self._storage_count > 16:
+            raise PluginError("rate_limited")
+        storage_request = {
+            "protocolVersion": self._request["protocolVersion"],
+            "pluginId": self._request["pluginId"],
+            "pluginVersion": self._request["pluginVersion"],
+            "artifactSha256": self._request["artifactSha256"],
+            "deploymentGeneration": self._request["deploymentGeneration"],
+            "requestId": self._request["requestId"],
+            "storageRequestId": f"storage-{self._storage_count}",
+            "operation": copy.deepcopy(operation),
+        }
+        if self._json_size(storage_request) + 1 > self._max_frame_bytes:
+            raise PluginError("invalid_response")
+        self._target.write(
+            json.dumps(storage_request, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
+            + b"\n"
+        )
+        self._target.flush()
+        frame = self._source.readline(self._max_frame_bytes + 1)
+        if len(frame) > self._max_frame_bytes or not frame.endswith(b"\n"):
+            raise ProtocolError("invalid storage continuation frame")
+        try:
+            response = json.loads(
+                frame.decode("utf-8"),
+                parse_constant=self._invalid_number,
+                object_pairs_hook=self._unique_object,
+            )
+        except (UnicodeError, ValueError, TypeError) as error:
+            raise ProtocolError("invalid storage continuation frame") from error
+        expected_keys = {
+            "protocolVersion", "pluginId", "pluginVersion", "artifactSha256",
+            "deploymentGeneration", "requestId", "storageRequestId", "result",
+        }
+        if (
+            not isinstance(response, dict)
+            or set(response) != expected_keys
+            or any(response.get(key) != storage_request[key] for key in (
+                "protocolVersion", "pluginId", "pluginVersion", "artifactSha256",
+                "deploymentGeneration", "requestId", "storageRequestId",
+            ))
+            or not isinstance(response["result"], dict)
+            or set(response["result"]) != {"kind", "value"}
+        ):
+            raise ProtocolError("storage continuation correlation mismatch")
+        result = response["result"]
+        if result["kind"] == "error":
+            value = result["value"]
+            if not isinstance(value, dict) or set(value) != {"code"} or not isinstance(value.get("code"), str):
+                raise ProtocolError("invalid storage continuation error")
+            raise PluginError(value["code"])
+        if result["kind"] not in {"value", "entries"}:
+            raise ProtocolError("invalid storage continuation result")
+        if self._json_size(result["value"]) > self._max_response_bytes:
+            raise ProtocolError("storage result exceeds capability limit")
+        return result["value"]
+
     @staticmethod
     def _json_size(value: Any) -> int:
         return len(json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8"))
@@ -232,11 +304,17 @@ class Plugin:
         handler: Callable[..., Any],
         *,
         task_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
+        provider_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
+        credential_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
+        route_handler: Callable[[str, str, dict[str, Any], dict[str, Any]], Any] | None = None,
         clock_ms: Callable[[], int] | None = None,
     ) -> None:
         self.manifest = copy.deepcopy(manifest)
         self.handler = handler
         self.task_handler = task_handler
+        self.provider_handler = provider_handler
+        self.credential_handler = credential_handler
+        self.route_handler = route_handler
         self.clock_ms = clock_ms or (lambda: time.time_ns() // 1_000_000)
         # The wire envelope has an independent host limit. maxResponseBytes
         # limits capability values, not Manifest/health or correlation metadata.
@@ -291,7 +369,7 @@ class Plugin:
                 if request["deadlineUnixMs"] <= self.clock_ms():
                     raise PluginError("temporarily_unavailable")
                 result = {"kind": "capability", "value": {"output": output}}
-            else:
+            elif kind == "invoke_task":
                 declaration = self.declarations.get(operation["capabilityId"])
                 if (
                     not declaration
@@ -314,6 +392,63 @@ class Plugin:
                 if request["deadlineUnixMs"] <= self.clock_ms():
                     raise PluginError("temporarily_unavailable")
                 result = {"kind": "task", "value": output}
+            elif kind == "invoke_credential":
+                declaration = self.declarations.get(operation["capabilityId"])
+                if (
+                    operation["capabilityId"] != "credential.lifecycle"
+                    or not declaration
+                    or declaration["version"] != operation["capabilityVersion"]
+                    or self.credential_handler is None
+                ):
+                    raise PluginError("unsupported")
+                output = self.credential_handler(
+                    operation["capabilityId"], operation["publicConfig"], operation["credential"]
+                )
+                self._validate_credential_result(output)
+                if self._json_size(output) > self.max_response_bytes:
+                    raise PluginError("invalid_response")
+                result = {"kind": "credential", "value": output}
+            elif kind == "plugin_route":
+                declaration = self.declarations.get(operation["capabilityId"])
+                route = next(
+                    (item for item in self.manifest.get("routes", [])
+                     if item.get("id") == operation["routeId"]),
+                    None,
+                )
+                if (
+                    not declaration
+                    or route is None
+                    or route.get("capabilityId") != operation["capabilityId"]
+                    or route.get("capabilityVersion") != operation["capabilityVersion"]
+                    or self.route_handler is None
+                ):
+                    raise PluginError("unsupported")
+                output = self.route_handler(
+                    operation["routeId"],
+                    operation["capabilityId"],
+                    operation["publicConfig"],
+                    operation["input"],
+                )
+                if self._json_size(output) > self.max_response_bytes:
+                    raise PluginError("invalid_response")
+                result = {"kind": "capability", "value": {"output": output}}
+            elif kind == "invoke_provider":
+                declaration = self.declarations.get(operation["capabilityId"])
+                if (
+                    not declaration
+                    or declaration["version"] != operation["capabilityVersion"]
+                    or declaration.get("access") != "read"
+                    or declaration.get("sideEffect") not in {"none", "external_read"}
+                    or self.provider_handler is None
+                ):
+                    raise PluginError("unsupported")
+                output = self.provider_handler(
+                    operation["capabilityId"], operation["publicConfig"], operation["provider"]
+                )
+                self._validate_provider_result(output)
+                if self._json_size(output) > self.max_response_bytes:
+                    raise PluginError("invalid_response")
+                result = {"kind": "provider", "value": output}
         except ProtocolError:
             raise
         except PluginError as error:
@@ -379,6 +514,7 @@ class Plugin:
     def _validate_task_result(value: Any) -> None:
         if not isinstance(value, dict) or set(value) != {"kind", "value"}:
             raise PluginError("invalid_response")
+
         if value["kind"] not in {"submitted", "status", "result"} or not isinstance(value["value"], dict):
             raise PluginError("invalid_response")
         payload = value["value"]
@@ -391,8 +527,8 @@ class Plugin:
             if progress is not None and (type(progress) is not int or not 0 <= progress <= 10000):
                 raise PluginError("invalid_response")
         elif value["kind"] == "status":
-            if set(payload) - {"state", "progress_basis_points", "failure_code"} or payload.get("state") not in {
-                "submitted", "queued", "running", "succeeded", "failed"
+            if set(payload) - {"state", "progress_basis_points", "failure_code", "retryable", "retry_after_seconds"} or payload.get("state") not in {
+                "submitted", "queued", "running", "succeeded", "failed", "cancelled"
             }:
                 raise PluginError("invalid_response")
             progress = payload.get("progress_basis_points")
@@ -404,7 +540,65 @@ class Plugin:
                     raise PluginError("invalid_response")
             elif "failure_code" in payload:
                 raise PluginError("invalid_response")
+            if payload.get("state") != "failed" and ("retryable" in payload or "retry_after_seconds" in payload):
+                raise PluginError("invalid_response")
+            if "retry_after_seconds" in payload and (payload.get("retryable") is not True or type(payload["retry_after_seconds"]) is not int or not 0 <= payload["retry_after_seconds"] <= 86400):
+                raise PluginError("invalid_response")
         elif set(payload) - {"task_id", "output"} or not isinstance(payload.get("task_id"), str) or not 1 <= len(payload["task_id"].encode("utf-8")) <= 512 or not payload["task_id"].strip() or payload["task_id"].strip() != payload["task_id"] or any(character.isspace() or ord(character) < 32 for character in payload["task_id"]) or "output" not in payload or payload["output"] is None:
+            raise PluginError("invalid_response")
+
+    @staticmethod
+    def _validate_provider_result(value: Any) -> None:
+        if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code"}:
+            raise PluginError("invalid_response")
+
+    @staticmethod
+    def _validate_credential_result(value: Any) -> None:
+        if not isinstance(value, dict) or not isinstance(value.get("kind"), str):
+            raise PluginError("invalid_response")
+        kind = value["kind"]
+        if kind == "login":
+            if set(value) - {"kind", "authorization_url", "state", "complete"} or type(value.get("complete")) is not bool:
+                raise PluginError("invalid_response")
+        elif kind == "refreshed":
+            if set(value) - {"kind", "expires_at_unix_ms"}:
+                raise PluginError("invalid_response")
+        elif kind == "revoked":
+            if set(value) != {"kind"}:
+                raise PluginError("invalid_response")
+        elif kind == "signed":
+            if set(value) - {"kind", "headers", "query", "body"} or not isinstance(value.get("headers"), dict):
+                raise PluginError("invalid_response")
+            if any(str(name).lower() in {"authorization", "host", "cookie", "content-length", "proxy-authorization"} for name in value["headers"]):
+                raise PluginError("invalid_response")
+        elif kind == "balance":
+            if set(value) - {"kind", "amount", "currency", "as_of_unix_ms"} or not isinstance(value.get("amount"), str) or not isinstance(value.get("currency"), str):
+                raise PluginError("invalid_response")
+        else:
+            raise PluginError("invalid_response")
+        kind = value.get("kind")
+        if kind == "models":
+            models = value.get("models")
+            if not isinstance(models, list) or len(models) > 500:
+                raise PluginError("invalid_response")
+            for model in models:
+                if not isinstance(model, dict) or not isinstance(model.get("id"), str) or not 1 <= len(model["id"].encode("utf-8")) <= 128:
+                    raise PluginError("invalid_response")
+        elif kind == "request":
+            if not isinstance(value.get("method"), str) or not isinstance(value.get("path"), str) or not value["path"].startswith("/") or value.get("body") is None:
+                raise PluginError("invalid_response")
+            if not isinstance(value.get("headers", {}), dict) or len(value.get("headers", {})) > 64:
+                raise PluginError("invalid_response")
+        elif kind == "response":
+            if value.get("response") is None:
+                raise PluginError("invalid_response")
+        elif kind == "failure":
+            if not isinstance(value.get("class"), str) or not isinstance(value.get("code"), str) or not value["code"].strip():
+                raise PluginError("invalid_response")
+        elif kind == "retry":
+            if type(value.get("retryable")) is not bool or type(value.get("delay_ms")) is not int or not 0 <= value["delay_ms"] <= 86400000 or not isinstance(value.get("reason_code"), str) or not value["reason_code"].strip():
+                raise PluginError("invalid_response")
+        else:
             raise PluginError("invalid_response")
 
     @staticmethod
@@ -443,7 +637,7 @@ class Plugin:
         ):
             raise ProtocolError("invalid correlation metadata")
         operation = request["operation"]
-        if not isinstance(operation, dict) or operation.get("operation") not in {"manifest", "health", "invoke_capability", "invoke_task"}:
+        if not isinstance(operation, dict) or operation.get("operation") not in {"manifest", "health", "invoke_capability", "invoke_task", "invoke_provider", "invoke_credential", "plugin_route"}:
             raise ProtocolError("invalid operation")
         if operation["operation"] in {"manifest", "health"}:
             if set(operation) != {"operation"}:
@@ -452,6 +646,15 @@ class Plugin:
         if operation["operation"] == "invoke_task":
             if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "task"}:
                 raise ProtocolError("invalid task operation")
+        elif operation["operation"] == "invoke_provider":
+            if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "provider"}:
+                raise ProtocolError("invalid provider operation")
+        elif operation["operation"] == "invoke_credential":
+            if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "credential"}:
+                raise ProtocolError("invalid credential operation")
+        elif operation["operation"] == "plugin_route":
+            if set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "routeId", "input"}:
+                raise ProtocolError("invalid plugin route operation")
         elif set(operation) != {"operation", "connectionId", "publicConfig", "capabilityId", "capabilityVersion", "input"}:
             raise ProtocolError("invalid capability operation")
         if (
@@ -465,7 +668,7 @@ class Plugin:
             raise ProtocolError("invalid capability fields")
         if operation["operation"] == "invoke_task":
             task = operation["task"]
-            if not isinstance(task, dict) or task.get("kind") not in {"submit", "status", "result"}:
+            if not isinstance(task, dict) or task.get("kind") not in {"submit", "status", "cancel", "result"}:
                 raise ProtocolError("invalid task operation")
             if task["kind"] == "submit" and (
                 set(task) - {"kind", "model", "request", "idempotency_key"}
@@ -494,6 +697,16 @@ class Plugin:
                 or any(character.isspace() or ord(character) < 32 for character in task["task_id"])
             ):
                 raise ProtocolError("invalid task operation")
+            if task["kind"] == "cancel" and (
+                set(task) - {"kind", "task_id", "reason"}
+                or not isinstance(task.get("task_id"), str)
+                or not 1 <= len(task["task_id"].encode("utf-8")) <= 512
+                or not task["task_id"].strip()
+                or task["task_id"].strip() != task["task_id"]
+                or any(character.isspace() or ord(character) < 32 for character in task["task_id"])
+                or ("reason" in task and (not isinstance(task["reason"], str) or not 1 <= len(task["reason"].encode("utf-8")) <= 256 or task["reason"].strip() != task["reason"]))
+            ):
+                raise ProtocolError("invalid task operation")
             if task["kind"] == "result" and (
                 set(task) != {"kind", "task_id", "response"}
                 or not isinstance(task["task_id"], str)
@@ -506,6 +719,19 @@ class Plugin:
                 raise ProtocolError("invalid task operation")
             if self._json_size(task) > self.max_response_bytes:
                 raise ProtocolError("task input exceeds advertised limit")
+            return
+        if operation["operation"] == "invoke_credential":
+            credential = operation["credential"]
+            if (
+                not isinstance(credential, dict)
+                or credential.get("kind") not in {"login", "refresh", "revoke", "sign", "balance"}
+                or self._json_size(credential) > self.max_response_bytes
+            ):
+                raise ProtocolError("invalid credential operation")
+            return
+        if operation["operation"] == "invoke_provider":
+            if self._json_size(operation["provider"]) > self.max_response_bytes:
+                raise ProtocolError("provider input exceeds advertised limit")
             return
         if self._json_size(operation["input"]) > self.max_response_bytes:
             raise ProtocolError("capability input exceeds advertised limit")

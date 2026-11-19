@@ -21,6 +21,16 @@ pub enum PluginTaskOperation {
     },
     /// Build or validate a provider status request for an existing task.
     Status { task_id: String },
+    /// Request cancellation of an in-flight provider task.
+    ///
+    /// The host decides whether cancellation is exposed to callers and owns
+    /// the public task state. The plugin only translates the provider-side
+    /// cancellation request.
+    Cancel {
+        task_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     /// Project a completed provider result into a host-safe result.
     Result { task_id: String, response: Value },
 }
@@ -47,6 +57,12 @@ impl PluginTaskOperation {
                 }
             }
             Self::Status { task_id } => validate_task_id(task_id)?,
+            Self::Cancel { task_id, reason } => {
+                validate_task_id(task_id)?;
+                if let Some(reason) = reason {
+                    validate_text(reason, 256, TaskContractError::InvalidCancelReason)?;
+                }
+            }
             Self::Result { task_id, response } => {
                 validate_task_id(task_id)?;
                 if response.is_null() {
@@ -67,12 +83,13 @@ pub enum PluginTaskState {
     Running,
     Succeeded,
     Failed,
+    Cancelled,
 }
 
 impl PluginTaskState {
     #[must_use]
     pub const fn is_terminal(self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed)
+        matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
 }
 
@@ -99,10 +116,104 @@ pub enum PluginTaskResult {
         progress_basis_points: Option<u16>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         failure_code: Option<String>,
+        /// Whether the host may retry after a failed provider attempt.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retryable: Option<bool>,
+        /// Optional provider hint. The host may clamp or ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_after_seconds: Option<u32>,
     },
     /// Host-safe terminal output. Billing facts are deliberately not part of
     /// this value and remain owned by the host.
     Result { task_id: String, output: Value },
+}
+
+/// A bounded file produced by a completed task. The host stores bytes and
+/// returns a short-lived download reference; plugins never choose a host path.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskFile {
+    pub name: String,
+    pub media_type: String,
+    pub bytes_base64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+}
+
+impl PluginTaskFile {
+    pub fn validate(&self) -> Result<(), TaskContractError> {
+        validate_text(&self.name, 256, TaskContractError::InvalidFile)?;
+        validate_text(&self.media_type, 128, TaskContractError::InvalidFile)?;
+        if self.bytes_base64.is_empty() || self.bytes_base64.len() > 64 * 1024 * 1024 {
+            return Err(TaskContractError::InvalidFile);
+        }
+        if self.sha256.as_ref().is_some_and(|digest| {
+            digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(TaskContractError::InvalidFile);
+        }
+        Ok(())
+    }
+}
+
+/// Human-readable task report plus machine-readable summary.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskReport {
+    pub title: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<PluginTaskFinding>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskFinding {
+    pub code: String,
+    pub severity: PluginTaskFindingSeverity,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginTaskFindingSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTaskCompletion {
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<PluginTaskFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<PluginTaskReport>,
+}
+
+impl PluginTaskCompletion {
+    pub fn validate(&self) -> Result<(), TaskContractError> {
+        validate_task_id(&self.task_id)?;
+        if self.files.len() > 64 {
+            return Err(TaskContractError::InvalidFile);
+        }
+        for file in &self.files {
+            file.validate()?;
+        }
+        if let Some(report) = &self.report {
+            validate_text(&report.title, 256, TaskContractError::InvalidReport)?;
+            validate_text(&report.summary, 16 * 1024, TaskContractError::InvalidReport)?;
+            if report.findings.len() > 1024 {
+                return Err(TaskContractError::InvalidReport);
+            }
+            for finding in &report.findings {
+                validate_text(&finding.code, 128, TaskContractError::InvalidReport)?;
+                validate_text(&finding.message, 4096, TaskContractError::InvalidReport)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl PluginTaskResult {
@@ -123,6 +234,8 @@ impl PluginTaskResult {
                 state,
                 progress_basis_points,
                 failure_code,
+                retryable,
+                retry_after_seconds,
             } => {
                 validate_progress(*progress_basis_points)?;
                 if *state == PluginTaskState::Failed && failure_code.is_none() {
@@ -131,8 +244,19 @@ impl PluginTaskResult {
                 if *state != PluginTaskState::Failed && failure_code.is_some() {
                     return Err(TaskContractError::InvalidFailureCode);
                 }
+                if *state != PluginTaskState::Failed
+                    && (retryable.is_some() || retry_after_seconds.is_some())
+                {
+                    return Err(TaskContractError::InvalidRetryAdvice);
+                }
                 if let Some(code) = failure_code {
                     validate_text(code, 128, TaskContractError::InvalidFailureCode)?;
+                }
+                if retry_after_seconds.is_some_and(|seconds| seconds > 86_400) {
+                    return Err(TaskContractError::InvalidRetryAdvice);
+                }
+                if retry_after_seconds.is_some() && *retryable != Some(true) {
+                    return Err(TaskContractError::InvalidRetryAdvice);
                 }
             }
             Self::Result { task_id, output } => {
@@ -167,6 +291,14 @@ pub enum TaskContractError {
     MissingFailureCode,
     #[error("task failure code is invalid")]
     InvalidFailureCode,
+    #[error("task cancellation reason is invalid")]
+    InvalidCancelReason,
+    #[error("task retry advice is invalid")]
+    InvalidRetryAdvice,
+    #[error("task file is invalid")]
+    InvalidFile,
+    #[error("task report is invalid")]
+    InvalidReport,
 }
 
 fn validate_task_id(value: &str) -> Result<(), TaskContractError> {
@@ -236,6 +368,8 @@ mod tests {
             state: PluginTaskState::Failed,
             progress_basis_points: Some(10_000),
             failure_code: Some("upstream_failure".to_owned()),
+            retryable: Some(true),
+            retry_after_seconds: Some(5),
         };
         result.validate().unwrap();
         let wire = serde_json::to_value(result).unwrap();
@@ -256,10 +390,36 @@ mod tests {
             state: PluginTaskState::Running,
             progress_basis_points: Some(10_001),
             failure_code: None,
+            retryable: None,
+            retry_after_seconds: None,
         };
         assert_eq!(
             bad_progress.validate(),
             Err(TaskContractError::InvalidProgress)
         );
+    }
+
+    #[test]
+    fn task_completion_bounds_files_and_report_without_host_paths() {
+        let completion = PluginTaskCompletion {
+            task_id: "task-1".to_owned(),
+            files: vec![PluginTaskFile {
+                name: "result.json".to_owned(),
+                media_type: "application/json".to_owned(),
+                bytes_base64: "e30=".to_owned(),
+                sha256: None,
+            }],
+            report: Some(PluginTaskReport {
+                title: "完成".to_owned(),
+                summary: "处理完成".to_owned(),
+                findings: vec![PluginTaskFinding {
+                    code: "ok".to_owned(),
+                    severity: PluginTaskFindingSeverity::Info,
+                    message: "ready".to_owned(),
+                }],
+            }),
+        };
+        completion.validate().unwrap();
+        assert!(!serde_json::to_string(&completion).unwrap().contains("/tmp"));
     }
 }

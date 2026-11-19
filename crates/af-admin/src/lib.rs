@@ -2,6 +2,9 @@
 
 pub use af_db::{PluginActionProposalRecord, PluginActionProposalStatus};
 pub use af_plugin_contract::HostActionProposal;
+pub use af_plugin_contract::{
+    PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
+};
 
 mod alipay_verification;
 mod verification_access;
@@ -189,6 +192,7 @@ mod plugin_lifecycle_integration_tests;
 mod plugin_operations;
 mod plugin_package;
 mod plugin_runtime;
+mod plugin_storage_dispatcher;
 pub(crate) mod readonly_plugin_review;
 mod redemption;
 mod refund;
@@ -236,6 +240,7 @@ pub use af_db::{
     CredentialProxyScheme, CredentialSelectionStrategy, DatabaseTimestamp, NetworkSettingsMode,
     RelayChannelSettings, RelayChannelSettingsPatch,
 };
+pub use af_plugin_contract::PluginRouteMethod;
 pub use announcement::{
     AnnouncementAudience, AnnouncementFuture, AnnouncementListFuture, AnnouncementService,
     AnnouncementServiceError, AnnouncementStatus, AnnouncementView, AnnouncementWriteCommand,
@@ -444,8 +449,10 @@ pub use plugin_lifecycle::{
     AdminPluginArtifact, AdminPluginArtifactApproval, AdminPluginArtifactPage,
     AdminPluginArtifactRevocation, AdminPluginCapabilityActionProposal,
     AdminPluginCapabilityActionResult, AdminPluginCapabilityGrant,
-    AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
-    AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
+    AdminPluginCapabilityInvocationResult, AdminPluginCredentialInvocationResult,
+    AdminPluginDeployment, AdminPluginDeploymentPage, AdminPluginEventResult,
+    AdminPluginEventResultPage, AdminPluginLifecycleError, AdminPluginMarketEntry,
+    AdminPluginRouteInvocationResult, AdminPluginTaskInvocationResult,
     DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
     MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand, PluginDeploymentCommand,
     PluginEventDeliveryWorker, PluginPackageUpload,
@@ -455,6 +462,7 @@ pub use plugin_operations::{
     AdminPluginRuntimeState, AdminPluginUninstallResult,
 };
 pub use plugin_runtime::AdminPluginSidecarRuntime;
+pub use plugin_storage_dispatcher::DatabasePluginStorageDispatcher;
 pub use redemption::{
     AdminRedemptionAuditBatch, AdminRedemptionAuditPage, AdminRedemptionAuditQuery,
     AdminRedemptionAuditStatus, AdminRedemptionAuditSummary, AdminRedemptionBatch,

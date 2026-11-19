@@ -7,12 +7,17 @@
 #![recursion_limit = "256"]
 
 mod capability;
+mod credential;
 mod error;
 mod event;
 mod manifest;
+mod market;
 mod proposal;
+mod provider;
 mod request_processing;
+mod routes;
 mod schema;
+mod storage;
 mod task;
 mod value;
 mod version;
@@ -20,6 +25,10 @@ mod version;
 pub use capability::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, CapabilityRequirement,
     ExternalWriteSemantics, ResultLookupSupport, SideEffectClass,
+};
+pub use credential::{
+    CredentialContractError, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PluginCredentialOperation,
+    PluginCredentialResult,
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use event::{
@@ -31,17 +40,32 @@ pub use manifest::{
     PluginUiContribution, PluginUiPage, PluginUiSlot, PluginUiText, PluginUiTone, PluginUiView,
     PluginUiViewSlot,
 };
+pub use market::{
+    PluginMarketEngines, PluginMarketEntry, PluginMarketError, PluginMarketIndex,
+    PluginMarketVersion,
+};
 pub use proposal::HostActionProposal;
+pub use provider::{
+    PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass, PluginProviderModel,
+    PluginProviderOperation, PluginProviderResult, ProviderContractError,
+};
 pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,
     REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingEffect,
     RequestProcessingFinding, RequestProcessingFindingStatus, RequestProcessingInput,
     RequestProcessingOutput, RequestProcessingPipelineResult, RequestProcessingStage,
 };
+pub use routes::{PluginRoute, PluginRouteAudience, PluginRouteMethod};
 pub use schema::{openapi_document, schema_document};
+pub use storage::{
+    MAX_PLUGIN_STORAGE_KEY_BYTES, MAX_PLUGIN_STORAGE_LIST_LIMIT, MAX_PLUGIN_STORAGE_VALUE_BYTES,
+    PluginStorageEntry, PluginStorageKey, PluginStorageOperation, PluginStorageRequest,
+    PluginStorageResponse, PluginStorageResult, PluginStorageValue,
+};
 pub use task::{
-    MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskOperation,
-    PluginTaskResult, PluginTaskState, TaskContractError,
+    MAX_PLUGIN_IDEMPOTENCY_KEY_BYTES, MAX_PLUGIN_TASK_ID_BYTES, PluginTaskCompletion,
+    PluginTaskFile, PluginTaskFinding, PluginTaskFindingSeverity, PluginTaskOperation,
+    PluginTaskReport, PluginTaskResult, PluginTaskState, TaskContractError,
 };
 pub use value::{
     CapabilityInvocation, CapabilityResult, ConnectorHealth, ConnectorHealthStatus,

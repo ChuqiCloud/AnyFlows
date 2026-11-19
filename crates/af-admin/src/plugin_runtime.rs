@@ -14,16 +14,18 @@ use af_db::{
     PluginCatalogRepository, PluginDeploymentQuery, PluginDeploymentRecord,
 };
 use af_plugin_contract::{
-    CapabilityId, CapabilityResult, InvocationMetadata, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
-    PluginId, PluginManifest, PluginTaskOperation, PluginTaskResult, PluginVersion,
-    ProviderRequestTransformInput, ProviderRequestTransformOutput, REQUEST_PROCESSING_CAPABILITY,
-    RequestProcessingInput, RequestProcessingOutput, RequestProcessingPipelineResult,
-    RequestProcessingStage,
+    CapabilityId, CapabilityResult, InvocationMetadata, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY,
+    PROVIDER_LIFECYCLE_CAPABILITY, PROVIDER_REQUEST_TRANSFORM_CAPABILITY,
+    PluginCredentialOperation, PluginCredentialResult, PluginId, PluginManifest,
+    PluginProviderOperation, PluginProviderResult, PluginTaskOperation, PluginTaskResult,
+    PluginVersion, ProviderRequestTransformInput, ProviderRequestTransformOutput,
+    REQUEST_PROCESSING_CAPABILITY, RequestProcessingInput, RequestProcessingOutput,
+    RequestProcessingPipelineResult, RequestProcessingStage,
 };
 use af_plugin_runtime::{
-    CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher, SidecarError,
-    SidecarIsolationPolicy, SidecarLimits, SidecarSupervisor, TrustedPluginKey,
-    VerifiedPluginArtifact,
+    CapabilityExecutionContext, PluginArtifactDescriptor, PluginProxyDispatcher,
+    PluginStorageDispatcher, SidecarError, SidecarIsolationPolicy, SidecarLimits,
+    SidecarSupervisor, TrustedPluginKey, VerifiedPluginArtifact,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::Deserialize;
@@ -42,6 +44,7 @@ pub(crate) struct PluginCapabilityInvocation<'a> {
     pub(crate) capability_version: u16,
     pub(crate) input: serde_json::Value,
     pub(crate) proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
+    pub(crate) storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     pub(crate) allow_external_write: bool,
 }
 
@@ -449,9 +452,157 @@ impl AdminPluginSidecarRuntime {
             capability_version,
             input,
             proxy_dispatcher: None,
+            storage_dispatcher: None,
             allow_external_write: false,
         })
         .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件运行时入口同时携带仓储、部署、能力、请求上下文和请求级存储回调"
+    )]
+    pub async fn invoke_capability_with_storage(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+        storage_dispatcher: Arc<dyn PluginStorageDispatcher>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        self.invoke_capability_with_proxy(PluginCapabilityInvocation {
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            capability_id,
+            capability_version,
+            input,
+            proxy_dispatcher: None,
+            storage_dispatcher: Some(storage_dispatcher),
+            allow_external_write: false,
+        })
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件路由入口同时携带仓储、部署、路由、能力和请求上下文"
+    )]
+    pub async fn invoke_route(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        self.invoke_route_with_storage(
+            repository,
+            plugin_id,
+            generation,
+            invocation,
+            route_id,
+            capability_id,
+            capability_version,
+            input,
+            None,
+        )
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "插件路由入口同时携带仓储、部署、路由、能力和请求上下文"
+    )]
+    pub async fn invoke_route_with_storage(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        route_id: &str,
+        capability_id: &str,
+        capability_version: u16,
+        input: serde_json::Value,
+        storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
+    ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let generation =
+            u64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_id = CapabilityId::new(capability_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let deployment = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation != i64::try_from(generation).unwrap_or_default()
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+            || !deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == capability_id.as_str() && grant.version == capability_version
+            })
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let manifest: PluginManifest = serde_json::from_value(deployment.artifact.manifest.clone())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let route = manifest
+            .routes
+            .iter()
+            .find(|route| route.id == route_id)
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if route.capability_id != capability_id || route.capability_version != capability_version {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let session_is_running = match self.supervisor.session(&plugin_id, generation).await {
+            Ok(session) => session
+                .is_process_running(generation)
+                .await
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if !session_is_running {
+            self.apply(repository, &deployment).await?;
+        }
+        let latest = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != i64::try_from(generation).unwrap_or_default() {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        let session = self
+            .supervisor
+            .session(&plugin_id, generation)
+            .await
+            .map_err(map_sidecar_error)?;
+        let invocation = invocation
+            .with_public_config(deployment.config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        session
+            .invoke_host_route_with_storage(
+                generation,
+                &invocation,
+                route_id,
+                &capability_id,
+                capability_version,
+                input,
+                storage_dispatcher,
+            )
+            .await
+            .map_err(map_sidecar_error)
     }
 
     /// Invoke an explicitly authorized idempotent external-write capability.
@@ -476,6 +627,7 @@ impl AdminPluginSidecarRuntime {
             capability_version,
             input,
             proxy_dispatcher: None,
+            storage_dispatcher: None,
             allow_external_write: true,
         })
         .await
@@ -629,6 +781,247 @@ impl AdminPluginSidecarRuntime {
         Ok(output)
     }
 
+    /// Invoke a provider lifecycle adapter after validating deployment state,
+    /// capability grant and the host-owned plugin configuration.
+    pub async fn invoke_provider(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    ) -> Result<PluginProviderResult, AdminPluginLifecycleError> {
+        provider
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let remaining = invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(
+            remaining,
+            self.invoke_provider_inner(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                capability_version,
+                provider,
+            ),
+        )
+        .await
+        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+    }
+
+    /// Invoke a credential lifecycle adapter through the normal capability
+    /// boundary. The host binds the credential connection and never forwards
+    /// its secret envelope to the plugin.
+    pub async fn invoke_credential(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        operation: PluginCredentialOperation,
+    ) -> Result<PluginCredentialResult, AdminPluginLifecycleError> {
+        operation
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let remaining = invocation
+            .remaining_timeout()
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        tokio::time::timeout(
+            remaining,
+            self.invoke_credential_inner(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                capability_version,
+                operation,
+            ),
+        )
+        .await
+        .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?
+    }
+
+    async fn invoke_credential_inner(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        operation: PluginCredentialOperation,
+    ) -> Result<PluginCredentialResult, AdminPluginLifecycleError> {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let generation =
+            u64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let requested_generation =
+            i64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_id = CapabilityId::new(PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let deployment = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation != requested_generation
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+            || !deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == capability_id.as_str() && grant.version == capability_version
+            })
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let current_session = self.supervisor.session(&plugin_id, generation).await;
+        let session_is_running = match current_session {
+            Ok(session) => session
+                .is_process_running(generation)
+                .await
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if !session_is_running {
+            self.apply(repository, &deployment).await?;
+        }
+        let latest = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != requested_generation {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let session = self
+            .supervisor
+            .session(&plugin_id, generation)
+            .await
+            .map_err(map_sidecar_error)?;
+        let invocation = invocation
+            .with_public_config(deployment.config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        session
+            .invoke_host_credential(
+                generation,
+                &invocation,
+                &capability_id,
+                capability_version,
+                operation,
+            )
+            .await
+            .map_err(map_sidecar_error)
+    }
+
+    async fn invoke_provider_inner(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        capability_version: u16,
+        provider: PluginProviderOperation,
+    ) -> Result<PluginProviderResult, AdminPluginLifecycleError> {
+        let plugin_id = PluginId::new(plugin_id.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let generation =
+            u64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let requested_generation =
+            i64::try_from(generation).map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let capability_id = CapabilityId::new(PROVIDER_LIFECYCLE_CAPABILITY.to_owned())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let deployment = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !deployment.enabled
+            || deployment.generation != requested_generation
+            || deployment.artifact.revocation.is_some()
+            || deployment.artifact.approval.is_none()
+            || deployment.artifact.source_kind != PluginArtifactSourceKind::LocalProcess
+            || !deployment.granted_capabilities.iter().any(|grant| {
+                grant.id == capability_id.as_str() && grant.version == capability_version
+            })
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let current_session = self.supervisor.session(&plugin_id, generation).await;
+        let session_is_running = match current_session {
+            Ok(session) => session
+                .is_process_running(generation)
+                .await
+                .unwrap_or(false),
+            Err(_) => false,
+        };
+        if !session_is_running {
+            self.apply(repository, &deployment).await?;
+        }
+        let latest = repository
+            .get_deployment(plugin_id.as_str())
+            .await
+            .map_err(|_| AdminPluginLifecycleError::Internal)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if !latest.enabled || latest.generation != requested_generation {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        let session = self
+            .supervisor
+            .session(&plugin_id, generation)
+            .await
+            .map_err(map_sidecar_error)?;
+        let invocation = invocation
+            .with_public_config(deployment.config)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        session
+            .invoke_host_provider(
+                generation,
+                &invocation,
+                &capability_id,
+                capability_version,
+                provider,
+            )
+            .await
+            .map_err(map_sidecar_error)
+    }
+
+    /// Transform and apply a provider request through the host-controlled
+    /// boundary. The returned boolean is false when the plugin rejected it.
+    pub async fn transform_provider_request_with_state(
+        &self,
+        repository: &PluginCatalogRepository,
+        plugin_id: &str,
+        generation: i64,
+        invocation: &CapabilityExecutionContext,
+        mut request: ProviderRequestTransformInput,
+    ) -> Result<
+        (
+            ProviderRequestTransformInput,
+            ProviderRequestTransformOutput,
+            bool,
+        ),
+        AdminPluginLifecycleError,
+    > {
+        let output = self
+            .transform_provider_request(
+                repository,
+                plugin_id,
+                generation,
+                invocation,
+                request.clone(),
+            )
+            .await?;
+        let may_continue = output
+            .apply_to(&mut request)
+            .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
+        Ok((request, output, may_continue))
+    }
+
     pub async fn process_request_stage(
         &self,
         repository: &PluginCatalogRepository,
@@ -736,18 +1129,11 @@ impl AdminPluginSidecarRuntime {
                     request.clone(),
                 )
                 .await?;
-            let terminal = matches!(
-                output.action,
-                af_plugin_contract::RequestProcessingAction::Reject
-                    | af_plugin_contract::RequestProcessingAction::Stop
-            );
-            if !terminal {
-                request
-                    .apply_effects(&output.effects)
-                    .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
-            }
+            let may_continue = output
+                .apply_to(&mut request)
+                .map_err(|_| AdminPluginLifecycleError::RuntimeUnavailable)?;
             outputs.push(output);
-            if terminal {
+            if !may_continue {
                 break;
             }
         }
@@ -782,6 +1168,7 @@ impl AdminPluginSidecarRuntime {
             capability_version,
             input,
             proxy_dispatcher,
+            storage_dispatcher,
             allow_external_write,
         } = request;
         let plugin_id = PluginId::new(plugin_id.to_owned())
@@ -856,6 +1243,18 @@ impl AdminPluginSidecarRuntime {
                     &capability_id,
                     capability_version,
                     input,
+                )
+                .await
+                .map_err(map_sidecar_error)
+        } else if let Some(storage_dispatcher) = storage_dispatcher {
+            session
+                .invoke_host_capability_with_storage(
+                    generation,
+                    &invocation,
+                    &capability_id,
+                    capability_version,
+                    input,
+                    storage_dispatcher,
                 )
                 .await
                 .map_err(map_sidecar_error)

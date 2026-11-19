@@ -59,6 +59,17 @@ pub trait PluginProxyDispatcher: Send + Sync {
     async fn dispatch(&self, request: PluginProxyRequest) -> PluginProxyResponse;
 }
 
+/// Host-owned namespace storage callback for one in-flight Sidecar call.
+/// Implementations bind the request to the plugin ID and deployment generation
+/// before touching the shared repository.
+#[async_trait]
+pub trait PluginStorageDispatcher: Send + Sync {
+    async fn dispatch(
+        &self,
+        request: af_plugin_contract::PluginStorageRequest,
+    ) -> af_plugin_contract::PluginStorageResponse;
+}
+
 /// Reviewed connector implementation compiled into the AnyFlows host.
 pub trait PlatformConnector: Send + Sync {
     fn manifest(&self) -> &PluginManifest;
@@ -921,6 +932,29 @@ impl ConnectorRegistry {
         Ok(output)
     }
 
+    /// Transform a host-projected provider request and apply only the
+    /// validated bounded fields. A rejection leaves the request unchanged.
+    pub async fn transform_provider_request_with_state(
+        &self,
+        negotiated: &NegotiatedConnector,
+        invocation: &CapabilityExecutionContext,
+        mut request: ProviderRequestTransformInput,
+    ) -> Result<
+        (
+            ProviderRequestTransformInput,
+            ProviderRequestTransformOutput,
+        ),
+        ConnectorOperationError,
+    > {
+        let output = self
+            .transform_provider_request(negotiated, invocation, request.clone())
+            .await?;
+        output
+            .apply_to(&mut request)
+            .map_err(|_| ConnectorOperationError::InvalidResponse)?;
+        Ok((request, output))
+    }
+
     /// Run a negotiated request-processing hook and validate its bounded
     /// proposal before it reaches the relay. The hook is deliberately generic:
     /// plugins may implement any of the six contract stages without adding a
@@ -997,18 +1031,11 @@ impl ConnectorRegistry {
             let output = self
                 .process_request_stage(negotiated, invocation, request.clone())
                 .await?;
-            let terminal = matches!(
-                output.action,
-                af_plugin_contract::RequestProcessingAction::Reject
-                    | af_plugin_contract::RequestProcessingAction::Stop
-            );
-            if !terminal {
-                request
-                    .apply_effects(&output.effects)
-                    .map_err(|_| ConnectorOperationError::InvalidResponse)?;
-            }
+            let may_continue = output
+                .apply_to(&mut request)
+                .map_err(|_| ConnectorOperationError::InvalidResponse)?;
             outputs.push(output);
-            if terminal {
+            if !may_continue {
                 break;
             }
         }
@@ -1580,6 +1607,7 @@ mod tests {
             ui_contributions: Vec::new(),
             ui_views: Vec::new(),
             ui_pages: Vec::new(),
+            routes: Vec::new(),
         };
         ConnectorRegistration::new(Arc::new(GenericConnector { manifest })).with_capability_handler(
             Arc::new(EchoCapability {
@@ -1692,6 +1720,7 @@ mod tests {
                 ui_contributions: Vec::new(),
                 ui_views: Vec::new(),
                 ui_pages: Vec::new(),
+                routes: Vec::new(),
             },
             invalid_balance,
         });
@@ -2047,6 +2076,7 @@ mod tests {
                 ui_contributions: Vec::new(),
                 ui_views: Vec::new(),
                 ui_pages: Vec::new(),
+                routes: Vec::new(),
             },
             invalid_balance: false,
         }));

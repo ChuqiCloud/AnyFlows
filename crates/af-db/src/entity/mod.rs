@@ -101,6 +101,7 @@ pub(crate) mod plugin_capability_actions;
 pub(crate) mod plugin_deployment_revisions;
 pub(crate) mod plugin_deployments;
 pub(crate) mod plugin_event_deliveries;
+pub(crate) mod plugin_storage;
 pub(crate) mod proxies;
 pub(crate) mod proxy_pool_bindings;
 pub(crate) mod proxy_pool_nodes;

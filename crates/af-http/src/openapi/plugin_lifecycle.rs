@@ -15,10 +15,13 @@ use crate::{
         PluginCapabilityInvocationRequest, PluginCapabilityInvocationResponse,
         PluginCatalogModelPageResponse, PluginCatalogModelResponse,
         PluginCatalogSourcePageResponse, PluginCatalogSourceResponse,
+        PluginCredentialInvocationRequest, PluginCredentialInvocationResponse,
         PluginDeploymentDisableRequest, PluginDeploymentPageResponse, PluginDeploymentRequest,
         PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginEventResultPageResponse,
-        PluginEventResultResponse, PluginPackageInstallRequest, PluginRuntimeNodeResponse,
-        PluginRuntimeOverviewResponse, PluginRuntimeStateResponse, PluginUninstallResponse,
+        PluginEventResultResponse, PluginMarketEntryResponse, PluginMarketPageResponse,
+        PluginPackageInstallRequest, PluginRouteInvocationResponse, PluginRuntimeNodeResponse,
+        PluginRuntimeOverviewResponse, PluginRuntimeStateResponse, PluginTaskInvocationRequest,
+        PluginTaskInvocationResponse, PluginUninstallResponse,
     },
 };
 
@@ -103,6 +106,175 @@ fn list_admin_plugin_deployments() {}
     security(("bearerAuth" = []))
 )]
 fn invoke_admin_plugin_capability() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/credential-lifecycle",
+    operation_id = "invokeAdminPluginCredentialLifecycle",
+    tag = "插件生命周期",
+    summary = "执行插件凭据登录、刷新、撤销、签名或余额操作",
+    params(("plugin_id" = String, Path)),
+    request_body = PluginCredentialInvocationRequest,
+    responses((status = 200, description = "凭据生命周期结果", body = PluginCredentialInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "插件或能力未授权", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_credential_lifecycle() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/tasks",
+    operation_id = "invokeAdminPluginTask",
+    tag = "插件任务",
+    summary = "提交、轮询、取消或读取插件任务",
+    params(("plugin_id" = String, Path)),
+    request_body = PluginTaskInvocationRequest,
+    responses((status = 200, description = "任务状态或结果", body = PluginTaskInvocationResponse), (status = 400, description = "任务请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "插件或能力未授权", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_task() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeAdminPluginRouteGet",
+    tag = "插件生命周期",
+    summary = "调用插件声明的管理员 GET 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses(
+        (status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户或路由授权不满足要求", body = ManagementErrorBody),
+        (status = 404, description = "插件或路由不存在", body = ManagementErrorBody),
+        (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody),
+        (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_route_get() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeAdminPluginRoutePost",
+    tag = "插件生命周期",
+    summary = "调用插件声明的管理员 POST 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_route_post() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeAdminPluginRoutePut",
+    tag = "插件生命周期",
+    summary = "调用插件声明的管理员 PUT 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_route_put() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/admin/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeAdminPluginRoutePatch",
+    tag = "插件生命周期",
+    summary = "调用插件声明的管理员 PATCH 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_route_patch() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/admin/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeAdminPluginRouteDelete",
+    tag = "插件生命周期",
+    summary = "调用插件声明的管理员 DELETE 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 409, description = "插件部署代次已变更", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_admin_plugin_route_delete() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeUserPluginRouteGet",
+    tag = "插件路由",
+    summary = "调用插件声明的普通用户 GET 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 404, description = "插件或路由不存在", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_user_plugin_route_get() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/account/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeUserPluginRoutePost",
+    tag = "插件路由",
+    summary = "调用插件声明的普通用户 POST 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_user_plugin_route_post() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/account/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeUserPluginRoutePut",
+    tag = "插件路由",
+    summary = "调用插件声明的普通用户 PUT 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_user_plugin_route_put() {}
+
+#[utoipa::path(
+    patch,
+    path = "/api/account/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeUserPluginRoutePatch",
+    tag = "插件路由",
+    summary = "调用插件声明的普通用户 PATCH 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_user_plugin_route_patch() {}
+
+#[utoipa::path(
+    delete,
+    path = "/api/account/plugins/{plugin_id}/routes/{route_id}",
+    operation_id = "invokeUserPluginRouteDelete",
+    tag = "插件路由",
+    summary = "调用插件声明的普通用户 DELETE 路由",
+    params(("plugin_id" = String, Path), ("route_id" = String, Path)),
+    request_body = PluginCapabilityInvocationRequest,
+    responses((status = 200, description = "插件路由输出", body = PluginRouteInvocationResponse), (status = 400, description = "请求无效", body = ManagementErrorBody), (status = 401, description = "登录会话无效", body = ManagementErrorBody), (status = 403, description = "路由授权不满足要求", body = ManagementErrorBody), (status = 503, description = "插件运行时不可用", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn invoke_user_plugin_route_delete() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/account/plugins/market",
+    operation_id = "listPluginMarket",
+    tag = "插件市场",
+    summary = "发现已审批插件的图标、版本和能力",
+    params(("before_id" = Option<i64>, Query, minimum = 1), ("limit" = Option<u32>, Query, minimum = 1, maximum = 100)),
+    responses((status = 200, description = "公开插件市场索引投影", body = PluginMarketPageResponse), (status = 401, description = "需要登录", body = ManagementErrorBody), (status = 400, description = "分页参数无效", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn list_plugin_market() {}
 
 #[utoipa::path(
     post,
@@ -416,6 +588,19 @@ fn list_plugin_catalog_models() {}
         list_admin_plugin_artifacts,
         list_admin_plugin_deployments,
         invoke_admin_plugin_capability,
+        invoke_admin_plugin_credential_lifecycle,
+        invoke_admin_plugin_task,
+        invoke_admin_plugin_route_get,
+        invoke_admin_plugin_route_post,
+        invoke_admin_plugin_route_put,
+        invoke_admin_plugin_route_patch,
+        invoke_admin_plugin_route_delete,
+        invoke_user_plugin_route_get,
+        invoke_user_plugin_route_post,
+        invoke_user_plugin_route_put,
+        invoke_user_plugin_route_patch,
+        invoke_user_plugin_route_delete,
+        list_plugin_market,
         propose_admin_plugin_capability_action,
         confirm_admin_plugin_capability_action,
         list_admin_plugin_event_results,
@@ -445,6 +630,11 @@ fn list_plugin_catalog_models() {}
         PluginCapabilityGrantResponse,
         PluginCapabilityInvocationRequest,
         PluginCapabilityInvocationResponse,
+        PluginCredentialInvocationRequest,
+        PluginCredentialInvocationResponse,
+        PluginTaskInvocationRequest,
+        PluginTaskInvocationResponse,
+        PluginRouteInvocationResponse,
         PluginCapabilityActionProposalRequest,
         PluginCapabilityActionConfirmRequest,
         PluginCapabilityActionProposalResponse,
@@ -465,6 +655,8 @@ fn list_plugin_catalog_models() {}
         PluginCatalogSourcePageResponse,
         PluginCatalogModelResponse,
         PluginCatalogModelPageResponse,
+        PluginMarketEntryResponse,
+        PluginMarketPageResponse,
         ManagementErrorBody
     ))
 )]
