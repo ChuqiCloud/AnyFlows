@@ -2968,6 +2968,12 @@ export type PluginMarketEntryResponse = {
     publishedAt: number;
     official: boolean;
 };
+export type PluginMarketInstallHttpRequest = {
+    plugin_id: string;
+    plugin_version: string;
+    source: PluginMarketSourceRequest;
+    expected_generation?: number | null;
+};
 export type PluginMarketPageResponse = {
     plugins: Array<PluginMarketEntryResponse>;
     nextBeforeId?: number | null;
@@ -2983,12 +2989,6 @@ export type PluginMarketSourceRequest = {
 export type PluginPackageInstallRequest = {
     package: Blob | File;
     config?: string | null;
-    expected_generation?: number | null;
-};
-export type PluginMarketInstallHttpRequest = {
-    plugin_id: string;
-    plugin_version: string;
-    source: PluginMarketSourceRequest;
     expected_generation?: number | null;
 };
 export type PluginRouteInvocationResponse = {
