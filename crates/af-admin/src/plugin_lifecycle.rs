@@ -20,7 +20,9 @@ use af_db::{
     PluginEventFailureKind,
 };
 use af_domain::PlatformPermission;
-use af_httpclient::{HeaderMap, HttpClientProvider, HttpResponse, Method, PooledClient};
+use af_httpclient::{
+    HeaderMap, HeaderName, HttpClientProvider, HttpResponse, Method, PooledClient,
+};
 use af_plugin_contract::{
     CapabilityAccess, CapabilityDeclaration, CapabilityId, InvocationMetadata,
     PluginCredentialOperation, PluginId, PluginManifest, PluginMarketIndex, PluginMarketSource,
@@ -72,7 +74,7 @@ async fn execute_market_get(client: &PooledClient, initial_url: &str) -> Result<
         }
         let location = response
             .headers()
-            .get(http::header::LOCATION)
+            .get(HeaderName::from_static("location"))
             .and_then(|value| value.to_str().ok())
             .ok_or(())?;
         let target = url::Url::parse(location).map_err(|_| ())?;
