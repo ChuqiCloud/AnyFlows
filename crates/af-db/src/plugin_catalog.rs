@@ -1403,11 +1403,19 @@ fn validate_grants(
         .ok_or(PluginCatalogError::Invariant)?;
     for grant in grants {
         let matches = declared.iter().any(|capability| {
+            let access = capability.get("access").and_then(Value::as_str);
+            let effect = capability.get("sideEffect").and_then(Value::as_str);
+            let allowed = (access == Some("read") && effect == Some("none"))
+                || (access == Some("write")
+                    && effect == Some("external_write")
+                    && capability["writeSemantics"]["nativeIdempotencyKey"].as_bool()
+                        == Some(true)
+                    && capability["inputSchema"].is_object()
+                    && capability["outputSchema"].is_object());
             capability.get("id").and_then(Value::as_str) == Some(grant.id.as_str())
                 && capability.get("version").and_then(Value::as_u64)
                     == Some(u64::from(grant.version))
-                && capability.get("access").and_then(Value::as_str) == Some("read")
-                && capability.get("sideEffect").and_then(Value::as_str) == Some("none")
+                && allowed
         });
         if !matches {
             return Err(PluginCatalogError::InvalidInput);

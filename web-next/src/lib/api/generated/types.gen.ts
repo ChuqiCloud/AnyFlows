@@ -2570,6 +2570,14 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type ModelPluginTaskRequest = {
+    plugin_id: string;
+    capability_id: string;
+    capability_version: number;
+    model: string;
+    idempotency_key: string;
+    request: unknown;
+};
 export type ModelProviderCatalogEntry = {
     provider_key: string;
     display_name: string;
@@ -2930,6 +2938,7 @@ export type PluginDeploymentResponse = {
     generation: number;
     artifact: PluginArtifactResponse;
     enabled: boolean;
+    providerSelection?: null | PluginProviderSelectionBody;
     grantedCapabilities: Array<PluginCapabilityGrantResponse>;
     updatedBy: number;
     updatedAt: number;
@@ -2992,6 +3001,15 @@ export type PluginPackageInstallRequest = {
     package: Blob | File;
     config?: string | null;
     expected_generation?: number | null;
+};
+export type PluginProviderSelectionBody = {
+    channelIds: Array<number>;
+    models: Array<string>;
+    priority: number;
+};
+export type PluginProviderSelectionRequest = {
+    expected_generation: number;
+    selection: PluginProviderSelectionBody;
 };
 export type PluginRouteInvocationResponse = {
     pluginId: string;
@@ -4227,7 +4245,7 @@ export type PluginMarketInstallHttpRequestWritable = {
     plugin_id: string;
     plugin_version: string;
     source: PluginMarketSourceRequest;
-    config: {
+    config?: {
         [key: string]: unknown;
     };
     expected_generation?: number | null;
@@ -4627,6 +4645,21 @@ export type ListVideoTasksResponses = {
     200: VideoTaskListResponse;
 };
 export type ListVideoTasksResponse = ListVideoTasksResponses[keyof ListVideoTasksResponses];
+export type CreatePluginVideoData = {
+    body: unknown;
+    headers?: {
+        'Idempotency-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/v1/videos';
+};
+export type CreatePluginVideoErrors = {
+    404: unknown;
+};
+export type CreatePluginVideoResponses = {
+    200: unknown;
+};
 export type SubmitVideoTaskData = {
     body: VideoGenerationRequest;
     headers: {
@@ -12304,6 +12337,113 @@ export type InvokeModelPluginRoutePutResponses = {
     200: PluginRouteInvocationResponse;
 };
 export type InvokeModelPluginRoutePutResponse = InvokeModelPluginRoutePutResponses[keyof InvokeModelPluginRoutePutResponses];
+export type ConfigureAdminPluginProviderSelectionData = {
+    body: PluginProviderSelectionRequest;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/provider-selection';
+};
+export type ConfigureAdminPluginProviderSelectionErrors = {
+    400: ManagementError;
+    409: ManagementError;
+};
+export type ConfigureAdminPluginProviderSelectionError = ConfigureAdminPluginProviderSelectionErrors[keyof ConfigureAdminPluginProviderSelectionErrors];
+export type ConfigureAdminPluginProviderSelectionResponses = {
+    200: PluginDeploymentResponse;
+};
+export type ConfigureAdminPluginProviderSelectionResponse = ConfigureAdminPluginProviderSelectionResponses[keyof ConfigureAdminPluginProviderSelectionResponses];
+export type SubmitModelPluginTaskData = {
+    body: ModelPluginTaskRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/plugin-tasks';
+};
+export type SubmitModelPluginTaskErrors = {
+    409: ManagementError;
+};
+export type SubmitModelPluginTaskError = SubmitModelPluginTaskErrors[keyof SubmitModelPluginTaskErrors];
+export type SubmitModelPluginTaskResponses = {
+    200: unknown;
+};
+export type GetModelPluginTaskData = {
+    body?: never;
+    path: {
+        task_id: string;
+    };
+    query?: never;
+    url: '/v1/plugin-tasks/{task_id}';
+};
+export type GetModelPluginTaskErrors = {
+    404: ManagementError;
+};
+export type GetModelPluginTaskError = GetModelPluginTaskErrors[keyof GetModelPluginTaskErrors];
+export type GetModelPluginTaskResponses = {
+    200: unknown;
+};
+export type CancelModelPluginTaskData = {
+    body?: never;
+    path: {
+        task_id: string;
+    };
+    query?: never;
+    url: '/v1/plugin-tasks/{task_id}/cancel';
+};
+export type CancelModelPluginTaskErrors = {
+    404: ManagementError;
+    409: ManagementError;
+};
+export type CancelModelPluginTaskError = CancelModelPluginTaskErrors[keyof CancelModelPluginTaskErrors];
+export type CancelModelPluginTaskResponses = {
+    200: unknown;
+};
+export type DownloadModelPluginTaskFileData = {
+    body?: never;
+    path: {
+        task_id: string;
+        file_id: number;
+    };
+    query?: never;
+    url: '/v1/plugin-tasks/{task_id}/files/{file_id}';
+};
+export type DownloadModelPluginTaskFileErrors = {
+    404: ManagementError;
+};
+export type DownloadModelPluginTaskFileError = DownloadModelPluginTaskFileErrors[keyof DownloadModelPluginTaskFileErrors];
+export type DownloadModelPluginTaskFileResponses = {
+    200: Blob | File;
+};
+export type DownloadModelPluginTaskFileResponse = DownloadModelPluginTaskFileResponses[keyof DownloadModelPluginTaskFileResponses];
+export type RetrievePluginResponseData = {
+    body?: never;
+    path: {
+        response_id: string;
+    };
+    query?: never;
+    url: '/v1/responses/{response_id}';
+};
+export type RetrievePluginResponseErrors = {
+    404: unknown;
+};
+export type RetrievePluginResponseResponses = {
+    200: unknown;
+};
+export type DownloadPluginVideoData = {
+    body?: never;
+    path: {
+        task_id: string;
+    };
+    query?: never;
+    url: '/v1/videos/{task_id}/content';
+};
+export type DownloadPluginVideoErrors = {
+    404: unknown;
+};
+export type DownloadPluginVideoResponses = {
+    200: Blob | File;
+};
+export type DownloadPluginVideoResponse = DownloadPluginVideoResponses[keyof DownloadPluginVideoResponses];
 export type ListPluginMarketData = {
     body?: never;
     path?: never;

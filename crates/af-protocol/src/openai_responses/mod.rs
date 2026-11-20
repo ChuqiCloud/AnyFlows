@@ -131,6 +131,27 @@ pub fn parse_request_envelope(body: Bytes) -> Result<CanonicalRequestEnvelope, P
     ))
 }
 
+/// Validate the Responses payload for a host-managed, non-streaming plugin task.
+/// The background flag is handled by the host rather than sent upstream.
+pub fn parse_plugin_task_request(body: &[u8]) -> Result<Value, ParseRequestError> {
+    let mut value = bounded_json::parse_value(body, REQUEST_JSON_LIMITS).map_err(map_json_error)?;
+    let fields = value
+        .as_object_mut()
+        .ok_or(ParseRequestError::InvalidValue)?;
+    let background = fields.remove("background");
+    if background.as_ref().is_some_and(|flag| !flag.is_boolean())
+        || fields.get("stream").and_then(Value::as_bool) == Some(true)
+    {
+        return Err(ParseRequestError::UnsupportedFeature);
+    }
+    let validated = serde_json::to_vec(&value).map_err(|_| ParseRequestError::InvalidValue)?;
+    parse_request_envelope(Bytes::from(validated))?;
+    if let Some(background) = background {
+        value["background"] = background;
+    }
+    Ok(value)
+}
+
 fn uses_known_unsupported_feature(value: &Value) -> bool {
     let Some(request) = value.as_object() else {
         return false;

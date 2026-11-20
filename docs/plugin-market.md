@@ -1,6 +1,6 @@
 # 插件市场
 
-插件市场只负责发现。安装仍由 AnyFlows 的插件安装器完成，安装器会校验压缩包、清单、SHA-256、兼容版本和部署授权。
+管理员可以从市场索引查找插件、查看版本和安装。AnyFlows 安装器负责校验压缩包、清单、SHA-256、兼容版本和部署授权。
 
 ## 市场索引
 
@@ -55,11 +55,11 @@
 
 ## 安装流程
 
-1. 管理员配置市场源并刷新索引。
-2. 在市场页按插件、作者、能力和兼容版本筛选。
-3. 选择版本后展示仓库、commit、能力和 SHA-256。
-4. 服务端根据来源下载并校验包，复用现有插件审批和部署流程。
-5. 多节点只由一个节点下载，其他节点按 artifact digest 从共享分发库恢复。
+1. 在「插件管理 → 插件市场」输入索引的 HTTPS 地址并加载。
+2. 按插件名称、ID 或作者查找，打开版本列表查看变更记录、来源、能力和 SHA-256。
+3. 选择版本后安装。更新时留空配置会沿用当前部署，填写 JSON 则用新配置替换。
+4. 宿主下载并校验制品。需要额外权限的能力由管理员在部署时明确授权。
+5. 在部署列表查看节点的就绪状态。集群中的其他节点从共享制品库恢复同一制品。
 
 市场索引不会绕过插件审批、能力授权、部署代次或节点 ready 检查。
 
@@ -73,7 +73,7 @@ GET /api/account/plugins/market/index?url=https%3A%2F%2Fexample.com%2Fanyflows-p
 
 ## 从 GitHub 安装
 
-管理员在市场详情页选择版本后，前端提交安装计划：插件 ID、版本、来源、SHA-256、公开配置和可选部署代次。服务端使用受控 HTTP Client 下载 Release 资产或固定 commit 下的预构建 `.afplugin`，不会让浏览器提交 GitHub Token，也不会在 AnyFlows 节点执行仓库中的 `build`、`install` 或其他脚本。
+管理员可从 GitHub Release 资产或固定 commit 下的预构建 `.afplugin` 安装。首次安装传 `expected_generation: null`，更新时传当前部署代次。部署代次冲突时，刷新后重新确认版本和配置。更新时省略 `config` 可保留当前配置。
 
 对应接口为：
 
@@ -93,7 +93,6 @@ Content-Type: application/json
     "commit": "0123456789abcdef0123456789abcdef01234567",
     "path": null
   },
-  "config": {},
   "expected_generation": null
 }
 ```

@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiClient } from '@/lib/api'
 import {
   approveAdminPluginArtifact,
+  configureAdminPluginProviderSelection,
   deployAdminPluginArtifact,
   disableAdminPluginDeployment,
   fetchPluginMarketIndex,
@@ -19,6 +20,7 @@ import type {
   PluginDeploymentResponse,
   PluginDeploymentRequestWritable,
   PluginMarketInstallHttpRequestWritable,
+  PluginProviderSelectionRequest,
 } from '@/lib/api/generated/types.gen'
 
 const root = ['admin-plugin-lifecycle'] as const
@@ -179,6 +181,10 @@ export type PluginMarketIndex = {
       engines?: { anyflows?: string | null } | null
       capabilities: Array<string>
       publishedAt?: string | null
+      changelog?: string | null
+      minHostVersion?: string | null
+      maxHostVersion?: string | null
+      runtime?: string | null
     }>
   }>
 }
@@ -396,6 +402,18 @@ export function useInstallMarketPlugin() {
   return useMutation({
     mutationFn: async (body: PluginMarketInstallHttpRequestWritable) => {
       const { data } = await installAdminMarketPlugin({ client: apiClient, body })
+      return data
+    },
+    onSuccess: () => invalidate(client),
+    onError: () => invalidate(client),
+  })
+}
+
+export function useConfigurePluginProvider() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ pluginId, body }: { pluginId: string; body: PluginProviderSelectionRequest }) => {
+      const { data } = await configureAdminPluginProviderSelection({ client: apiClient, path: { plugin_id: pluginId }, body })
       return data
     },
     onSuccess: () => invalidate(client),

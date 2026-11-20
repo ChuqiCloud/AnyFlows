@@ -1158,10 +1158,7 @@ impl SidecarSession {
             !artifact.manifest.capabilities.iter().any(|capability| {
                 capability.id == *grant
                     && capability.version == *version
-                    && capability.access == CapabilityAccess::Read
-                    && (capability.side_effect == SideEffectClass::None
-                        || (capability.side_effect == SideEffectClass::ExternalRead
-                            && is_external_read_capability(capability.id.as_str())))
+                    && deployable_sidecar_capability(capability)
             })
         }) {
             return Err(SidecarError::CapabilityNotGranted);
@@ -1709,7 +1706,9 @@ impl SidecarSession {
         if (mutating
             && (declaration.access != CapabilityAccess::Write
                 || declaration.side_effect != SideEffectClass::ExternalWrite
-                || declaration.write_semantics.is_none()))
+                || !declaration
+                    .write_semantics
+                    .is_some_and(|semantics| semantics.native_idempotency_key)))
             || declaration.version != capability_version
         {
             return Err(SidecarError::CapabilityNotDeclared);
@@ -2549,6 +2548,23 @@ fn contains_sensitive_fields(value: &Value) -> bool {
             .iter()
             .any(|(name, value)| is_sensitive_field_name(name) || contains_sensitive_fields(value)),
         Value::Array(items) => items.iter().any(contains_sensitive_fields),
+        _ => false,
+    }
+}
+
+fn deployable_sidecar_capability(capability: &af_plugin_contract::CapabilityDeclaration) -> bool {
+    match (capability.access, capability.side_effect) {
+        (CapabilityAccess::Read, SideEffectClass::None) => true,
+        (CapabilityAccess::Read, SideEffectClass::ExternalRead) => {
+            is_external_read_capability(capability.id.as_str())
+        }
+        (CapabilityAccess::Write, SideEffectClass::ExternalWrite) => {
+            capability.input_schema.is_some()
+                && capability.output_schema.is_some()
+                && capability
+                    .write_semantics
+                    .is_some_and(|semantics| semantics.native_idempotency_key)
+        }
         _ => false,
     }
 }

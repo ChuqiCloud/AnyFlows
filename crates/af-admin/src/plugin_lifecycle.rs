@@ -6,6 +6,8 @@
 
 mod data_plane;
 
+pub use data_plane::PluginNativeTaskProtocol;
+
 use std::{
     fmt,
     sync::Arc,
@@ -35,7 +37,7 @@ use af_plugin_runtime::{
     validate_public_plugin_configuration,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -61,6 +63,27 @@ const STALE_PLUGIN_UPLOAD_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const PLUGIN_CAPABILITY_ACTION_TTL_SECONDS: i64 = 300;
 const MAX_PLUGIN_MARKET_INDEX_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_MARKET_REDIRECTS: usize = 3;
+
+/// Host metadata shares the deployment record so routing and config update
+/// atomically. Preserve legacy manifests that explicitly declare these fields.
+fn plugin_public_configuration(configuration: &Value, schema: &Value) -> Value {
+    let mut public = configuration.clone();
+    if let Some(fields) = public.as_object_mut() {
+        for key in ["providerSelection", "taskPricing"] {
+            if schema["properties"].get(key).is_none() {
+                fields.remove(key);
+            }
+        }
+    }
+    public
+}
+
+pub(crate) fn deployment_public_configuration(deployment: &PluginDeploymentRecord) -> Value {
+    plugin_public_configuration(
+        &deployment.config,
+        &deployment.artifact.manifest["configSchema"],
+    )
+}
 
 async fn execute_market_get(client: &PooledClient, initial_url: &str) -> Result<HttpResponse, ()> {
     let initial = url::Url::parse(initial_url).map_err(|_| ())?;
@@ -225,7 +248,7 @@ pub struct PluginMarketInstallRequest {
     pub plugin_id: String,
     pub plugin_version: String,
     pub source: PluginMarketInstallSource,
-    pub config: Value,
+    pub config: Option<Value>,
     pub expected_generation: Option<i64>,
 }
 
@@ -530,9 +553,54 @@ pub struct AdminPluginDeployment {
     artifact: AdminPluginArtifact,
     enabled: bool,
     granted_capabilities: Vec<AdminPluginCapabilityGrant>,
+    provider_selection: Option<PluginProviderSelection>,
     updated_by: i64,
     updated_at: i64,
     request_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginProviderSelection {
+    pub channel_ids: Vec<i64>,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub priority: i32,
+}
+
+impl PluginProviderSelection {
+    pub fn from_config(config: &Value) -> Option<Self> {
+        let selection = config.get("providerSelection")?.as_object()?;
+        serde_json::from_value(json!({
+            "channelIds": selection.get("channelIds").cloned().unwrap_or_else(|| json!([])),
+            "models": selection.get("models").cloned().unwrap_or_else(|| json!([])),
+            "priority": selection.get("priority").cloned().unwrap_or_else(|| json!(0))
+        }))
+        .ok()
+    }
+
+    fn validate(&self) -> Result<(), AdminPluginLifecycleError> {
+        let mut channels = std::collections::BTreeSet::new();
+        let mut models = std::collections::BTreeSet::new();
+        if self.channel_ids.len() > 128
+            || !self
+                .channel_ids
+                .iter()
+                .all(|id| *id > 0 && channels.insert(id))
+            || self.models.len() > 128
+            || !self.models.iter().all(|model| {
+                !model.is_empty()
+                    && model.len() <= 255
+                    && model.trim() == model
+                    && !model.chars().any(char::is_control)
+                    && models.insert(model)
+            })
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        Ok(())
+    }
 }
 
 impl AdminPluginDeployment {
@@ -542,6 +610,7 @@ impl AdminPluginDeployment {
             generation: record.generation,
             artifact: AdminPluginArtifact::from_record(record.artifact),
             enabled: record.enabled,
+            provider_selection: PluginProviderSelection::from_config(&record.config),
             granted_capabilities: record
                 .granted_capabilities
                 .into_iter()
@@ -576,6 +645,11 @@ impl AdminPluginDeployment {
     #[must_use]
     pub fn granted_capabilities(&self) -> &[AdminPluginCapabilityGrant] {
         &self.granted_capabilities
+    }
+
+    #[must_use]
+    pub const fn provider_selection(&self) -> Option<&PluginProviderSelection> {
+        self.provider_selection.as_ref()
     }
 
     #[must_use]
@@ -1050,7 +1124,7 @@ impl DatabaseAdminPluginLifecycleService {
                 request_id: request_id.to_owned(),
                 deadline_unix_ms,
             },
-            deployment.config.clone(),
+            deployment_public_configuration(&deployment),
             PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
         )
         .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -1287,7 +1361,7 @@ impl DatabaseAdminPluginLifecycleService {
                 request_id: request_id.to_owned(),
                 deadline_unix_ms,
             },
-            deployment.config.clone(),
+            deployment_public_configuration(&deployment),
             route.max_body_bytes,
         )
         .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -1390,7 +1464,7 @@ impl DatabaseAdminPluginLifecycleService {
                 request_id: request_id.to_owned(),
                 deadline_unix_ms: now_ms.saturating_add(30_000),
             },
-            deployment.config.clone(),
+            deployment_public_configuration(&deployment),
             max_bytes,
         )
         .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -1668,7 +1742,7 @@ impl DatabaseAdminPluginLifecycleService {
                     .unwrap_or(u64::MAX)
                     .saturating_add(30_000),
             },
-            deployment.config.clone(),
+            deployment_public_configuration(&deployment),
             PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES,
         )
         .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -1905,7 +1979,14 @@ impl DatabaseAdminPluginLifecycleService {
         )
         .await?;
         let result = self
-            .install_package_authorized(principal, upload, config, expected_generation, request_id)
+            .install_package_authorized(
+                principal,
+                upload,
+                config,
+                expected_generation,
+                false,
+                request_id,
+            )
             .await;
         self.finish_mutation(
             principal,
@@ -1950,13 +2031,32 @@ impl DatabaseAdminPluginLifecycleService {
         .await?;
         if PluginId::new(request.plugin_id.clone()).is_err()
             || af_plugin_contract::PluginVersion::new(request.plugin_version.clone()).is_err()
-            || !request.config.is_object()
+            || request
+                .config
+                .as_ref()
+                .is_some_and(|config| !config.is_object())
             || request
                 .expected_generation
                 .is_some_and(|generation| generation <= 0)
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
+        let config = match request.config {
+            Some(config) => config,
+            None => {
+                let current = self
+                    .repository
+                    .get_deployment(&plugin_id)
+                    .await
+                    .map_err(map_catalog_error)?;
+                if current.as_ref().map(|deployment| deployment.generation)
+                    != request.expected_generation
+                {
+                    return Err(AdminPluginLifecycleError::Conflict);
+                }
+                current.map_or_else(|| json!({}), |deployment| deployment.config)
+            }
+        };
         let source = request.source.clone().into_contract();
         source
             .validate()
@@ -2008,8 +2108,9 @@ impl DatabaseAdminPluginLifecycleService {
             .install_package_authorized(
                 principal,
                 upload,
-                request.config,
+                config,
                 request.expected_generation,
+                true,
                 request_id,
             )
             .await;
@@ -2041,6 +2142,7 @@ impl DatabaseAdminPluginLifecycleService {
         mut upload: PluginPackageUpload,
         config: Value,
         expected_generation: Option<i64>,
+        strict_generation: bool,
         request_id: &str,
     ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
         use tokio::io::AsyncWriteExt as _;
@@ -2115,8 +2217,11 @@ impl DatabaseAdminPluginLifecycleService {
         manifest
             .validate()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        validate_public_plugin_configuration(&manifest.config_schema, &config)
-            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        validate_public_plugin_configuration(
+            &manifest.config_schema,
+            &plugin_public_configuration(&config, &manifest.config_schema),
+        )
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         let capability_count = manifest.capabilities.len();
         let grants = manifest
             .capabilities
@@ -2136,7 +2241,9 @@ impl DatabaseAdminPluginLifecycleService {
             .await
             .map_err(map_catalog_error)?;
         let current_generation = current.as_ref().map(|deployment| deployment.generation);
-        if expected_generation.is_some_and(|expected| Some(expected) != current_generation) {
+        if (strict_generation || expected_generation.is_some())
+            && expected_generation != current_generation
+        {
             return Err(AdminPluginLifecycleError::Conflict);
         }
         // Upload and Install is an explicit operator action. When replacing an
@@ -2316,7 +2423,7 @@ impl DatabaseAdminPluginLifecycleService {
                 request_id: uuid::Uuid::new_v4().to_string(),
                 deadline_unix_ms,
             },
-            deployment.config.clone(),
+            deployment_public_configuration(&deployment),
             PLUGIN_EVENT_MAX_BYTES,
         )
         .map_err(|_| PluginEventFailureKind::Permanent)?;
@@ -3003,6 +3110,69 @@ impl DatabaseAdminPluginLifecycleService {
         .await
     }
 
+    pub async fn configure_provider_selection(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        expected_generation: i64,
+        selection: PluginProviderSelection,
+        request_id: &str,
+    ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        selection.validate()?;
+        let current = self
+            .repository
+            .get_deployment(plugin_id)
+            .await
+            .map_err(map_catalog_error)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if current.generation != expected_generation {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        if !current.enabled
+            || !current
+                .granted_capabilities
+                .iter()
+                .any(|grant| grant.id == "provider.lifecycle")
+        {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        if PluginProviderSelection::from_config(&current.config).as_ref() == Some(&selection) {
+            return Ok(self.deployment_view(current));
+        }
+        let mut config = current.config;
+        let fields = config
+            .as_object_mut()
+            .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+        let existing = fields
+            .entry("providerSelection")
+            .or_insert_with(|| json!({}));
+        let target = existing
+            .as_object_mut()
+            .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+        let values =
+            serde_json::to_value(selection).map_err(|_| AdminPluginLifecycleError::Internal)?;
+        target.extend(
+            values
+                .as_object()
+                .ok_or(AdminPluginLifecycleError::Internal)?
+                .clone(),
+        );
+        let command = PluginDeploymentCommand::new(
+            plugin_id.to_owned(),
+            current.artifact.digest,
+            Some(expected_generation),
+            true,
+            current
+                .granted_capabilities
+                .into_iter()
+                .map(AdminPluginCapabilityGrant::from)
+                .collect(),
+            config,
+        )?;
+        self.deploy(principal, command, request_id).await
+    }
+
     pub async fn deploy(
         &self,
         principal: SessionPrincipal,
@@ -3034,8 +3204,11 @@ impl DatabaseAdminPluginLifecycleService {
             manifest
                 .validate()
                 .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-            validate_public_plugin_configuration(&manifest.config_schema, &command.config)
-                .map_err(|_| AdminPluginLifecycleError::InvalidInput)
+            validate_public_plugin_configuration(
+                &manifest.config_schema,
+                &plugin_public_configuration(&command.config, &manifest.config_schema),
+            )
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)
         }
         .await;
         let result = if command.enabled && self.sidecar_runtime.is_none() {

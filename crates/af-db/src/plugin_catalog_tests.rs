@@ -259,6 +259,35 @@ async fn concurrent_identical_artifact_registration_is_idempotent() -> Result<()
 }
 
 #[tokio::test]
+async fn plugin_deployment_grants_schema_bound_idempotent_writes() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new().await?;
+    let mut input = artifact(&"67".repeat(32));
+    input.manifest["capabilities"][1]["inputSchema"] = serde_json::json!({"type":"object"});
+    input.manifest["capabilities"][1]["outputSchema"] = serde_json::json!({"type":"object"});
+    let artifact = fixture.repo.register_artifact(input).await?;
+    fixture
+        .repo
+        .approve_artifact(PluginArtifactApproval {
+            artifact_id: artifact.id,
+            approved_by: fixture.operator,
+            approved_at: 1_800_000_001,
+            request_id: "approve-task-plugin".into(),
+        })
+        .await?;
+    let mut command = deployment(
+        fixture.operator,
+        artifact.digest,
+        None,
+        "deploy-task-plugin",
+    );
+    command.granted_capabilities[0].id = "catalog.models.write".into();
+    let deployed = fixture.repo.deploy(command).await?;
+    assert_eq!(deployed.granted_capabilities[0].id, "catalog.models.write");
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn plugin_deployment_requires_granted_read_capabilities_and_generation_cas()
 -> Result<(), Box<dyn Error>> {
     let fixture = Fixture::new().await?;

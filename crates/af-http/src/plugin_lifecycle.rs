@@ -12,7 +12,7 @@ use af_admin::{
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
     PluginMarketInstallRequest, PluginMarketInstallSource, PluginPackageUpload,
-    SessionAuthentication, SessionAuthenticator,
+    PluginProviderSelection, SessionAuthentication, SessionAuthenticator,
 };
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
@@ -110,8 +110,8 @@ pub(crate) struct PluginMarketInstallHttpRequest {
     #[schema(min_length = 5, max_length = 128)]
     plugin_version: String,
     source: PluginMarketSourceRequest,
-    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
-    config: Value,
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema, required = false)]
+    config: Option<Value>,
     #[schema(minimum = 1)]
     expected_generation: Option<i64>,
 }
@@ -379,6 +379,8 @@ pub(crate) struct PluginDeploymentResponse {
     generation: i64,
     artifact: PluginArtifactResponse,
     enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider_selection: Option<PluginProviderSelectionBody>,
     granted_capabilities: Vec<PluginCapabilityGrantResponse>,
     updated_by: i64,
     updated_at: i64,
@@ -392,6 +394,13 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
             generation: value.generation(),
             artifact: value.artifact().clone().into(),
             enabled: value.enabled(),
+            provider_selection: value.provider_selection().map(|selection| {
+                PluginProviderSelectionBody {
+                    channel_ids: selection.channel_ids.clone(),
+                    models: selection.models.clone(),
+                    priority: selection.priority,
+                }
+            }),
             granted_capabilities: value
                 .granted_capabilities()
                 .iter()
@@ -402,6 +411,22 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
             request_id: value.request_id().to_owned(),
         }
     }
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PluginProviderSelectionBody {
+    channel_ids: Vec<i64>,
+    models: Vec<String>,
+    priority: i32,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PluginProviderSelectionRequest {
+    #[schema(minimum = 1)]
+    expected_generation: i64,
+    selection: PluginProviderSelectionBody,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -842,6 +867,10 @@ pub fn build_plugin_lifecycle_router(
             get(deployment_history),
         )
         .route("/api/admin/plugins/{plugin_id}/deployment", post(deploy))
+        .route(
+            "/api/admin/plugins/{plugin_id}/provider-selection",
+            post(configure_provider_selection),
+        )
         .route(
             "/api/admin/plugins/{plugin_id}/disable",
             post(disable_deployment),
@@ -2001,6 +2030,33 @@ async fn deploy(
         .await
         .map_err(map_service_error)?;
     Ok(no_store_json(PluginDeploymentResponse::from(result)))
+}
+
+async fn configure_provider_selection(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginProviderSelectionRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let selection = PluginProviderSelection {
+        channel_ids: request.selection.channel_ids,
+        models: request.selection.models,
+        priority: request.selection.priority,
+    };
+    let deployment = state
+        .service
+        .configure_provider_selection(
+            authentication.principal(),
+            &plugin_id,
+            request.expected_generation,
+            selection,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginDeploymentResponse::from(deployment)))
 }
 
 async fn disable_deployment(

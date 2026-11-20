@@ -114,6 +114,7 @@ mod operations;
 mod passkey_auth;
 mod password_reset;
 mod payment_settings;
+mod plugin_native_tasks;
 mod proxy_pools;
 mod public_service_status;
 mod verification_settings;

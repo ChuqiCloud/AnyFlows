@@ -24,7 +24,7 @@
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
-插件不能注册任意服务端路由、模型、渠道、价卡、Webhook 或计划任务。需要 HTTP 入口时，只能使用清单中的 `routes` 声明式路由；当前已接入管理员路由入口，普通用户入口沿用同一契约后续开放。路由仍由宿主固定前缀、认证和能力授权统一管理。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力可以直接由宿主通用入口执行，无须为每个能力新增 Rust handler。管理员会话或拥有对应管理员权限码的 PAT 可调用：
+需要自定义 HTTP 入口时，在清单的 `routes` 中声明路由和受众。管理员、普通用户和模型 Key 分别使用宿主提供的固定前缀，宿主负责认证与能力授权。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力，可以通过宿主通用入口调用。管理员会话或拥有对应权限码的 PAT 可调用该入口。
 
 ```http
 POST /api/admin/plugins/{plugin_id}/capabilities/{capability_id}/invoke
@@ -509,11 +509,14 @@ Provider 插件可以实现模型发现、请求构造、响应投影、失败�
 
 ### 请求处理
 
-`request.processing.read` 支持 `ingress`、`request`、`outbound`、`egress`、`reply`、`report` 六个阶段。插件接收脱敏快照，可以返回审计发现和受限处理提案。宿主拒绝修改认证、计费和钱包字段；`reply` 与 `report` 阶段只能观察和审计。
+使用 `request.processing.read` 时，先根据输入的 `stage` 判断当前阶段。
 
-Chat 模型请求已接入 `request` 同步处理和 `ingress` 只读观察。请求阶段只传递协议、模型、流式标记和消息/工具/附件数量；插件可以通过合法的 JSON Patch 修改模型，或拒绝当前请求，不会收到提示词、工具参数、原始 Header 或凭据。宿主仍控制计费和路由；插件超时或失败时模型请求继续。每次最多并发调用 16 个插件，每个调用预算 120 毫秒。`outbound`、`reply`、`report` 的完整流水线以及 Responses、图像、音频和异步任务转发仍按各自服务逐步接入。
+- `ingress` 和 `request` 在 Chat 进入 Relay 前运行。插件收到模型、协议、流式标记和内容项数量。宿主把 `ingress` 用作观察入口，`request` 可以修改模型或阻止请求。
+- `outbound` 处理 Relay 候选即将发送给上游的 JSON 请求体。
+- `egress` 和 `reply` 依次处理 Relay 收到的 JSON 响应体或 SSE 的 JSON 事件。经过 WebSocket 转发的响应也会先转成 SSE。超过 48 KiB 的单份 JSON 只提供省略内容的标记。
+- `report` 返回审计发现，输入包含流是否完成和可取得的用量。客户端提前取消或上游断流时，报告标记为未完成。
 
-当宿主显式执行多个阶段时，`continue` 结果中的 `json_patch` 和 `header_patch` 会按顺序应用到下一阶段输入。JSON Patch 只支持 `add`、`replace`、`remove`；中间路径必须存在，`replace` 和 `remove` 的目标项也必须存在，`add` 可新增对象字段或插入数组项。缺失路径、根替换和受保护字段都会使整批提案失败，且不会留下部分修改。头部修改按不区分大小写的名称合并，认证、Cookie、Host、内容长度和协议控制头不能修改。插件只能影响这条插件处理流水线的快照，真实转发、路由、计费和结算仍由宿主决定。
+JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或受保护字段。Relay 目前只把 JSON 正文的修改应用到转发链路。原始认证 Header、凭据和钱包由宿主管理。
 
 ### 凭据生命周期
 
@@ -555,9 +558,9 @@ python tools/plugins/generate-protocol-sdk.py
 
 ### 模型 Key 路由
 
-清单路由的 `audience` 可以使用 `model_key`。这类路由同时提供 `/api/plugins/{plugin_id}/routes/{route_id}` 和 `/v1/plugins/{plugin_id}/{route_id}`，使用模型调用 Key 鉴权；请求仍经过清单中的输入 Schema、能力授权、超时和输出校验。它不能读取浏览器会话、钱包或模型 Key 明文。
+将路由的 `audience` 设为 `model_key`，可通过 `/v1/plugins/{plugin_id}/{route_id}` 或 `/api/plugins/{plugin_id}/routes/{route_id}` 调用。两条路径和下文的任务接口都使用模型调用 Key。控制台和管理 API 使用会话或相应权限的 PAT。宿主负责校验路由的输入、输出、授权和超时。
 
-Provider 插件可以在部署公开配置中声明选择范围：
+管理员可在「插件管理」的部署卡片中打开「Provider 渠道绑定」。选择渠道后，可再限定模型并设置优先级。对应的部署配置如下。
 
 ```json
 {
@@ -569,11 +572,11 @@ Provider 插件可以在部署公开配置中声明选择范围：
 }
 ```
 
-同一模型有多个插件时按 `priority` 降序、插件 ID 升序选择；未填写 `models` 或 `channelIds` 表示不限制。宿主仍负责上游地址、认证、计费和最终候选切换。
+同一渠道和模型有多个插件时，宿主按 `priority` 降序、插件 ID 升序选择。模型留空表示匹配所选渠道上的全部模型。清空全部渠道并保存会移除该部署的绑定。
 
 ## 数据面接入
 
-Provider 插件通过部署配置中的 `providerSelection` 绑定渠道。选择器可同时指定 `pluginId`、模型、`channelIds`、优先级和多个候选；每次 Relay 尝试会冻结插件代次，插件返回的请求、响应和失败分类都只作用于这次候选。宿主仍负责 API Key、模型策略、重试上限和计费。
+每次 Relay 尝试会冻结所选插件的部署代次。插件返回的请求、响应和失败分类只作用于这次候选。宿主负责上游地址、认证、模型策略、重试上限和计费。
 
 凭据生命周期使用宿主绑定的 `channelId` 与 `credentialId`。`login` 首次调用返回授权地址，回调必须带一次性 `state`；`refresh`、`revoke`、`balance` 和 `sign` 都由宿主在 CAS 状态下执行。插件返回的会话材料由宿主加密保存，插件和普通能力不能读取数据库或钱包。
 
@@ -587,7 +590,36 @@ Provider 插件通过部署配置中的 `providerSelection` 绑定渠道。选�
 
 任务提交时宿主按管理员配置的费率预留额度；状态、文件、报告和 `PluginTaskUsage` 回来后，宿主校验上限并用同一预留号结算。外部提交出现未知结果时任务进入 `unknown`，不会自动重放。
 
-请求处理插件可声明 `request.processing.read`，阶段包括 `ingress`、`request`、`outbound`、`egress`、`reply` 和 `report`。`reply` 可以观察响应但不能改写，`report` 只能生成结论。流式响应按事件边界处理，客户端取消或上游断流会生成未完成报告。
+### 绑定标准模型任务接口
+
+管理员须在部署中明确授予任务能力。任务能力使用 `access: write`、`sideEffect: external_write`，提供输入和输出 Schema，并声明 `writeSemantics.nativeIdempotencyKey: true`。插件应使用宿主传入的幂等键对外部提交去重。
+
+在部署配置的 `taskPricing` 中，用公开模型 ID 指定可调用的分组和费率。以下配置让分组 1 使用插件能力 `example.image.generate` 处理模型 `example-image` 的图像任务。
+
+```json
+{
+  "taskPricing": {
+    "example-image": {
+      "groupIds": [1],
+      "quotaPerUnit": 1000,
+      "maxUnits": 4,
+      "nativeProtocols": {
+        "openai_image": "example.image.generate"
+      }
+    }
+  }
+}
+```
+
+`quotaPerUnit` 是每单位用量消耗的系统额度，`maxUnits` 是单任务的用量上限。宿主先按两者的乘积预留额度，再按插件返回且通过校验的用量结算。同一模型、分组和协议只配置一个已启用的绑定。仅使用 `/v1/plugin-tasks` 时可省略 `nativeProtocols`。
+
+| 协议键 | 接口 | 请求和结果 |
+| --- | --- | --- |
+| `openai_responses` | `POST /v1/responses`、`GET /v1/responses/{response_id}` | 支持非流式 JSON 和 `background: true`。完成时从任务的 `output.output` 读取 Responses 输出数组。 |
+| `openai_image` | `POST /v1/images/generations` | 支持 JSON 生成请求。URL 模式从任务的 `output.data[].url` 读取 HTTPS 地址。使用 `b64_json` 时，宿主编码已落库的图像文件。 |
+| `openai_video` | `POST /v1/videos`、`GET /v1/videos/{task_id}`、`GET /v1/videos/{task_id}/content` | 支持 JSON 提交和异步查询。内容接口返回宿主保存的 MP4，或以 HTTP 303 跳转到任务结果的 `output.url`。 |
+
+客户端可用 `Idempotency-Key` 在网络重试时复用原任务。图像请求等待超时后，响应的 `X-AnyFlows-Plugin-Task-Id` 可用于查询 `/v1/plugin-tasks/{taskId}`。标准任务入口目前仅接入上表中的请求方式。
 
 协议生成器运行：
 

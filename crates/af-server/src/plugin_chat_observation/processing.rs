@@ -119,14 +119,22 @@ impl DatabasePluginProviderRelayHook {
         if let Some(body) = request
             .body
             .as_ref()
-            .and_then(|body| serde_json::from_slice(body).ok())
+            .and_then(|body| serde_json::from_slice::<Value>(body).ok())
         {
-            let body = self
-                .process_stage(&request, RequestProcessingStage::Outbound, None, body)
+            let processed = self
+                .process_stage(
+                    &request,
+                    RequestProcessingStage::Outbound,
+                    None,
+                    body.clone(),
+                )
                 .await?;
-            request.body = Some(Bytes::from(
-                serde_json::to_vec(&body).map_err(|_| protocol_error())?,
-            ));
+            // Native relay preserves the verified bytes when processing leaves the JSON intact.
+            if processed != body {
+                request.body = Some(Bytes::from(
+                    serde_json::to_vec(&processed).map_err(|_| protocol_error())?,
+                ));
+            }
         }
         Ok(request)
     }

@@ -1,16 +1,19 @@
 //! Durable plugin data plane. Only the host owns identities, vault and quota.
 mod tasks;
+
 use super::*;
 use af_account::{PlainSystemSecret, SystemSecretCipher};
 use af_db::{EncryptedCredentialEnvelope, PluginHostRecord, PluginHostRepository, QuotaRepository};
 use af_plugin_contract::{PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PluginCredentialResult};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+pub use tasks::PluginNativeTaskProtocol;
 
 #[derive(Clone)]
 pub(super) struct DataPlane {
     records: PluginHostRepository,
     cipher: SystemSecretCipher,
     quota: Arc<QuotaRepository>,
+    native_tasks: Arc<tokio::sync::Mutex<Option<tasks::NativeTaskCache>>>,
 }
 
 fn persistence_error(error: af_db::PluginHostError) -> AdminPluginLifecycleError {
@@ -33,6 +36,7 @@ impl DatabaseAdminPluginLifecycleService {
             records,
             cipher,
             quota,
+            native_tasks: Arc::default(),
         });
         self
     }
@@ -208,7 +212,7 @@ impl DatabaseAdminPluginLifecycleService {
         invocation = af_plugin_runtime::CapabilityExecutionContext::new(
             format!("credential:{id}"),
             invocation.metadata().clone(),
-            deployment.config.clone(),
+            crate::plugin_lifecycle::deployment_public_configuration(&deployment),
             1024 * 1024,
         )
         .map_err(|_| AdminPluginLifecycleError::Internal)?;

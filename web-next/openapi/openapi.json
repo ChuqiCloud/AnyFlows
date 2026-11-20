@@ -1479,6 +1479,52 @@
             "apiKeyAuth": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "OpenAI Video"
+        ],
+        "summary": "使用已绑定的插件提交 JSON 视频任务",
+        "operationId": "createPluginVideo",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "插件 Video 对象",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "当前模型无视频插件绑定"
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
       }
     },
     "/v1/videos/generations": {
@@ -34496,13 +34542,7 @@
         "security": [
           {
             "apiKeyAuth": []
-          },
-          {
-            "personalAccessTokenBearer": []
           }
-        ],
-        "x-anyflows-pat-scopes": [
-          "plugins:execute"
         ]
       },
       "put": {
@@ -34604,13 +34644,7 @@
         "security": [
           {
             "apiKeyAuth": []
-          },
-          {
-            "personalAccessTokenBearer": []
           }
-        ],
-        "x-anyflows-pat-scopes": [
-          "plugins:execute"
         ]
       },
       "post": {
@@ -34712,13 +34746,7 @@
         "security": [
           {
             "apiKeyAuth": []
-          },
-          {
-            "personalAccessTokenBearer": []
           }
-        ],
-        "x-anyflows-pat-scopes": [
-          "plugins:execute"
         ]
       },
       "delete": {
@@ -34820,13 +34848,7 @@
         "security": [
           {
             "apiKeyAuth": []
-          },
-          {
-            "personalAccessTokenBearer": []
           }
-        ],
-        "x-anyflows-pat-scopes": [
-          "plugins:execute"
         ]
       },
       "patch": {
@@ -34928,13 +34950,363 @@
         "security": [
           {
             "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/plugins/{plugin_id}/provider-selection": {
+      "post": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "设置 Provider 插件适用的渠道、模型和优先级",
+        "operationId": "configureAdminPluginProviderSelection",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginProviderSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "新的插件部署代次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "渠道绑定或插件配置无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "部署代次不一致",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
           },
           {
             "personalAccessTokenBearer": []
           }
         ],
         "x-anyflows-pat-scopes": [
-          "plugins:execute"
+          "admin:configure_admin_plugin_provider_selection:execute"
+        ]
+      }
+    },
+    "/v1/plugin-tasks": {
+      "post": {
+        "tags": [
+          "插件任务"
+        ],
+        "summary": "使用模型 Key 幂等提交插件任务",
+        "operationId": "submitModelPluginTask",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPluginTaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "任务状态和本地 ID",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "幂等键或任务状态冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/plugin-tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "插件任务"
+        ],
+        "summary": "读取模型 Key 名下的插件任务、用量、报告和文件清单",
+        "operationId": "getModelPluginTask",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务快照",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/plugin-tasks/{task_id}/cancel": {
+      "post": {
+        "tags": [
+          "插件任务"
+        ],
+        "summary": "请求取消模型 Key 名下的插件任务",
+        "operationId": "cancelModelPluginTask",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "取消请求后的任务状态",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "任务当前无法取消",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/plugin-tasks/{task_id}/files/{file_id}": {
+      "get": {
+        "tags": [
+          "插件任务"
+        ],
+        "summary": "下载模型 Key 名下已完成任务的结果文件",
+        "operationId": "downloadModelPluginTaskFile",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "文件内容",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务或文件不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/responses/{response_id}": {
+      "get": {
+        "tags": [
+          "OpenAI Responses"
+        ],
+        "summary": "读取由插件任务生成的 Response",
+        "operationId": "retrievePluginResponse",
+        "parameters": [
+          {
+            "name": "response_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Responses 对象",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "Response 不存在"
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/videos/{task_id}/content": {
+      "get": {
+        "tags": [
+          "OpenAI Video"
+        ],
+        "summary": "获取已完成插件视频的内容",
+        "operationId": "downloadPluginVideo",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MP4 文件",
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "303": {
+            "description": "跳转到插件返回的 HTTPS 视频地址",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "视频结果地址"
+              }
+            }
+          },
+          "404": {
+            "description": "视频或文件不存在"
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
         ]
       }
     },
@@ -53437,6 +53809,38 @@
         },
         "additionalProperties": false
       },
+      "ModelPluginTaskRequest": {
+        "type": "object",
+        "required": [
+          "plugin_id",
+          "capability_id",
+          "capability_version",
+          "model",
+          "idempotency_key",
+          "request"
+        ],
+        "properties": {
+          "plugin_id": {
+            "type": "string"
+          },
+          "capability_id": {
+            "type": "string"
+          },
+          "capability_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "model": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "request": {}
+        },
+        "additionalProperties": false
+      },
       "ModelProviderCatalogEntry": {
         "type": "object",
         "required": [
@@ -55271,6 +55675,16 @@
           "enabled": {
             "type": "boolean"
           },
+          "providerSelection": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PluginProviderSelectionBody"
+              }
+            ]
+          },
           "grantedCapabilities": {
             "type": "array",
             "items": {
@@ -55450,8 +55864,7 @@
         "required": [
           "plugin_id",
           "plugin_version",
-          "source",
-          "config"
+          "source"
         ],
         "properties": {
           "plugin_id": {
@@ -55581,6 +55994,52 @@
             "minimum": 1
           }
         }
+      },
+      "PluginProviderSelectionBody": {
+        "type": "object",
+        "required": [
+          "channelIds",
+          "models",
+          "priority"
+        ],
+        "properties": {
+          "channelIds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PluginProviderSelectionRequest": {
+        "type": "object",
+        "required": [
+          "expected_generation",
+          "selection"
+        ],
+        "properties": {
+          "expected_generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "selection": {
+            "$ref": "#/components/schemas/PluginProviderSelectionBody"
+          }
+        },
+        "additionalProperties": false
       },
       "PluginRouteInvocationResponse": {
         "type": "object",
