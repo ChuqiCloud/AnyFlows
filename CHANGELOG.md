@@ -1,3 +1,35 @@
+## 0.3.0-beta.11 - 2026-11-20
+
+本版本基于 `v0.3.0-beta.10`，增加插件安装与集群部署、外部平台账户管理，以及模型级渠道健康评分。
+
+### 新增
+
+- 管理员可直接上传 `.afplugin`，或从 HTTPS 市场索引选择版本安装。自有包可免签名，官方标识由宿主配置的公钥验证。已安装制品通过共享数据库分发，各节点独立上报就绪状态。([#124](https://github.com/ChuqiCloud/AnyFlows/pull/124)、[#125](https://github.com/ChuqiCloud/AnyFlows/pull/125)、[#137](https://github.com/ChuqiCloud/AnyFlows/pull/137)、[#139](https://github.com/ChuqiCloud/AnyFlows/pull/139))
+- 插件可接入模型目录、渠道监控、模型映射、商户资料检查和外部账户分析。支持声明式页面、业务事件订阅和带管理员确认的写操作。([#125](https://github.com/ChuqiCloud/AnyFlows/pull/125)、[#127](https://github.com/ChuqiCloud/AnyFlows/pull/127)、[#129](https://github.com/ChuqiCloud/AnyFlows/pull/129)、[#130](https://github.com/ChuqiCloud/AnyFlows/pull/130)、[#134](https://github.com/ChuqiCloud/AnyFlows/pull/134)、[#135](https://github.com/ChuqiCloud/AnyFlows/pull/135))
+- Provider 插件支持按渠道、模型和优先级绑定，可参与 Relay 请求构造、响应处理和失败分类。宿主管理凭据绑定、登录回调、刷新、撤销、签名和余额查询。([#138](https://github.com/ChuqiCloud/AnyFlows/pull/138)、[#139](https://github.com/ChuqiCloud/AnyFlows/pull/139))
+- 模型 Key 可调用插件路由和异步任务接口。配置模型与分组绑定后，非流式 Responses、JSON 图片生成和 JSON 视频提交也可接入插件任务，支持状态查询、结果文件、报告和额度结算。([#138](https://github.com/ChuqiCloud/AnyFlows/pull/138)、[#139](https://github.com/ChuqiCloud/AnyFlows/pull/139))
+- 用户可绑定本人 NewAPI、Sub2API 账户，刷新余额并查看历史快照。外部余额按原平台单位保存，与 AnyFlows 钱包独立。([#121](https://github.com/ChuqiCloud/AnyFlows/pull/121))
+
+### 改进
+
+- 渠道调度参考近期成功率、成功请求延迟和模型级故障范围。瞬时失败会降低候选优先度，仍保留独立的硬熔断。管理员可为同一模型配置可比的上游成本、余额和用量信号。([#119](https://github.com/ChuqiCloud/AnyFlows/pull/119))
+- 完善中文插件开发、安装和排错指南，提供可运行示例、协议测试工具，以及 Python、TypeScript、Go 和 Rust SDK。([#131](https://github.com/ChuqiCloud/AnyFlows/pull/131)、[#132](https://github.com/ChuqiCloud/AnyFlows/pull/132)、[#138](https://github.com/ChuqiCloud/AnyFlows/pull/138))
+
+### 修复与安全更新
+
+- 修复插件未修改请求内容时 Relay 仍重新编码 JSON 的问题，保留 Anthropic、Gemini 和 OpenAI 原生请求体的字节。([#139](https://github.com/ChuqiCloud/AnyFlows/pull/139))
+- 修复外部账户列表遗漏发行者身份字段导致关联账户无法读取的问题。([#124](https://github.com/ChuqiCloud/AnyFlows/pull/124))
+- 更新两套前端的 `hono` 和 `@hono/node-server` 间接依赖。([#119](https://github.com/ChuqiCloud/AnyFlows/pull/119))
+
+### 升级与兼容
+
+- 本版本包含外部账户、插件目录与集群分发、事件投递、写操作和任务状态等数据库迁移。升级前备份数据库、配置及计费 WAL，首次启动时自动执行迁移。([#121](https://github.com/ChuqiCloud/AnyFlows/pull/121)、[#123](https://github.com/ChuqiCloud/AnyFlows/pull/123)、[#125](https://github.com/ChuqiCloud/AnyFlows/pull/125)、[#130](https://github.com/ChuqiCloud/AnyFlows/pull/130)、[#135](https://github.com/ChuqiCloud/AnyFlows/pull/135)、[#136](https://github.com/ChuqiCloud/AnyFlows/pull/136))
+- 多节点部署需确保插件与各节点的操作系统、CPU 架构和运行依赖兼容。任务写能力需要管理员明确授权并声明幂等语义。([#125](https://github.com/ChuqiCloud/AnyFlows/pull/125)、[#139](https://github.com/ChuqiCloud/AnyFlows/pull/139))
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.10...v0.3.0-beta.11](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.10...v0.3.0-beta.11)。
+
 ## 0.3.0-beta.10 - 2026-11-12
 
 本版本基于 `v0.3.0-beta.9`，新增商户未定价模型审核流程和独立系统 API 个人访问令牌。
