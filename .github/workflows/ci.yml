@@ -689,7 +689,7 @@ jobs:
           fallback: none
 
       - name: Install workspace test tool
-        if: needs.changes.outputs.full == 'true'
+        if: needs.changes.outputs.full == 'true' || needs.changes.outputs.rust == 'true'
         uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-nextest@0.9.140
@@ -794,6 +794,7 @@ jobs:
           cargo test --locked -p af-db --lib plugin_distribution_tests
           cargo test --locked -p af-admin --lib plugin_
           cargo test --locked -p af-http --lib plugin_lifecycle
+          cargo test --locked -p af-http --lib plugin_native_tasks
 
       - name: Run focused Passkey compatibility tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
@@ -807,6 +808,9 @@ jobs:
         run: |
           cargo test --locked -p af-relay --lib response_readiness
           cargo test --locked -p af-server --test relay_state_machine
+          # Each test starts a gateway with process-global telemetry.
+          cargo nextest run --locked -p af-server \
+            --test anthropic_runtime_chain --test gemini_runtime_chain --test token_auth_chain --no-fail-fast
 
       - name: Run focused OAuth invitation regression tests
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'

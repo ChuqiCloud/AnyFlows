@@ -6,6 +6,34 @@ use super::access_token_routes::policy;
 use serde_json::Value;
 
 #[test]
+fn plugin_gateway_operations_accept_model_keys_only() {
+    let document = serde_json::to_value(crate::openapi::openapi_document()).unwrap();
+    let paths = &document["paths"];
+    let routes = [
+        (
+            "/api/plugins/{plugin_id}/routes/{route_id}",
+            &["get", "post", "put", "patch", "delete"][..],
+        ),
+        ("/v1/plugin-tasks", &["post"][..]),
+        ("/v1/plugin-tasks/{task_id}", &["get"][..]),
+        ("/v1/plugin-tasks/{task_id}/files/{file_id}", &["get"][..]),
+        ("/v1/plugin-tasks/{task_id}/cancel", &["post"][..]),
+    ];
+    for (path, methods) in routes {
+        for method in methods {
+            let operation = &paths[path][*method];
+            assert_eq!(
+                operation["security"],
+                serde_json::json!([{"apiKeyAuth": []}]),
+                "{method} {path}"
+            );
+            assert!(operation.get("x-anyflows-pat-scopes").is_none());
+            assert!(policy(method, path).is_none());
+        }
+    }
+}
+
+#[test]
 fn personal_access_token_policies_cover_actual_management_router_registrations() {
     let raw = serde_json::to_value(crate::openapi::raw_openapi_document()).unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

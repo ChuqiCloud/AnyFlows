@@ -6,8 +6,9 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     plugin_lifecycle::{
-        PluginActionResponse, PluginArtifactApprovalResponse, PluginArtifactCleanupResponse,
-        PluginArtifactPageResponse, PluginArtifactRegistrationRequest, PluginArtifactResponse,
+        ModelPluginTaskRequest, PluginActionResponse, PluginArtifactApprovalResponse,
+        PluginArtifactCleanupResponse, PluginArtifactPageResponse,
+        PluginArtifactRegistrationRequest, PluginArtifactResponse,
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
         PluginCapabilityActionConfirmRequest, PluginCapabilityActionProposalRequest,
         PluginCapabilityActionProposalResponse, PluginCapabilityActionResultResponse,
@@ -20,9 +21,9 @@ use crate::{
         PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginEventResultPageResponse,
         PluginEventResultResponse, PluginMarketEntryResponse, PluginMarketInstallHttpRequest,
         PluginMarketPageResponse, PluginMarketSourceRequest, PluginPackageInstallRequest,
-        PluginRouteInvocationResponse, PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse,
-        PluginRuntimeStateResponse, PluginTaskInvocationRequest, PluginTaskInvocationResponse,
-        PluginUninstallResponse,
+        PluginProviderSelectionBody, PluginProviderSelectionRequest, PluginRouteInvocationResponse,
+        PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse, PluginRuntimeStateResponse,
+        PluginTaskInvocationRequest, PluginTaskInvocationResponse, PluginUninstallResponse,
     },
 };
 
@@ -348,6 +349,108 @@ fn invoke_model_plugin_route_patch() {}
     security(("apiKeyAuth" = []))
 )]
 fn invoke_model_plugin_route_delete() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/{plugin_id}/provider-selection",
+    operation_id = "configureAdminPluginProviderSelection",
+    tag = "插件生命周期",
+    summary = "设置 Provider 插件适用的渠道、模型和优先级",
+    params(("plugin_id" = String, Path)),
+    request_body = PluginProviderSelectionRequest,
+    responses((status = 200, description = "新的插件部署代次", body = PluginDeploymentResponse), (status = 400, description = "渠道绑定或插件配置无效", body = ManagementErrorBody), (status = 409, description = "部署代次不一致", body = ManagementErrorBody)),
+    security(("bearerAuth" = []))
+)]
+fn configure_provider_selection() {}
+
+#[utoipa::path(
+    post,
+    path = "/v1/plugin-tasks",
+    operation_id = "submitModelPluginTask",
+    tag = "插件任务",
+    summary = "使用模型 Key 幂等提交插件任务",
+    request_body = ModelPluginTaskRequest,
+    responses((status = 200, description = "任务状态和本地 ID", body = serde_json::Value), (status = 409, description = "幂等键或任务状态冲突", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn submit_model_plugin_task() {}
+
+#[utoipa::path(
+    get,
+    path = "/v1/plugin-tasks/{task_id}",
+    operation_id = "getModelPluginTask",
+    tag = "插件任务",
+    summary = "读取模型 Key 名下的插件任务、用量、报告和文件清单",
+    params(("task_id" = String, Path)),
+    responses((status = 200, description = "任务快照", body = serde_json::Value), (status = 404, description = "任务不存在", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn get_model_plugin_task() {}
+
+#[utoipa::path(
+    post,
+    path = "/v1/plugin-tasks/{task_id}/cancel",
+    operation_id = "cancelModelPluginTask",
+    tag = "插件任务",
+    summary = "请求取消模型 Key 名下的插件任务",
+    params(("task_id" = String, Path)),
+    responses((status = 200, description = "取消请求后的任务状态", body = serde_json::Value), (status = 404, description = "任务不存在", body = ManagementErrorBody), (status = 409, description = "任务当前无法取消", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn cancel_model_plugin_task() {}
+
+#[utoipa::path(
+    get,
+    path = "/v1/plugin-tasks/{task_id}/files/{file_id}",
+    operation_id = "downloadModelPluginTaskFile",
+    tag = "插件任务",
+    summary = "下载模型 Key 名下已完成任务的结果文件",
+    params(("task_id" = String, Path), ("file_id" = usize, Path)),
+    responses((status = 200, description = "文件内容", body = String, content_type = "application/octet-stream"), (status = 404, description = "任务或文件不存在", body = ManagementErrorBody)),
+    security(("apiKeyAuth" = []))
+)]
+fn download_model_plugin_task_file() {}
+
+#[utoipa::path(
+    get,
+    path = "/v1/responses/{response_id}",
+    operation_id = "retrievePluginResponse",
+    tag = "OpenAI Responses",
+    summary = "读取由插件任务生成的 Response",
+    params(("response_id" = String, Path)),
+    responses((status = 200, description = "Responses 对象", body = serde_json::Value), (status = 404, description = "Response 不存在")),
+    security(("apiKeyAuth" = []))
+)]
+fn retrieve_plugin_response() {}
+
+#[utoipa::path(
+    post,
+    path = "/v1/videos",
+    operation_id = "createPluginVideo",
+    tag = "OpenAI Video",
+    summary = "使用已绑定的插件提交 JSON 视频任务",
+    params(("Idempotency-Key" = Option<String>, Header)),
+    request_body = serde_json::Value,
+    responses((status = 200, description = "插件 Video 对象", body = serde_json::Value), (status = 404, description = "当前模型无视频插件绑定")),
+    security(("apiKeyAuth" = []))
+)]
+fn create_plugin_video() {}
+
+#[utoipa::path(
+    get,
+    path = "/v1/videos/{task_id}/content",
+    operation_id = "downloadPluginVideo",
+    tag = "OpenAI Video",
+    summary = "获取已完成插件视频的内容",
+    params(("task_id" = String, Path)),
+    responses(
+        (status = 200, description = "MP4 文件", body = String, content_type = "video/mp4"),
+        (status = 303, description = "跳转到插件返回的 HTTPS 视频地址", headers(("Location" = String, description = "视频结果地址"))),
+        (status = 404, description = "视频或文件不存在")
+    ),
+    security(("apiKeyAuth" = []))
+)]
+fn download_plugin_video() {}
 
 #[utoipa::path(
     get,
@@ -709,6 +812,14 @@ fn list_plugin_catalog_models() {}
         invoke_model_plugin_route_put,
         invoke_model_plugin_route_patch,
         invoke_model_plugin_route_delete,
+        configure_provider_selection,
+        submit_model_plugin_task,
+        get_model_plugin_task,
+        cancel_model_plugin_task,
+        download_model_plugin_task_file,
+        retrieve_plugin_response,
+        create_plugin_video,
+        download_plugin_video,
         list_plugin_market,
         fetch_plugin_market_index,
         propose_admin_plugin_capability_action,
@@ -769,6 +880,9 @@ fn list_plugin_catalog_models() {}
         PluginMarketEntryResponse,
         PluginMarketPageResponse,
         PluginMarketSourceRequest,
+        ModelPluginTaskRequest,
+        PluginProviderSelectionBody,
+        PluginProviderSelectionRequest,
         ManagementErrorBody
     ))
 )]

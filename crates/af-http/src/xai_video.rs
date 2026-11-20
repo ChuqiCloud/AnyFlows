@@ -5,7 +5,7 @@ use af_telemetry::RequestId;
 use axum::{
     Json,
     body::Bytes,
-    extract::{Extension, Path, RawQuery, State},
+    extract::{Extension, MatchedPath, Path, RawQuery, State},
     response::{IntoResponse, Response},
 };
 use http::{HeaderMap, StatusCode, header::CACHE_CONTROL};
@@ -14,6 +14,7 @@ use serde::Serialize;
 use crate::{
     OpenAiHttpError, VideoTaskListCursor, VideoTaskListItem, VideoTaskPage, VideoTaskSnapshot,
     chat_completions::HttpState,
+    plugin_native_tasks::{self, NativeTaskService},
 };
 
 const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
@@ -65,8 +66,15 @@ pub(crate) async fn poll_video_task(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
     Extension(authentication): Extension<TokenAuthentication>,
+    plugin_tasks: Option<Extension<NativeTaskService>>,
+    path: MatchedPath,
     Path(task_id): Path<String>,
 ) -> Result<Response, OpenAiHttpError> {
+    if path.as_str() == "/v1/videos/{task_id}"
+        && let Some(id) = plugin_native_tasks::plugin_video_id(&task_id)
+    {
+        return plugin_native_tasks::poll_video(plugin_tasks, &authentication, id).await;
+    }
     let task_id = AsyncTaskId::from_persistence_key(&task_id).map_err(|_| AfError::TaskNotFound)?;
     let service = state
         .video_task_service()

@@ -372,7 +372,9 @@ impl AdminPluginSidecarRuntime {
         };
         drop(cache_guard);
         artifact
-            .validate_configuration(&deployment.config)
+            .validate_configuration(&crate::plugin_lifecycle::deployment_public_configuration(
+                deployment,
+            ))
             .map_err(map_sidecar_error)?;
         if !deployment_is_current(repository, deployment).await? {
             return Err(AdminPluginLifecycleError::Conflict);
@@ -382,7 +384,7 @@ impl AdminPluginSidecarRuntime {
                 artifact,
                 generation,
                 grants,
-                deployment.config.clone(),
+                crate::plugin_lifecycle::deployment_public_configuration(deployment),
                 SidecarLimits::default(),
                 self.isolation_policy,
             )
@@ -589,7 +591,9 @@ impl AdminPluginSidecarRuntime {
             .await
             .map_err(map_sidecar_error)?;
         let invocation = invocation
-            .with_public_config(deployment.config)
+            .with_public_config(crate::plugin_lifecycle::deployment_public_configuration(
+                &deployment,
+            ))
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
             .invoke_host_route_with_storage(
@@ -736,7 +740,9 @@ impl AdminPluginSidecarRuntime {
             .await
             .map_err(map_sidecar_error)?;
         let invocation = invocation
-            .with_public_config(deployment.config)
+            .with_public_config(crate::plugin_lifecycle::deployment_public_configuration(
+                &deployment,
+            ))
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
             .invoke_host_task(
@@ -904,7 +910,9 @@ impl AdminPluginSidecarRuntime {
             .await
             .map_err(map_sidecar_error)?;
         let invocation = invocation
-            .with_public_config(deployment.config)
+            .with_public_config(crate::plugin_lifecycle::deployment_public_configuration(
+                &deployment,
+            ))
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
             .invoke_host_credential(
@@ -976,7 +984,9 @@ impl AdminPluginSidecarRuntime {
             .await
             .map_err(map_sidecar_error)?;
         let invocation = invocation
-            .with_public_config(deployment.config)
+            .with_public_config(crate::plugin_lifecycle::deployment_public_configuration(
+                &deployment,
+            ))
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         session
             .invoke_host_provider(
@@ -1233,7 +1243,9 @@ impl AdminPluginSidecarRuntime {
             .await
             .map_err(map_sidecar_error)?;
         let invocation = invocation
-            .with_public_config(deployment.config)
+            .with_public_config(crate::plugin_lifecycle::deployment_public_configuration(
+                &deployment,
+            ))
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
         if allow_external_write {
             session

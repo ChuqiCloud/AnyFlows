@@ -1,4 +1,4 @@
-use af_admin::TokenAuthentication;
+use af_admin::{PluginNativeTaskProtocol, TokenAuthentication};
 use af_domain::AfError;
 use af_protocol::openai_images::{
     self, OpenAiImageEditForm, OpenAiImageEditFormPart, parse_request,
@@ -6,20 +6,41 @@ use af_protocol::openai_images::{
 use af_telemetry::RequestId;
 use axum::{
     body::Bytes,
-    extract::{Extension, Multipart, State, multipart::MultipartRejection},
+    extract::{Extension, MatchedPath, Multipart, State, multipart::MultipartRejection},
     response::{IntoResponse, Response},
 };
-use http::{StatusCode, header::CONTENT_TYPE};
+use http::{HeaderMap, StatusCode, header::CONTENT_TYPE};
 
-use crate::{OpenAiHttpError, chat_completions::HttpState};
+use crate::{
+    OpenAiHttpError,
+    chat_completions::HttpState,
+    plugin_native_tasks::{self, NativeTaskService},
+};
 
 /// 解析 OpenAI Images 请求并经独立生产链路生成图片。
 pub(crate) async fn openai_images(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
     Extension(authentication): Extension<TokenAuthentication>,
+    plugin_tasks: Option<Extension<NativeTaskService>>,
+    path: MatchedPath,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
+    if path.as_str() == "/v1/images/generations"
+        && let Some(Extension(service)) = plugin_tasks
+        && let Some(response) = plugin_native_tasks::submit(
+            &service,
+            &authentication,
+            PluginNativeTaskProtocol::Image,
+            &headers,
+            &body,
+            &request_id,
+        )
+        .await?
+    {
+        return Ok(response);
+    }
     let request =
         parse_request(&body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
     if !authentication.model_policy().allows(request.model()) {

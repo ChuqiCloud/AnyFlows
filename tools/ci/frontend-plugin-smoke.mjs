@@ -77,7 +77,12 @@ const artifact = {
   createdAt: now, approval: { approvedBy: 1, approvedAt: now, requestId: 'ci-approved' }, revocation: null,
 }
 const revoked = { ...artifact, id: 2, pluginId: 'org.example.revoked', digest: 'cd'.repeat(32), signerKeyId: '', official: false, revocation: { revokedBy: 1, revokedAt: now, requestId: 'ci-revoked' } }
-let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled: true, grantedCapabilities: [{ id: 'catalog.models.read', version: 1 }], updatedBy: 1, updatedAt: now, requestId: 'ci-deployment' }
+let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled: true, grantedCapabilities: [{ id: 'catalog.models.read', version: 1 }, { id: 'provider.lifecycle', version: 1 }], updatedBy: 1, updatedAt: now, requestId: 'ci-deployment' }
+const marketPlugin = 'org.example.market'
+const marketIndex = 'https://example.org/plugins.json'
+const archiveUrl = 'https://example.org/market.afplugin'
+const marketInstalls = []
+const providerSelections = []
 let source = { pluginId: artifact.pluginId, pluginVersion: '1.0.0', displayName: 'CI model directory', generation: 4, supportsSearch: true }
 const model = { id: 'fixture-text', displayName: 'Fixture text model', provider: 'example', description: 'Plugin reference entry', contextWindow: 32768, inputModalities: ['text'], outputModalities: ['text'], tags: ['fixture'] }
 const catalogCalls = [], installs = [], uninstalls = [], cleanups = [], requests = [], errors = []
@@ -164,6 +169,26 @@ try {
     if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; return respond({ deployments: [deployment], nextCursor: null }) }
     if (path === '/api/admin/plugins/events/results' && method === 'GET') return respond({ results: [{ deliveryId: 31, pluginId: 'org.example.events', eventKind: 'channel.health.changed', deploymentGeneration: 4, capabilityId: 'events.channel-health.changed.consume', capabilityVersion: 1, attemptCount: 1, status: 'delivered', completedAt: now, summary: 'Channel 12 recovered.', result: { summary: 'Channel 12 recovered.', status: 'info' } }], nextBeforeId: null })
     if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
+    if (path === `/api/admin/plugins/${marketPlugin}/deployment/history` && method === 'GET') return respond([])
+    if (path === '/api/account/plugins/market/index' && method === 'GET') {
+      assert.equal(url.searchParams.get('url'), marketIndex)
+      return respond({ format: 1, title: 'Example index', plugins: [{
+        id: marketPlugin, title: 'Market fixture', versions: [{ version: '2.0.0', archiveUrl, sha256: digest, capabilities: [], changelog: 'Catalog improvements' }],
+      }] })
+    }
+    if (path === '/api/admin/plugins/market/install' && method === 'POST') {
+      const body = request.postDataJSON()
+      marketInstalls.push(body)
+      return respond({ ...deployment, pluginId: marketPlugin, artifact: { ...artifact, pluginId: marketPlugin, pluginVersion: body.plugin_version } })
+    }
+    if (path === '/api/admin/channels' && method === 'GET') return respond({ channels: [{ id: 12, name: 'Fixture upstream' }], next_cursor: null })
+    if (path === `/api/admin/plugins/${artifact.pluginId}/provider-selection` && method === 'POST') {
+      const body = request.postDataJSON()
+      assert.equal(body.expected_generation, deployment.generation)
+      providerSelections.push(body.selection)
+      deployment = { ...deployment, generation: deployment.generation + 1, providerSelection: body.selection }
+      return respond(deployment)
+    }
     if (path === '/api/admin/plugins/runtime' && method === 'GET') {
       runtimeRequests += 1
       return runtimeFailure ? respond({ error: { code: 'internal' } }, 500) : respond(runtime())
@@ -285,6 +310,30 @@ try {
   await waitUntil(() => deploymentRequests > previousDeploymentRequests && runtimeRequests > previousRuntimeRequests, 'Install must refresh deployments and runtime observations')
   assert.ok(deploymentRequests > previousDeploymentRequests, 'Install refreshes desired deployment state')
   assert.ok(runtimeRequests > previousRuntimeRequests, 'Install refreshes actual node state')
+
+  await page.getByRole('textbox', { name: label('pluginLifecycle.market.indexUrl'), exact: true }).fill(marketIndex)
+  await page.getByRole('button', { name: label('pluginLifecycle.market.load'), exact: true }).click()
+  await page.getByRole('heading', { name: 'Market fixture', exact: true }).waitFor()
+  await page.getByRole('button', { name: label('pluginLifecycle.market.versions'), exact: true }).click()
+  const marketDialog = page.getByRole('dialog')
+  await marketDialog.getByText('Catalog improvements', { exact: true }).waitFor()
+  await marketDialog.getByText(digest, { exact: true }).waitFor()
+  await marketDialog.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()
+  await marketDialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(marketInstalls, [{
+    plugin_id: marketPlugin, plugin_version: '2.0.0', expected_generation: null,
+    source: { kind: 'http_archive', archive_url: archiveUrl, sha256: digest },
+  }])
+
+  await page.getByRole('button', { name: label('pluginLifecycle.provider.title'), exact: true }).click()
+  const providerDialog = page.getByRole('dialog')
+  await providerDialog.getByRole('checkbox', { name: 'Fixture upstream · #12' }).check()
+  await providerDialog.getByRole('textbox', { name: label('pluginLifecycle.provider.models'), exact: true }).fill('fixture-text')
+  await providerDialog.getByRole('spinbutton', { name: label('pluginLifecycle.provider.priority'), exact: true }).fill('4')
+  await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.save'), exact: true }).click()
+  await providerDialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(providerSelections, [{channelIds: [12], models: ['fixture-text'], priority: 4}])
+  await page.getByText(label('pluginLifecycle.provider.bound').replace('{{count}}', '1'), { exact: true }).waitFor()
 
   await page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }).click()
   const uninstallDialog = page.getByRole('dialog')

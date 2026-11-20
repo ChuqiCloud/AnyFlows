@@ -2,6 +2,28 @@ use super::*;
 use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
 use af_plugin_contract::{PluginTaskFile, PluginTaskResult, PluginTaskState};
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum PluginNativeTaskProtocol {
+    Responses,
+    Video,
+    Image,
+}
+
+impl PluginNativeTaskProtocol {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Responses => "openai_responses",
+            Self::Video => "openai_video",
+            Self::Image => "openai_image",
+        }
+    }
+}
+
+pub(super) struct NativeTaskCache {
+    loaded_at: Instant,
+    deployments: Arc<Vec<PluginDeploymentRecord>>,
+}
+
 fn task_reservation(id: &str) -> Result<BillingReservationId, AdminPluginLifecycleError> {
     BillingReservationId::from_persistence_key(id).map_err(|_| AdminPluginLifecycleError::Internal)
 }
@@ -11,7 +33,7 @@ fn task_view(record: &PluginHostRecord) -> Value {
         "progressBasisPoints":record.payload["progress"],"output":record.payload["output"],
         "usage":record.payload["usage"],"report":record.payload["report"],"failureCode":record.payload["failureCode"],
         "files":record.payload.get("files").and_then(Value::as_array).map(|files| files.iter().enumerate().map(|(i,file)| json!({"id":i,"name":file["name"],"mediaType":file["mediaType"],"sha256":file["sha256"]})).collect::<Vec<_>>()),
-        "settledQuota":record.payload["settledQuota"],"updatedAt":record.updated_at})
+        "settledQuota":record.payload["settledQuota"],"createdAt":record.payload["createdAt"],"updatedAt":record.updated_at})
 }
 
 fn verify_task_files(files: &[PluginTaskFile]) -> Result<(), AdminPluginLifecycleError> {
@@ -32,6 +54,114 @@ fn verify_task_files(files: &[PluginTaskFile]) -> Result<(), AdminPluginLifecycl
 }
 
 impl DatabaseAdminPluginLifecycleService {
+    async fn native_task_deployments(
+        &self,
+    ) -> Result<Arc<Vec<PluginDeploymentRecord>>, AdminPluginLifecycleError> {
+        let mut cache = self.data_plane()?.native_tasks.lock().await;
+        if let Some(snapshot) = cache.as_ref()
+            && snapshot.loaded_at.elapsed() < Duration::from_secs(2)
+        {
+            return Ok(Arc::clone(&snapshot.deployments));
+        }
+        let mut cursor = None;
+        let mut deployments = Vec::new();
+        loop {
+            let page = self
+                .repository
+                .list_deployments(
+                    PluginDeploymentQuery::new(cursor, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE)
+                        .map_err(map_catalog_error)?,
+                )
+                .await
+                .map_err(map_catalog_error)?;
+            let has_next = page.len() == DEFAULT_PLUGIN_CATALOG_PAGE_SIZE as usize;
+            cursor = page.last().map(|deployment| deployment.plugin_id.clone());
+            deployments.extend(page.into_iter().filter(|deployment| {
+                deployment.enabled
+                    && deployment.artifact.approval.is_some()
+                    && deployment.artifact.revocation.is_none()
+                    && deployment.config["taskPricing"].is_object()
+            }));
+            if !has_next {
+                break;
+            }
+        }
+        let deployments = Arc::new(deployments);
+        *cache = Some(NativeTaskCache {
+            loaded_at: Instant::now(),
+            deployments: Arc::clone(&deployments),
+        });
+        Ok(deployments)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "网关先按协议选择绑定，再执行该协议的入站校验"
+    )]
+    pub async fn submit_native_plugin_task(
+        &self,
+        authentication: &crate::TokenAuthentication,
+        protocol: PluginNativeTaskProtocol,
+        model: &str,
+        validate_request: impl FnOnce() -> Result<Value, AdminPluginLifecycleError> + Send,
+        key: &str,
+        request_id: &str,
+    ) -> Result<Option<Value>, AdminPluginLifecycleError> {
+        if self.data_plane.is_none() || self.sidecar_runtime.is_none() {
+            return Ok(None);
+        }
+        let group_id = authentication.principal().group_id().get();
+        let deployments = self.native_task_deployments().await?;
+        let mut binding = None;
+        for deployment in deployments.iter() {
+            let tariff = &deployment.config["taskPricing"][model];
+            let Some(capability) = tariff["nativeProtocols"][protocol.as_str()].as_str() else {
+                continue;
+            };
+            if !tariff["groupIds"]
+                .as_array()
+                .is_some_and(|groups| groups.iter().any(|group| group.as_i64() == Some(group_id)))
+            {
+                continue;
+            }
+            let version = deployment
+                .granted_capabilities
+                .iter()
+                .find(|grant| grant.id == capability)
+                .map(|grant| grant.version)
+                .ok_or(AdminPluginLifecycleError::Forbidden)?;
+            if binding
+                .replace((
+                    deployment.plugin_id.clone(),
+                    capability.to_owned(),
+                    version,
+                    deployment.generation,
+                ))
+                .is_some()
+            {
+                return Err(AdminPluginLifecycleError::Conflict);
+            }
+        }
+        let Some((plugin, capability, version, generation)) = binding else {
+            return Ok(None);
+        };
+        let request = validate_request()?;
+        Ok(Some(
+            self.submit_plugin_task(
+                authentication,
+                &plugin,
+                &capability,
+                version,
+                model,
+                request,
+                key,
+                request_id,
+                Some((protocol, generation)),
+            )
+            .await?,
+        ))
+    }
+
     /// Rates are administrator configuration, never accepted from the model caller.
     #[allow(
         clippy::too_many_arguments,
@@ -47,6 +177,36 @@ impl DatabaseAdminPluginLifecycleService {
         request: Value,
         key: &str,
         request_id: &str,
+    ) -> Result<Value, AdminPluginLifecycleError> {
+        self.submit_plugin_task(
+            authentication,
+            plugin_id,
+            capability_id,
+            version,
+            model,
+            request,
+            key,
+            request_id,
+            None,
+        )
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "模型任务提交携带认证、能力、幂等键与协议绑定"
+    )]
+    async fn submit_plugin_task(
+        &self,
+        authentication: &crate::TokenAuthentication,
+        plugin_id: &str,
+        capability_id: &str,
+        version: u16,
+        model: &str,
+        request: Value,
+        key: &str,
+        request_id: &str,
+        native: Option<(PluginNativeTaskProtocol, i64)>,
     ) -> Result<Value, AdminPluginLifecycleError> {
         let principal = authentication.principal();
         if !authentication.model_policy().allows(model)
@@ -64,6 +224,26 @@ impl DatabaseAdminPluginLifecycleService {
         let (deployment, _) = self
             .prepare_plugin_operation(plugin_id, capability_id, version, request_id, 1024 * 1024)
             .await?;
+        if native.is_some_and(|(_, generation)| generation != deployment.generation) {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        let manifest: PluginManifest = serde_json::from_value(deployment.artifact.manifest.clone())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let input_schema = manifest
+            .capabilities
+            .iter()
+            .find(|declaration| {
+                declaration.id.as_str() == capability_id
+                    && declaration.version == version
+                    && declaration.access == CapabilityAccess::Write
+                    && declaration.side_effect == SideEffectClass::ExternalWrite
+                    && declaration
+                        .write_semantics
+                        .is_some_and(|semantics| semantics.native_idempotency_key)
+                    && declaration.output_schema.is_some()
+            })
+            .and_then(|declaration| declaration.input_schema.as_ref())
+            .ok_or(AdminPluginLifecycleError::Forbidden)?;
         let tariff = &deployment.config["taskPricing"][model];
         let groups = tariff["groupIds"]
             .as_array()
@@ -100,17 +280,40 @@ impl DatabaseAdminPluginLifecycleService {
             )
         )[..32]
             .to_owned();
+        let operation_payload = serde_json::to_value(PluginTaskOperation::Submit {
+            model: model.into(),
+            request: request.clone(),
+            idempotency_key: Some(id.clone()),
+        })
+        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        // Screen the exact task sent to the sidecar before reserving quota.
+        validate_public_plugin_configuration(input_schema, &operation_payload)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        if serde_json::to_vec(&operation_payload)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
+            .len()
+            > manifest.limits.max_response_bytes as usize
+        {
+            return Err(AdminPluginLifecycleError::PayloadTooLarge);
+        }
+        let mut operation = json!([capability_id, version, model, request]);
+        let native_protocol = native.map(|(protocol, _)| protocol.as_str());
+        if let Some(protocol) = native_protocol {
+            operation
+                .as_array_mut()
+                .expect("operation identity is an array")
+                .push(json!(protocol));
+        }
         let digest = format!(
             "{:x}",
             Sha256::digest(
-                serde_json::to_vec(&json!([capability_id, version, model, request]))
-                    .map_err(|_| AdminPluginLifecycleError::Internal)?
+                serde_json::to_vec(&operation).map_err(|_| AdminPluginLifecycleError::Internal)?
             )
         );
         let now = current_timestamp()?;
         let record = self.data_plane()?.records.insert(PluginHostRecord {
-            kind:"task".into(),id,plugin_id:plugin_id.into(),owner_id:principal.user_id().get(),revision:1,state:"reserving".into(),due_at:Some(now),updated_at:now,
-            payload:json!({"model":model,"inputDigest":digest,"request":request,"key":key,"capability":capability_id,"version":version,
+            kind:"task".into(),id,plugin_id:plugin_id.into(),owner_id:principal.user_id().get(),revision:1,state:"reserving".into(),due_at:None,updated_at:now,
+            payload:json!({"model":model,"inputDigest":digest,"request":request,"key":key,"capability":capability_id,"version":version,"nativeProtocol":native_protocol,"createdAt":now,
                 "generation":deployment.generation,"tokenId":principal.token_id().get(),"groupId":principal.group_id().get(),
                 "quotaPerUnit":rate,"maxUnits":max_units,"reserve":reserve}),
         }).await.map_err(persistence_error)?;
@@ -269,6 +472,19 @@ impl DatabaseAdminPluginLifecycleService {
         Ok(task_view(
             &self.owned_plugin_task(authentication, id).await?,
         ))
+    }
+
+    pub async fn get_native_plugin_task(
+        &self,
+        authentication: &crate::TokenAuthentication,
+        protocol: PluginNativeTaskProtocol,
+        id: &str,
+    ) -> Result<Value, AdminPluginLifecycleError> {
+        let record = self.owned_plugin_task(authentication, id).await?;
+        if record.payload["nativeProtocol"].as_str() != Some(protocol.as_str()) {
+            return Err(AdminPluginLifecycleError::NotFound);
+        }
+        Ok(task_view(&record))
     }
 
     pub async fn get_model_plugin_task_file(
@@ -502,8 +718,11 @@ impl DatabaseAdminPluginLifecycleService {
         let Ok(records) = plane.records.list("task", None, None, Some(now), 32).await else {
             return;
         };
-        for record in records {
+        for mut record in records {
             if record.state == "reserving" {
+                // Older rows could be due before the submission had reserved quota.
+                record.due_at = None;
+                let _ = plane.records.replace(&record).await;
                 continue;
             }
             let _ = self.poll_plugin_task(record).await;

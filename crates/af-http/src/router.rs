@@ -160,6 +160,15 @@ impl HttpRouter {
         self.0
     }
 
+    /// 注入标准模型接口使用的插件任务服务。
+    pub fn with_plugin_task_service(
+        mut self,
+        service: Arc<af_admin::DatabaseAdminPluginLifecycleService>,
+    ) -> Self {
+        self.0 = self.0.layer(axum::Extension(service));
+        self
+    }
+
     /// 在组合根追加一个已经自带认证边界的业务路由。
     pub fn merge(self, router: Router) -> Self {
         let router = match (&self.1, &self.2) {
@@ -444,12 +453,18 @@ pub fn build_router(
         .route(
             "/v1/videos",
             // 历史列表只读取当前用户持久化摘要，不触发上游轮询或返回签名地址。
-            get(list_video_tasks).route_layer(video_authentication.clone()),
+            get(list_video_tasks)
+                .post(crate::plugin_native_tasks::post_video)
+                .route_layer(video_authentication.clone()),
         )
         .route(
             "/v1/videos/{task_id}",
             // 查询只在认证用户范围内恢复原绑定，成功结果不会触发第二次付费提交。
-            get(poll_video_task).route_layer(video_authentication),
+            get(poll_video_task).route_layer(video_authentication.clone()),
+        )
+        .route(
+            "/v1/videos/{task_id}/content",
+            get(crate::plugin_native_tasks::video_content).route_layer(video_authentication),
         )
         .route(
             "/v1/audio/transcriptions",
@@ -464,7 +479,12 @@ pub fn build_router(
         .route(
             "/v1/responses",
             // Responses 使用独立协议标记，OpenAI 错误 wire 与 Chat 保持兼容。
-            post(openai_responses).route_layer(model_responses_authentication),
+            post(openai_responses).route_layer(model_responses_authentication.clone()),
+        )
+        .route(
+            "/v1/responses/{response_id}",
+            get(crate::plugin_native_tasks::get_responses)
+                .route_layer(model_responses_authentication),
         )
         .route(
             "/v1/responses/compact",

@@ -3405,7 +3405,8 @@ impl Bootstrap<Supervised> {
                 Arc::clone(&self.stage.infrastructure.authenticator),
                 self.stage.infrastructure.query_api_key_policy,
                 self.config.server(),
-            ));
+            ))
+            .with_plugin_task_service(Arc::clone(&plugin_lifecycle_service));
         let Bootstrap {
             config,
             shutdown_timeout,
