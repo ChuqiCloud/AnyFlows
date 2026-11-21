@@ -38,7 +38,7 @@ export function useUpdateAdminEmailSettings() {
   })
 }
 
-/** 使用当前已保存快照发送固定正文测试邮件。 */
+/** 使用已保存的 SMTP 设置和测试模板发送邮件。 */
 export function useSendAdminEmailTest() {
   return useMutation({
     mutationFn: async (body: AdminEmailTestRequest) => {

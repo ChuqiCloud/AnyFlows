@@ -3,7 +3,7 @@ import { providerDisplayName } from '@/components/brand/provider-catalog'
 
 import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowDownToLine, CircleDollarSign, Gift, Info, Sparkles, TriangleAlert } from 'lucide-react'
+import { ArrowDownToLine, CircleDollarSign, Coins, Gift, Info, Sparkles, TriangleAlert } from 'lucide-react'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -24,6 +24,7 @@ import {
   defaultModelPriceDraft,
   expressionModelPriceDraft,
   freeModelPriceDraft,
+  perCallModelPriceDraft,
   type ModelPriceDraft,
   type ModelPriceEvidenceField,
   type StagedModelPriceDraft,
@@ -54,6 +55,8 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
   const schema = buildModelPriceDraftSchema({
     decimal: t('modelManagement.prices.validation.decimal'),
     free: t('modelManagement.prices.validation.free'),
+    positiveRequestPrice: t('modelManagement.prices.validation.positiveRequestPrice'),
+    perCallValues: t('modelManagement.prices.validation.perCallValues'),
     expression: t('modelManagement.prices.validation.expression'),
     expressionTooLong: t('modelManagement.prices.validation.expressionTooLong'),
     expressionValues: t('modelManagement.prices.validation.expressionValues'),
@@ -73,6 +76,9 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
   const expressionDraft = useRef<ModelPriceDraft>(
     initialDraft.billingMode === 'expression' ? initialDraft : expressionModelPriceDraft('', initialDraft.peakRules),
   )
+  const perCallDraft = useRef<ModelPriceDraft>(
+    initialDraft.billingMode === 'per_call' ? initialDraft : perCallModelPriceDraft('', initialDraft.peakRules),
+  )
   const form = useForm<ModelPriceDraft>({
     defaultValues: initialDraft,
     resolver: zodResolver(schema),
@@ -82,8 +88,15 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
 
   useEffect(() => {
     const next = props.staged?.draft ?? defaultModelPriceDraft(props.price)
-    if (next.billingMode === 'per_token') perTokenDraft.current = next
-    if (next.billingMode === 'expression') expressionDraft.current = next
+    perTokenDraft.current = next.billingMode === 'per_token'
+      ? next
+      : { ...next, billingMode: 'per_token', requestPrice: '0', expression: '' }
+    perCallDraft.current = next.billingMode === 'per_call'
+      ? next
+      : perCallModelPriceDraft('', next.peakRules)
+    expressionDraft.current = next.billingMode === 'expression'
+      ? next
+      : expressionModelPriceDraft('', next.peakRules)
     form.reset(next)
     setExpectedVersion(props.staged?.expectedVersion ?? props.price?.version ?? null)
     setContextWindow(props.staged?.contextWindow ?? null)
@@ -92,19 +105,18 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
   const billingMode = form.watch('billingMode')
   const changeBillingMode = (nextMode: ModelPriceDraft['billingMode']) => {
     const current = form.getValues()
-    if (nextMode === 'free') {
-      if (current.billingMode === 'per_token') perTokenDraft.current = current
-      if (current.billingMode === 'expression') expressionDraft.current = current
-      form.reset(freeModelPriceDraft(current.peakRules))
-      return
-    }
-    if (nextMode === 'expression') {
-      if (current.billingMode === 'per_token') perTokenDraft.current = current
-      form.reset({ ...expressionDraft.current, billingMode: 'expression', peakRules: current.peakRules })
-      return
-    }
+    if (current.billingMode === nextMode) return
+    if (current.billingMode === 'per_token') perTokenDraft.current = current
     if (current.billingMode === 'expression') expressionDraft.current = current
-    form.reset({ ...perTokenDraft.current, billingMode: 'per_token', expression: '', peakRules: current.peakRules })
+    if (current.billingMode === 'per_call') perCallDraft.current = current
+
+    const next = {
+      free: freeModelPriceDraft(current.peakRules),
+      per_token: perTokenDraft.current,
+      per_call: perCallDraft.current,
+      expression: expressionDraft.current,
+    }[nextMode]
+    form.reset({ ...next, peakRules: current.peakRules })
   }
   const useEvidence = (field: ModelPriceEvidenceField) => {
     if (!props.candidate) return
@@ -153,10 +165,11 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
           <div
             role="radiogroup"
             aria-label={t('modelManagement.prices.form.billingMode')}
-            className="grid grid-cols-3 gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1"
+            className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1 sm:grid-cols-4"
           >
             {([
               ['per_token', CircleDollarSign],
+              ['per_call', Coins],
               ['free', Gift],
               ['expression', Sparkles],
             ] as const).map(([mode, Icon]) => (
@@ -179,9 +192,11 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             {t(billingMode === 'free'
               ? 'modelManagement.prices.form.freeHint'
-              : billingMode === 'expression'
-                ? 'modelManagement.prices.form.expressionHint'
-                : 'modelManagement.prices.form.perTokenHint')}
+              : billingMode === 'per_call'
+                ? 'modelManagement.prices.form.perCallHint'
+                : billingMode === 'expression'
+                  ? 'modelManagement.prices.form.expressionHint'
+                  : 'modelManagement.prices.form.perTokenHint')}
           </p>
           {versionChanged ? (
             <div className="flex flex-col gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs text-warning sm:flex-row sm:items-center sm:justify-between">
@@ -193,7 +208,28 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
           ) : null}
         </section>
 
-        {billingMode === 'expression' ? (
+        {billingMode === 'per_call' ? (
+          <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-per-call">
+            <h3 id="model-price-per-call" className="text-xs font-semibold">{t('modelManagement.prices.form.values')}</h3>
+            <ModelManagementField
+              id="model-price-request"
+              label={t('modelManagement.prices.fields.requestPrice')}
+              hint={t('modelManagement.prices.form.requestPriceUnit')}
+              error={form.formState.errors.requestPrice?.message}
+            >
+              <Input
+                id="model-price-request"
+                type="text"
+                size="sm"
+                inputMode="decimal"
+                autoComplete="off"
+                isInvalid={!!form.formState.errors.requestPrice}
+                classNames={{ input: 'font-mono tabular-nums' }}
+                {...form.register('requestPrice')}
+              />
+            </ModelManagementField>
+          </section>
+        ) : billingMode === 'expression' ? (
           <ModelPriceExpressionEditor
             key={props.model.model}
             candidate={props.candidate}

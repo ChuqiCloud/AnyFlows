@@ -7,10 +7,11 @@ type ModelPriceValueProps = {
   value?: string
   muted?: boolean
   showLabel?: boolean
+  unit?: 'per_million' | 'per_request'
 }
 
 /** 价格文本保持服务端十进制原值，禁止经过 Number 或浮点格式化。 */
-export function ModelPriceValue({ label, value, muted = false, showLabel = false }: ModelPriceValueProps) {
+export function ModelPriceValue({ label, value, muted = false, showLabel = false, unit = 'per_million' }: ModelPriceValueProps) {
   const { t } = useTranslation()
   if (value === undefined) {
     return (
@@ -22,19 +23,19 @@ export function ModelPriceValue({ label, value, muted = false, showLabel = false
   }
   return (
     <span
-      title={t('models.values.priceTitle', { label, value })}
+      title={t(unit === 'per_request' ? 'models.values.requestPriceTitle' : 'models.values.priceTitle', { label, value })}
       className={cn('block min-w-0 tabular-nums', muted && 'text-muted-foreground')}
     >
       {showLabel ? <span className="mb-0.5 block text-[0.625rem] text-muted-foreground">{label}</span> : null}
       {showLabel ? (
         <span className="flex min-w-0 items-baseline gap-1">
           <span className="min-w-0 truncate font-mono text-[0.75rem] text-foreground">${value}</span>
-          <span className="shrink-0 text-[0.625rem] text-muted-foreground">{t('models.values.perMillionCompact')}</span>
+          <span className="shrink-0 text-[0.625rem] text-muted-foreground">{t(unit === 'per_request' ? 'models.values.perRequestCompact' : 'models.values.perMillionCompact')}</span>
         </span>
       ) : (
         <>
           <span className="block truncate font-mono text-[0.75rem] text-foreground">${value}</span>
-          <span className="mt-0.5 block text-[0.625rem] text-muted-foreground">{t('models.values.perMillion')}</span>
+          <span className="mt-0.5 block text-[0.625rem] text-muted-foreground">{t(unit === 'per_request' ? 'models.values.perRequest' : 'models.values.perMillion')}</span>
         </>
       )}
     </span>

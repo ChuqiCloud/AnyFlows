@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { lobeHubProviders } from '../../web-next/src/components/brand/lobehub-providers.ts'
 
 // Vite, browser caches, fixtures and screenshots are created on the remote CI runner only.
 assert.equal(process.env.CI, 'true', 'Navigation browser checks run in remote CI')
@@ -16,6 +17,7 @@ const require = createRequire(resolve(process.env.PLAYWRIGHT_PACKAGE_ROOT, 'pack
 const { chromium } = require('playwright')
 const translations = Object.fromEntries(await Promise.all(['zh', 'en'].map(async language => [language, JSON.parse(await readFile(resolve(directory, `src/i18n/locales/${language}.json`), 'utf8'))])))
 const publicStatusCopy = JSON.parse(await readFile(resolve(directory, 'src/i18n/public-status.json'), 'utf8')).zh.publicStatus
+const lobeHubSnapshot = JSON.parse(await readFile(resolve(directory, 'src/features/model-management/lobehub-catalog.json'), 'utf8'))
 const label = (key, language = 'zh') => {
   const value = key.split('.').reduce((node, part) => node?.[part], translations[language])
   assert.equal(typeof value, 'string', `Missing ${language} translation: ${key}`)
@@ -67,6 +69,17 @@ const groupDeleteRequests = []
 let groupTransferFailures = 1
 let terminalSubscriptionOrderStatus = 'failed'
 let modelMode = 'ready'
+let importModels = []
+let importProviders = []
+let importFixtureEnabled = false
+const lobeHubImportWrites = []
+let emailSettings = {
+  enabled: true, host: 'smtp.example.com', port: 587, tls_mode: 'start_tls',
+  username: null, password_configured: false, from_address: 'notify@example.com',
+  from_name: 'CI AnyFlows', reply_to: null, timeout_seconds: 20,
+  html_templates: {}, version: 1, delivery_ready: true,
+}
+const emailSettingsWrites = []
 let publicStatusMode = 'operational'
 let issuedApiKeyRequests = []
 let server
@@ -114,6 +127,7 @@ try {
   page.setDefaultNavigationTimeout(60000)
   page.on('pageerror', error => errors.push(error.stack || error.message))
   await page.addInitScript(() => {
+    if (window !== window.top) return
     const params = new URLSearchParams(window.location.search)
     const role = params.get('role') || 'public'
     localStorage.setItem('anyflows.locale', params.get('language') || 'zh')
@@ -132,6 +146,32 @@ try {
     const token = request.headers().authorization || ''
     const role = token.includes('ci-admin') ? 'admin' : token.includes('ci-user') ? 'user' : 'public'
     requests.push({ path, role })
+    if (path === '/api/admin/email-settings' && request.method() === 'PUT' && role === 'admin') {
+      const { html_templates, ...body } = request.postDataJSON()
+      emailSettingsWrites.push(html_templates)
+      emailSettings = {
+        ...emailSettings, ...body,
+        html_templates: Object.fromEntries(Object.entries({ ...emailSettings.html_templates, ...html_templates }).filter(([, source]) => source)),
+        version: emailSettings.version + 1,
+      }
+      return route.fulfill({ json: emailSettings })
+    }
+    if (importFixtureEnabled && role === 'admin') {
+      if (path === '/api/admin/models' && request.method() === 'POST') {
+        const body = request.postDataJSON()
+        lobeHubImportWrites.push(['model', body])
+        const created = { id: importModels.length + 1, ...body, description: null, icon_url: null, created_at: 1700000000, updated_at: 1700000000 }
+        importModels.push(created)
+        return route.fulfill({ status: 201, json: created })
+      }
+      if (path === '/api/admin/model-provider-catalog/longcat' && request.method() === 'PUT') {
+        const body = request.postDataJSON()
+        lobeHubImportWrites.push(['provider', body])
+        const created = { ...body, provider_key: 'longcat', version: 1 }
+        importProviders.push(created)
+        return route.fulfill({ json: created })
+      }
+    }
     if (path === '/api/admin/groups/1' && request.method() === 'DELETE' && role === 'admin') {
       const query = new URL(request.url()).searchParams
       groupDeleteRequests.push(Object.fromEntries(query))
@@ -219,7 +259,7 @@ try {
         break
       case '/api/model-providers': data = { pricing_scope: role === 'public' ? 'public_base' : 'group', providers: [{ name: model.provider, model_count: 1 }] }; break
       case '/api/model-provider-catalog':
-      case '/api/admin/model-provider-catalog': data = { providers: [] }; break
+      case '/api/admin/model-provider-catalog': data = { providers: importFixtureEnabled ? importProviders : [] }; break
       case '/api/account/profile': data = { id: 1, username: 'CI user', email: null, role, notifications: {} }; break
       case '/api/account/notifications': data = { entries: [], next_cursor: null, unread_count: 0 }; break
       case '/api/account/verifications/eligibility': data = { verified: false, require_verification_for_topup: false, require_verification_for_api: false, enterprise_verified: false, can_apply_for_organization: false, providers: [], individual_providers: [], enterprise_providers: [], individual_reason_required: true, enterprise_reason_required: true }; break
@@ -239,11 +279,19 @@ try {
       case '/api/token-groups': data = { groups: [], next_cursor: null }; break
       case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
       case '/api/admin/tokens': data = { tokens: [], next_cursor: null }; break
+      case '/api/admin/email-settings': data = emailSettings; break
       case '/api/admin/groups': data = { groups: adminGroups, next_cursor: null }; break
       case '/api/admin/merchant-pools': data = { items: new URL(request.url()).searchParams.get('status') === 'deleted' ? [{ id: 8, group_id: 4 }] : [{ id: 7, group_id: 3 }], page: 1, page_size: 100, total: 1 }; break
       case '/api/admin/groups/1/key-policy': data = { group_id: 1, selection_mode: 'default_only', allowed_user_ids: [], allowed_group_ids: [] }; break
       case '/api/admin/groups/1/model-policy': data = { group_id: 1, allowed_models: null, ratio_overrides: [{ source_group_id: 1, model: '*', ratio_micros: 1000000 }] }; break
-      case '/api/admin/models': data = { models: [], next_cursor: null }; break
+      case '/api/admin/models': {
+        const query = new URL(request.url()).searchParams
+        const after = Number(query.get('after') ?? 0)
+        const limit = Number(query.get('limit') ?? 25)
+        const models = importFixtureEnabled ? importModels.slice(after, after + limit) : []
+        data = { models, next_cursor: importFixtureEnabled && after + limit < importModels.length ? after + limit : null }
+        break
+      }
       case '/api/admin/software':
         data = { edition: 'community', version: '0.3.0-beta.11', core_version: '0.3.0-beta.11', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.11', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
         break
@@ -519,6 +567,55 @@ try {
 
   // Use actual keyboard events against the real editor. Keeping an element
   // handle makes remounting the input detectable even if focus were restored.
+  const pendingModelId = 'gpt-6.1-sol'
+  const claudeModelId = 'claude-fable-5-2'
+  const existingModels = lobeHubSnapshot.models.filter(({ id }) => id !== pendingModelId)
+  importModels = [existingModels.find(({ id }) => id === claudeModelId), ...existingModels.filter(({ id }) => id !== claudeModelId)]
+    .map((entry, index) => ({
+      ...model, id: index + 1, model: entry.id, display_name: entry.name, provider: entry.provider,
+      visibility: 'hidden', lifecycle: 'draft', created_at: 1700000000, updated_at: 1700000000,
+    }))
+  importProviders = lobeHubProviders.filter(({ id }) => id !== 'longcat').map(({ id, name }) => ({
+    provider_key: id, display_name: name, logo: null, aliases: [], enabled: true, sort_order: 100, version: 1,
+  }))
+  importFixtureEnabled = true
+  await open('/console/system-settings/models', 'admin')
+  await page.locator('table svg path[fill="#D97757"]').first().waitFor({ state: 'attached' })
+  const importButton = page.getByRole('button', { name: label('modelManagement.lobehub.action'), exact: true })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await importButton.click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: label('modelManagement.lobehub.submit'), exact: true }).click()
+    await dialog.getByText(label('modelManagement.lobehub.complete'), { exact: true }).waitFor()
+    await dialog.getByRole('button', { name: label('modelManagement.lobehub.close'), exact: true }).click()
+  }
+  assert.deepEqual(lobeHubImportWrites.map(([kind]) => kind), ['provider', 'model'])
+  assert.equal(lobeHubImportWrites[0][1].expected_version, 0)
+  assert.equal(lobeHubImportWrites[0][1].logo, 'longcat')
+  assert.equal(lobeHubImportWrites[1][1].model, pendingModelId)
+  assert.equal(lobeHubImportWrites[1][1].visibility, 'hidden')
+  assert.equal(lobeHubImportWrites[1][1].lifecycle, 'draft')
+  importFixtureEnabled = false
+
+  await open('/console/system-settings/email', 'admin')
+  const emailTemplateEditor = page.getByRole('textbox', { name: label('emailSettings.templates.html'), exact: true })
+  await emailTemplateEditor.fill('<p>')
+  await emailTemplateEditor.press('End')
+  await page.getByRole('button', { name: '{{code}}', exact: true }).click()
+  await page.waitForFunction(() => document.querySelector('#email-template-html')?.value === '<p>{{code}}')
+  await page.getByRole('button', { name: label('emailSettings.templates.preview'), exact: true }).click()
+  const previewFrame = page.locator(`iframe[title="${label('emailSettings.templates.preview')}"]`)
+  assert.equal(await previewFrame.getAttribute('sandbox'), '')
+  const preview = previewFrame.contentFrame()
+  await preview.getByText('123456', { exact: true }).waitFor()
+  await page.getByRole('button', { name: label('emailSettings.actions.save'), exact: true }).click()
+  await page.getByText(label('emailSettings.state.saved'), { exact: true }).waitFor()
+  assert.deepEqual(emailSettingsWrites, [{ registration: '<p>{{code}}' }])
+  await page.getByRole('button', { name: label('emailSettings.templates.restore'), exact: true }).click()
+  await page.getByRole('button', { name: label('emailSettings.actions.save'), exact: true }).click()
+  await page.getByText(label('emailSettings.state.saved'), { exact: true }).waitFor()
+  assert.deepEqual(emailSettingsWrites[1], { registration: '' })
+
   await open('/console/system-settings/groups', 'admin')
   await page.getByRole('heading', { name: label('groups.title'), exact: true }).waitFor()
   await page.getByRole('row').filter({ hasText: group.display_name }).getByRole('button', { name: label('groups.actions.edit'), exact: true }).click()

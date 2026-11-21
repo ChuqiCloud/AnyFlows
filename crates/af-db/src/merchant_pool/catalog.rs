@@ -602,6 +602,7 @@ fn net_prices(
         cache_read: net(&prices.cache_read)?,
         cache_write_5m: net(&prices.cache_write_5m)?,
         cache_write_1h: net(&prices.cache_write_1h)?,
+        request_price: prices.request_price.as_deref().map(net).transpose()?,
         version: prices.version,
     })
 }
@@ -639,6 +640,7 @@ pub(super) async fn model_price<C: ConnectionTrait>(
             cache_read: "0".to_owned(),
             cache_write_5m: "0".to_owned(),
             cache_write_1h: "0".to_owned(),
+            request_price: None,
             version: 1,
         }));
     }
@@ -650,7 +652,7 @@ pub(super) async fn model_price<C: ConnectionTrait>(
         return Ok(None);
     };
     // Media uses the same platform-normalized, deterministic token tariff.
-    if !matches!(price.billing_mode, 1 | 2) || price.billing_expression.is_some() {
+    if !matches!(price.billing_mode, 1 | 2 | 4) || price.billing_expression.is_some() {
         return Ok(None);
     }
     let multiplier = Decimal::from(ratio)
@@ -661,6 +663,21 @@ pub(super) async fn model_price<C: ConnectionTrait>(
             .map(|value| value.normalize().to_string())
             .ok_or(MerchantPoolError::Unavailable)
     };
+    if price.billing_mode == 4 {
+        return Ok(Some(MerchantModelPrices {
+            currency: "USD".to_owned(),
+            unit: "request".to_owned(),
+            billing_mode: "per_call".to_owned(),
+            video_per_second: None,
+            input: "0".to_owned(),
+            output: "0".to_owned(),
+            cache_read: "0".to_owned(),
+            cache_write_5m: "0".to_owned(),
+            cache_write_1h: "0".to_owned(),
+            request_price: Some(final_price(price.request_price.expose())?),
+            version: price.version,
+        }));
+    }
     Ok(Some(MerchantModelPrices {
         currency: "USD".to_owned(),
         unit: "million_tokens".to_owned(),
@@ -676,6 +693,7 @@ pub(super) async fn model_price<C: ConnectionTrait>(
         cache_read: final_price(price.cache_read_price.expose())?,
         cache_write_5m: final_price(price.cache_creation_5m_price.expose())?,
         cache_write_1h: final_price(price.cache_creation_1h_price.expose())?,
+        request_price: None,
         version: price.version,
     }))
 }

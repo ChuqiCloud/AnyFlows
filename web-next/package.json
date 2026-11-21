@@ -10,7 +10,7 @@
     "api:check": "node scripts/check-generated-api.mjs",
     "build": "tsc -b && vite build",
     "check": "pnpm lint && pnpm build",
-    "lint": "node --test scripts/*.test.mjs && node scripts/check-generated-api.mjs && oxlint",
+    "lint": "node --test scripts/*.test.mjs && node scripts/check-generated-api.mjs && node scripts/export-lobehub-icons.mjs --check && oxlint",
     "preview": "vite preview",
     "test:scripts": "node --test scripts/*.test.mjs"
   },

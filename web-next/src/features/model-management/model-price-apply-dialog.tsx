@@ -59,6 +59,10 @@ export function ModelPriceApplyDialog(props: ModelPriceApplyDialogProps) {
                           <span className="text-muted-foreground">{t('modelManagement.prices.apply.expression')}</span>
                           <code className="break-all rounded bg-surface-2 px-2 py-1 font-mono text-[0.6875rem]">{staged.draft.expression}</code>
                         </div>
+                      ) : staged.draft.billingMode === 'per_call' ? (
+                        <div className="col-span-2 sm:col-span-5">
+                          <FinalPrice label={t('modelManagement.prices.fields.requestPrice')} value={`${staged.draft.requestPrice} ${t('models.values.perRequest')}`} />
+                        </div>
                       ) : (
                         <>
                           <FinalPrice label={t('modelManagement.prices.fields.input')} value={staged.draft.input} />

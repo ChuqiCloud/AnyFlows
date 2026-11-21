@@ -220,3 +220,80 @@ async fn unsupported_price_cards_cannot_be_approved() -> Result<(), Box<dyn Erro
     fixture.pool.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn fixed_request_prices_are_available_in_merchant_quotes() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared(
+            "UPDATE model_prices SET billing_mode=4,input_price=0,output_price=0,cache_read_price=0,cache_creation_5m_price=0,cache_creation_1h_price=0,request_price=0.025,billing_expression=NULL WHERE model='gpt-test'",
+        )
+        .await?;
+    let write = service_write(fixture.shared_pool);
+    let quote = fixture
+        .repository
+        .quote(
+            UserId::new(1)?,
+            MerchantQuoteWrite {
+                pool_id: write.pool_id,
+                default_ratio_micros: write.default_ratio_micros,
+                models: write.models.clone(),
+            },
+        )
+        .await?;
+    let prices = &quote.models[0].prices;
+    assert_eq!(prices.unit, "request");
+    assert_eq!(prices.billing_mode, "per_call");
+    assert_eq!(
+        quote.models[0].base_prices.request_price.as_deref(),
+        Some("0.025")
+    );
+    assert_eq!(prices.request_price.as_deref(), Some("0.0125"));
+    let net_ratio = Decimal::from(10_000 - quote.effective_commission_bps)
+        .checked_div(Decimal::from(10_000))
+        .unwrap();
+    let expected_net = (Decimal::new(125, 4) * net_ratio).normalize().to_string();
+    assert_eq!(
+        quote.models[0].net_prices.request_price.as_deref(),
+        Some(expected_net.as_str())
+    );
+
+    let published = fixture
+        .repository
+        .write_service(UserId::new(1)?, None, write, envelope)
+        .await?;
+    let pending = fixture
+        .repository
+        .submit_service(UserId::new(1)?, published.id)
+        .await?;
+    let revision = pending.draft.as_ref().expect("pending draft").revision;
+    let approved = fixture
+        .repository
+        .review_service(
+            UserId::new(3)?,
+            published.id,
+            review("approve", Some(revision)),
+        )
+        .await?;
+    assert!(approved.published.is_some());
+    let catalog = fixture
+        .repository
+        .catalog(
+            UserId::new(1)?,
+            fixture.shared_pool,
+            MerchantListQuery::default(),
+        )
+        .await?;
+    assert_eq!(
+        catalog.items[0].models[0]
+            .prices
+            .as_ref()
+            .and_then(|prices| prices.request_price.as_deref()),
+        Some("0.0125")
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}

@@ -96,8 +96,9 @@ pub use payment_webhook::{
     VerifiedTopupPaymentEvent,
 };
 pub use pricing::{
-    BillingMode, CostBreakdown, EffectiveTokenPrices, PriceData, PricingContext, PricingError,
-    PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,
+    BillingMode, CostBreakdown, EffectiveTokenPrices, PerCallPricingResolver, PriceData,
+    PricingContext, PricingError, PricingRatio, PricingRatios, PricingResolver,
+    RatioPricingResolver, TokenPrices,
 };
 pub use pricing_snapshot::{
     CachedRequestPricingSnapshotSource, RequestPricingSnapshot, RequestPricingSnapshotError,

@@ -621,6 +621,7 @@ pub(crate) enum UsageLogReasoningEffortSchema {
 pub(crate) enum ModelCatalogBillingModeSchema {
     PerToken,
     Free,
+    PerCall,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]

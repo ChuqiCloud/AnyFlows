@@ -19,6 +19,7 @@ import {
 
 export type ModelPriceDraft = {
   billingMode: AdminModelPriceBillingMode
+  requestPrice: string
   input: string
   output: string
   cacheRead: string
@@ -37,6 +38,8 @@ export type StagedModelPriceDraft = {
 export type ModelPriceValidationMessages = {
   decimal: string
   free: string
+  positiveRequestPrice: string
+  perCallValues: string
   expression: string
   expressionTooLong: string
   expressionValues: string
@@ -58,12 +61,14 @@ export type ModelPriceEvidenceField =
 const DECIMAL_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$/
 const ZERO_DECIMAL_PATTERN = /^0+(\.0+)?$/
 const MAX_EXPRESSION_BYTES = 8 * 1024
+export const MAX_MODEL_PRICE_BATCH_SIZE = 100
 
 /** 创建与后端十进制字符串边界一致的价格草稿校验器。 */
 export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessages) {
   const decimal = z.string().max(39, messages.decimal).regex(DECIMAL_PATTERN, messages.decimal)
   return z.object({
-    billingMode: z.enum(['per_token', 'free', 'expression']),
+    billingMode: z.enum(['per_token', 'per_call', 'free', 'expression']),
+    requestPrice: decimal,
     input: decimal,
     output: decimal,
     cacheRead: decimal,
@@ -103,6 +108,9 @@ export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessage
       }
     })
     if (value.billingMode === 'expression') {
+      if (!ZERO_DECIMAL_PATTERN.test(value.requestPrice)) {
+        context.addIssue({ code: 'custom', message: messages.expressionValues, path: ['requestPrice'] })
+      }
       if (value.expression.trim().length === 0) {
         context.addIssue({ code: 'custom', message: messages.expression, path: ['expression'] })
       }
@@ -124,6 +132,20 @@ export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessage
           context.addIssue({ code: 'custom', message: messages.free, path: [field] })
         }
       }
+      if (!ZERO_DECIMAL_PATTERN.test(value.requestPrice)) {
+        context.addIssue({ code: 'custom', message: messages.free, path: ['requestPrice'] })
+      }
+    }
+    if (value.billingMode === 'per_call') {
+      if (ZERO_DECIMAL_PATTERN.test(value.requestPrice)) {
+        context.addIssue({ code: 'custom', message: messages.positiveRequestPrice, path: ['requestPrice'] })
+      }
+      const fields = ['input', 'output', 'cacheRead', 'cacheCreation5m', 'cacheCreation1h'] as const
+      for (const field of fields) {
+        if (!ZERO_DECIMAL_PATTERN.test(value[field])) {
+          context.addIssue({ code: 'custom', message: messages.perCallValues, path: [field] })
+        }
+      }
     }
   })
 }
@@ -131,6 +153,7 @@ export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessage
 export function defaultModelPriceDraft(price?: AdminModelPrice): ModelPriceDraft {
   return {
     billingMode: price?.billing_mode ?? 'per_token',
+    requestPrice: price?.request_price ?? '0',
     input: price?.prices.input ?? '',
     output: price?.prices.output ?? '',
     cacheRead: price?.prices.cache_read ?? '',
@@ -144,6 +167,7 @@ export function defaultModelPriceDraft(price?: AdminModelPrice): ModelPriceDraft
 export function freeModelPriceDraft(peakRules: ModelPeakRuleForm[] = []): ModelPriceDraft {
   return {
     billingMode: 'free',
+    requestPrice: '0',
     input: '0',
     output: '0',
     cacheRead: '0',
@@ -158,6 +182,7 @@ export function freeModelPriceDraft(peakRules: ModelPeakRuleForm[] = []): ModelP
 export function expressionModelPriceDraft(expression = '', peakRules: ModelPeakRuleForm[] = []): ModelPriceDraft {
   return {
     billingMode: 'expression',
+    requestPrice: '0',
     input: '0',
     output: '0',
     cacheRead: '0',
@@ -168,11 +193,25 @@ export function expressionModelPriceDraft(expression = '', peakRules: ModelPeakR
   }
 }
 
+export function perCallModelPriceDraft(requestPrice = '', peakRules: ModelPeakRuleForm[] = []): ModelPriceDraft {
+  return {
+    billingMode: 'per_call',
+    requestPrice,
+    input: '0',
+    output: '0',
+    cacheRead: '0',
+    cacheCreation5m: '0',
+    cacheCreation1h: '0',
+    expression: '',
+    peakRules,
+  }
+}
+
 /** 仅用于控制选择状态，显示文案由表单使用本地化校验器提供。 */
 export function modelPriceDraftIsComplete(draft?: ModelPriceDraft) {
   if (!draft) return false
   return buildModelPriceDraftSchema({
-    decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values',
+    decimal: 'decimal', free: 'free', positiveRequestPrice: 'positive request price', perCallValues: 'per-call token values', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values',
     ratio: 'ratio', peakWindow: 'window', weekdays: 'weekdays', timezone: 'timezone', rules: 'rules', overlap: 'overlap',
   }).safeParse(draft).success
 }
@@ -187,6 +226,7 @@ export function toModelPriceWriteItem(
     expected_version: staged.expectedVersion,
     context_window: staged.contextWindow,
     billing_mode: draft.billingMode,
+    request_price: draft.billingMode === 'per_call' ? draft.requestPrice : '0',
     prices: {
       input: draft.input,
       output: draft.output,
@@ -213,7 +253,7 @@ export function applyModelPriceEvidence(
     cacheCreation1h: 'cache_creation_1h',
   } as const
   const value = candidate.costs[sourceKey[field]]
-  return value === null ? draft : { ...draft, [field]: value }
+  return value === null ? draft : { ...draft, billingMode: 'per_token', requestPrice: '0', [field]: value }
 }
 
 /** 一次采用来源中可等价映射的价格字段，未提供的维度保持当前草稿。 */
@@ -223,6 +263,8 @@ export function applyAllModelPriceEvidence(
 ): ModelPriceDraft {
   return {
     ...draft,
+    billingMode: 'per_token',
+    requestPrice: '0',
     input: candidate.costs.input ?? draft.input,
     output: candidate.costs.output ?? draft.output,
     cacheRead: candidate.costs.cache_read ?? draft.cacheRead,

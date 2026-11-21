@@ -1,6 +1,6 @@
 import Anthropic from '@lobehub/icons/es/Anthropic/components/Mono'
-import DeepSeek from '@lobehub/icons/es/DeepSeek/components/Mono'
-import Gemini from '@lobehub/icons/es/Gemini/components/Mono'
+import DeepSeek from '@lobehub/icons/es/DeepSeek/components/Color'
+import Gemini from '@lobehub/icons/es/Gemini/components/Color'
 import Grok from '@lobehub/icons/es/Grok/components/Mono'
 import OpenAI from '@lobehub/icons/es/OpenAI/components/Mono'
 import { ArrowRight, Check, Copy, ExternalLink, Sparkles } from 'lucide-react'

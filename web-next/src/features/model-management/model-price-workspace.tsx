@@ -1,11 +1,11 @@
 import { Button, Chip, Select, SelectItem, Skeleton } from '@heroui/react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, CloudDownload, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
-import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
+import { useClientTablePagination, useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import type { AdminModelPriceSourcePreview } from '@/lib/api/generated/types.gen'
 import { useAdminModelMetadata } from './model-management-api'
 import {
@@ -20,6 +20,7 @@ import { ModelPriceApplyDialog, type ModelPriceApplyItem } from './model-price-a
 import { ModelPriceEditorSheet, type ModelPriceEditorTarget } from './model-price-editor-sheet'
 import {
   modelPriceDraftIsComplete,
+  MAX_MODEL_PRICE_BATCH_SIZE,
   toModelPriceWriteItem,
   type ModelPriceDraft,
   type StagedModelPriceDraft,
@@ -30,7 +31,12 @@ import { ModelPriceTable, type ModelPriceRow } from './model-price-table'
 export function ModelPriceWorkspace() {
   const { t } = useTranslation()
   const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
-  const modelsQuery = useAdminModelMetadata(pageSize)
+  const [priceSource, setPriceSource] = useState<ModelPriceSource>('models_dev')
+  const [showMatches, setShowMatches] = useState(false)
+  const [previews, setPreviews] = useState<Partial<Record<ModelPriceSource, AdminModelPriceSourcePreview>>>({})
+  const preview = previews[priceSource]
+  const matchesOnly = showMatches && preview !== undefined
+  const modelsQuery = useAdminModelMetadata(matchesOnly ? 100 : pageSize)
   const pagination = useLoadedCursorPagination({
     availablePageCount: modelsQuery.data?.pages.length ?? 1,
     pageSize,
@@ -39,15 +45,29 @@ export function ModelPriceWorkspace() {
   const pricesQuery = useAdminModelPrices()
   const previewMutation = usePreviewAdminModelPrices()
   const applyMutation = useApplyAdminModelPrices()
-  const [priceSource, setPriceSource] = useState<ModelPriceSource>('models_dev')
-  const [previews, setPreviews] = useState<Partial<Record<ModelPriceSource, AdminModelPriceSourcePreview>>>({})
   const [staged, setStaged] = useState<Record<string, StagedModelPriceDraft>>({})
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [editingModel, setEditingModel] = useState<string>()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [lastAppliedCount, setLastAppliedCount] = useState<number>()
 
-  const preview = previews[priceSource]
+  const {
+    fetchNextPage: fetchNextModels,
+    hasNextPage: hasNextModels,
+    isFetching: fetchingModels,
+    isFetchNextPageError: modelPageError,
+  } = modelsQuery
+  const {
+    fetchNextPage: fetchNextPrices,
+    hasNextPage: hasNextPrices,
+    isFetching: fetchingPrices,
+    isFetchNextPageError: pricePageError,
+  } = pricesQuery
+  useEffect(() => {
+    if (!matchesOnly || !preview?.candidates.length) return
+    if (hasNextModels && !fetchingModels && !modelPageError) void fetchNextModels()
+    if (hasNextPrices && !fetchingPrices && !pricePageError) void fetchNextPrices()
+  }, [matchesOnly, preview, hasNextModels, fetchingModels, modelPageError, fetchNextModels, hasNextPrices, fetchingPrices, pricePageError, fetchNextPrices])
   const models = useMemo(() => modelsQuery.data?.pages.flatMap((page) => page.models) ?? [], [modelsQuery.data])
   const currentModels = useMemo(
     () => modelsQuery.data?.pages[pagination.pageIndex]?.models ?? [],
@@ -64,10 +84,15 @@ export function ModelPriceWorkspace() {
     staged: staged[model.model],
   })), [candidateByModel, models, priceByModel, priceSource, staged])
   const rowByModel = useMemo(() => new Map(rows.map((row) => [row.model.model, row])), [rows])
-  const visibleRows = useMemo(() => currentModels.flatMap((model) => {
+  const currentRows = useMemo(() => currentModels.flatMap((model) => {
     const row = rowByModel.get(model.model)
     return row ? [row] : []
   }), [currentModels, rowByModel])
+  const matchedRows = useMemo(() => rows.filter((row) => row.candidate !== undefined), [rows])
+  const matchPage = useClientTablePagination(matchedRows.length)
+  const visibleRows = matchesOnly ? matchedRows.slice(matchPage.startIndex, matchPage.endIndex) : currentRows
+  const matchIndexLoading = matchesOnly && Boolean(preview?.candidates.length)
+    && ((hasNextModels && !modelPageError) || (hasNextPrices && !pricePageError))
   const priceIndexComplete = !pricesQuery.hasNextPage
   const pricedCount = rows.filter((row) => row.price !== undefined).length
   const freeCount = rows.filter((row) => row.price?.billing_mode === 'free').length
@@ -75,10 +100,11 @@ export function ModelPriceWorkspace() {
     .sort()
     .flatMap((model) => {
       const draft = staged[model]
-      const currentPrice = rowByModel.get(model)?.price
-      const versionReady = currentPrice === undefined || draft?.expectedVersion === currentPrice.version
+      const currentPrice = priceByModel.get(model)
+      const versionReady = draft?.expectedVersion === (currentPrice?.version ?? null)
+        && (currentPrice !== undefined || priceIndexComplete)
       return draft && versionReady && modelPriceDraftIsComplete(draft.draft) ? [{ model, staged: draft }] : []
-    }), [rowByModel, selected, staged])
+    }), [priceByModel, priceIndexComplete, selected, staged])
   const editorTarget = editingModel ? rowToEditorTarget(rowByModel.get(editingModel)) : undefined
   const initialError = (modelsQuery.isError && modelsQuery.data === undefined)
     || (pricesQuery.isError && pricesQuery.data === undefined)
@@ -88,6 +114,8 @@ export function ModelPriceWorkspace() {
     try {
       const next = await previewMutation.mutateAsync(requestedSource)
       setPreviews((current) => ({ ...current, [requestedSource]: next }))
+      matchPage.goToFirstPage()
+      setShowMatches(true)
     } catch {
       // 已编辑草稿和上一份成功预览保持不变，管理员可以按稳定错误分类重试。
     }
@@ -101,7 +129,9 @@ export function ModelPriceWorkspace() {
       ...current,
       [model]: { draft, expectedVersion, contextWindow },
     }))
-    setSelected((current) => new Set(current).add(model))
+    setSelected((current) => current.has(model) || current.size >= MAX_MODEL_PRICE_BATCH_SIZE
+      ? current
+      : new Set(current).add(model))
     setEditingModel(undefined)
   }
   const apply = async () => {
@@ -170,6 +200,9 @@ export function ModelPriceWorkspace() {
           <span>{t('modelManagement.prices.preview.loaded', { count: preview.candidates.length })}</span>
           <span>{t('modelManagement.prices.preview.fetchedAt', { value: new Date(preview.fetched_at * 1000).toLocaleString() })}</span>
           {preview.revision ? <span className="max-w-64 truncate font-mono">{preview.revision}</span> : null}
+          <Button type="button" size="sm" variant="light" onPress={() => setShowMatches((current) => !current)}>
+            {t(matchesOnly ? 'modelManagement.prices.preview.showAll' : 'modelManagement.prices.preview.showMatches')}
+          </Button>
         </div>
       ) : null}
       {previewMutation.error && previewMutation.variables === priceSource ? (
@@ -185,7 +218,7 @@ export function ModelPriceWorkspace() {
         </div>
       ) : null}
 
-      {!priceIndexComplete ? (
+      {!priceIndexComplete && !matchIndexLoading ? (
         <div className="flex flex-col gap-2 rounded-xl border border-info/20 bg-info/8 p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-2 text-info">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -197,7 +230,7 @@ export function ModelPriceWorkspace() {
         </div>
       ) : null}
 
-      {modelsQuery.isPending || pricesQuery.isPending ? (
+      {modelsQuery.isPending || pricesQuery.isPending || matchIndexLoading ? (
         <div className="grid gap-2" aria-label={t('modelManagement.prices.loading')}>{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-24 rounded-xl" />)}</div>
       ) : initialError ? (
         <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
@@ -213,7 +246,7 @@ export function ModelPriceWorkspace() {
           onEdit={(row) => setEditingModel(row.model.model)}
           onSelect={(model, checked) => setSelected((current) => {
             const next = new Set(current)
-            if (checked) next.add(model)
+            if (checked && (next.has(model) || next.size < MAX_MODEL_PRICE_BATCH_SIZE)) next.add(model)
             else next.delete(model)
             return next
           })}
@@ -221,9 +254,27 @@ export function ModelPriceWorkspace() {
       )}
 
       {(modelsQuery.isFetchNextPageError || pricesQuery.isFetchNextPageError) ? (
-        <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{t('modelManagement.prices.pagination.moreError')}</p>
+        <div role="alert" className="flex items-center gap-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {t('modelManagement.prices.pagination.moreError')}
+          {matchesOnly && modelPageError ? <Button type="button" size="sm" variant="light" onPress={() => void fetchNextModels()}>{t('modelManagement.actions.retry')}</Button> : null}
+        </div>
       ) : null}
-      {!modelsQuery.isPending && !initialError ? (
+      {matchesOnly && !matchIndexLoading && !initialError ? (
+        <DataTablePagination
+          currentPage={matchPage.currentPage}
+          availablePageCount={matchPage.availablePageCount}
+          pageSize={matchPage.pageSize}
+          itemCount={visibleRows.length}
+          hasNextPage={matchPage.hasNextPage}
+          fetching={modelsQuery.isFetching}
+          onFirstPage={matchPage.goToFirstPage}
+          onPreviousPage={matchPage.goToPreviousPage}
+          onPageSelect={matchPage.selectPage}
+          onNextPage={matchPage.goToNextPage}
+          onPageSizeChange={matchPage.setPageSize}
+        />
+      ) : null}
+      {!matchesOnly && !modelsQuery.isPending && !initialError ? (
         <DataTablePagination
           currentPage={pagination.currentPage}
           availablePageCount={pagination.availablePageCount}

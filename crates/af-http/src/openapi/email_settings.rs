@@ -50,7 +50,7 @@ fn update_admin_email_settings() {}
     path = "/api/admin/email-settings/test",
     operation_id = "sendAdminEmailTest",
     tag = "邮件设置",
-    summary = "发送固定正文 SMTP 测试邮件",
+    summary = "使用已保存的模板发送 SMTP 测试邮件",
     request_body = AdminEmailTestRequest,
     responses(
         (status = 204, description = "测试邮件投递成功，不回显收件人或正文"),

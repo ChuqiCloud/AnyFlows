@@ -285,10 +285,10 @@ impl fmt::Debug for PricingRatios {
     }
 }
 
-/// 应用全部倍率后的五类精确美元成本分解。
+/// 应用全部倍率后的精确美元成本分解。
 ///
 /// 分项不单独转换为 quota，避免重复整数舍入；[`Self::total_usd`] 与最终 quota
-/// 使用同一组 checked Decimal 中间结果。
+/// 使用同一组 checked Decimal 中间结果。按次模式使用 `per_call_usd`，token 分项为零。
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct CostBreakdown {
     input_usd: Decimal,
@@ -296,6 +296,7 @@ pub struct CostBreakdown {
     cache_read_usd: Decimal,
     cache_creation_5m_usd: Decimal,
     cache_creation_1h_usd: Decimal,
+    per_call_usd: Decimal,
     total_usd: Decimal,
 }
 
@@ -306,6 +307,7 @@ impl CostBreakdown {
         cache_read_usd: Decimal::ZERO,
         cache_creation_5m_usd: Decimal::ZERO,
         cache_creation_1h_usd: Decimal::ZERO,
+        per_call_usd: Decimal::ZERO,
         total_usd: Decimal::ZERO,
     };
 
@@ -323,6 +325,7 @@ impl CostBreakdown {
             cache_read_usd,
             cache_creation_5m_usd,
             cache_creation_1h_usd,
+            per_call_usd: Decimal::ZERO,
             total_usd,
         }
     }
@@ -330,6 +333,14 @@ impl CostBreakdown {
     /// 表达式只能可靠提供聚合成本，不能伪造五类固定单价分解。
     const fn from_expression_total(total_usd: Decimal) -> Self {
         Self {
+            total_usd,
+            ..Self::ZERO
+        }
+    }
+
+    const fn from_per_call(total_usd: Decimal) -> Self {
+        Self {
+            per_call_usd: total_usd,
             total_usd,
             ..Self::ZERO
         }
@@ -365,10 +376,16 @@ impl CostBreakdown {
         self.cache_creation_1h_usd
     }
 
-    /// 返回五类分项的 checked 美元成本总和。
+    /// 返回本次计价的 checked 美元成本总和。
     #[must_use]
     pub const fn total_usd(&self) -> Decimal {
         self.total_usd
+    }
+
+    /// 返回固定的一次请求美元价格；token 模式为零。
+    #[must_use]
+    pub const fn per_call_usd(&self) -> Decimal {
+        self.per_call_usd
     }
 }
 
@@ -413,6 +430,14 @@ impl PriceData {
         }
     }
 
+    const fn per_call(quota: Quota, total_usd: Decimal) -> Self {
+        Self {
+            quota,
+            billing_mode: BillingMode::PerCall,
+            breakdown: CostBreakdown::from_per_call(total_usd),
+        }
+    }
+
     /// 返回最终一次舍入后的非负额度。
     #[must_use]
     pub const fn quota(&self) -> Quota {
@@ -435,6 +460,64 @@ impl PriceData {
     #[must_use]
     pub const fn is_free(&self) -> bool {
         matches!(self.billing_mode, BillingMode::Free)
+    }
+}
+
+/// 一次受理请求收取相同固定金额的定价解析器。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct PerCallPricingResolver {
+    price_usd: Decimal,
+    ratios: PricingRatios,
+}
+
+impl PerCallPricingResolver {
+    /// 构造固定美元/请求价格，并绑定该请求的倍率快照。
+    pub fn new(price_usd: Decimal, ratios: PricingRatios) -> Result<Self, PricingError> {
+        if price_usd < Decimal::ZERO {
+            return Err(PricingError::InvalidPrice);
+        }
+        Ok(Self { price_usd, ratios })
+    }
+
+    pub(crate) const fn from_validated(price_usd: Decimal, ratios: PricingRatios) -> Self {
+        Self { price_usd, ratios }
+    }
+
+    /// 返回没有应用分组倍率的模型基准价。
+    #[must_use]
+    pub const fn price_usd(self) -> Decimal {
+        self.price_usd
+    }
+
+    /// 以相同基准价替换当前请求的倍率快照。
+    #[must_use]
+    pub const fn with_ratios(self, ratios: PricingRatios) -> Self {
+        Self {
+            price_usd: self.price_usd,
+            ratios,
+        }
+    }
+
+    /// 返回应用请求倍率后的固定美元/请求价格。
+    pub fn effective_price_usd(self) -> Result<Decimal, PricingError> {
+        quota_math::usd_after_ratios(self.price_usd, self.ratios.micros()).map_err(Into::into)
+    }
+}
+
+impl PricingResolver for PerCallPricingResolver {
+    fn resolve(&self, _context: &PricingContext<'_>) -> Result<PriceData, PricingError> {
+        let price_usd = self.effective_price_usd()?;
+        let quota = quota_math::quota_from_usd_for(
+            price_usd,
+            quota_math::QuotaMathOperation::PricingResolution,
+        )?;
+        Ok(PriceData::per_call(quota, price_usd))
+    }
+}
+
+impl fmt::Debug for PerCallPricingResolver {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PerCallPricingResolver(<redacted>)")
     }
 }
 
@@ -571,8 +654,8 @@ fn uncached_input_tokens(usage: &Usage) -> Result<i64, UsageError> {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum PricingError {
-    /// 至少一个美元/百万 token 单价为负数。
-    #[error("token 单价不能为负数")]
+    /// 模型美元价格为负数。
+    #[error("定价不能为负数")]
     InvalidPrice,
     /// 百万分比倍率为负数。
     #[error("计费倍率不能为负数")]

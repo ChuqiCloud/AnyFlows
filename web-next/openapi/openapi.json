@@ -14495,7 +14495,7 @@
         "tags": [
           "邮件设置"
         ],
-        "summary": "发送固定正文 SMTP 测试邮件",
+        "summary": "使用已保存的模板发送 SMTP 测试邮件",
         "operationId": "sendAdminEmailTest",
         "requestBody": {
           "content": {
@@ -42844,6 +42844,7 @@
           "password_configured",
           "from_address",
           "timeout_seconds",
+          "html_templates",
           "version",
           "delivery_ready"
         ],
@@ -42899,6 +42900,16 @@
             "format": "int32",
             "maximum": 60,
             "minimum": 1
+          },
+          "html_templates": {
+            "type": "object",
+            "description": "按邮件类型保存的自定义 HTML 模板。",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "version": {
             "type": "integer",
@@ -42981,6 +42992,19 @@
             "format": "int32",
             "maximum": 60,
             "minimum": 1
+          },
+          "html_templates": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "更新指定类型的 HTML 模板，空字符串恢复纯文本。",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false
@@ -44145,6 +44169,7 @@
           "model",
           "billing_mode",
           "prices",
+          "request_price",
           "billing_expression",
           "peak_windows",
           "version"
@@ -44160,6 +44185,13 @@
           },
           "prices": {
             "$ref": "#/components/schemas/AdminModelPriceValues"
+          },
+          "request_price": {
+            "type": "string",
+            "description": "固定美元/请求价格，非按次模式为零。",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
           },
           "billing_expression": {
             "type": [
@@ -44227,7 +44259,8 @@
         "enum": [
           "per_token",
           "free",
-          "expression"
+          "expression",
+          "per_call"
         ]
       },
       "AdminModelPriceExpressionPreviewRequest": {
@@ -44702,6 +44735,16 @@
           },
           "prices": {
             "$ref": "#/components/schemas/AdminModelPriceValues"
+          },
+          "request_price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "按次模式必填且大于零。其他模式可省略或传零。",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
           },
           "billing_expression": {
             "type": [
@@ -51311,6 +51354,7 @@
           "cache_read",
           "cache_write_5m",
           "cache_write_1h",
+          "request_price",
           "version"
         ],
         "properties": {
@@ -51319,7 +51363,8 @@
             "enum": [
               "token",
               "free",
-              "video"
+              "video",
+              "per_call"
             ]
           },
           "cache_read": {
@@ -51339,6 +51384,16 @@
           },
           "output": {
             "type": "string"
+          },
+          "request_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "unit": {
             "type": "string"
@@ -53485,7 +53540,8 @@
         "type": "string",
         "enum": [
           "per_token",
-          "free"
+          "free",
+          "per_call"
         ]
       },
       "ModelCatalogCapability": {
@@ -53515,6 +53571,7 @@
           "runtime_status",
           "billing_mode",
           "prices",
+          "request_price",
           "ratios",
           "price_version",
           "available_protocols"
@@ -53608,6 +53665,14 @@
                 "$ref": "#/components/schemas/ModelCatalogTokenPrices"
               }
             ]
+          },
+          "request_price": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "固定美元/请求价格，仅按次模式返回。",
+            "maxLength": 39
           },
           "ratios": {
             "$ref": "#/components/schemas/ModelCatalogRatios"

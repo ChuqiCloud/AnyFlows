@@ -331,6 +331,7 @@ async fn check_model_group_controls_upgrade(
         .ok_or("upgraded model price must remain readable")?;
     assert_eq!(legacy.billing_mode(), ModelPriceBillingMode::PerToken);
     assert_eq!(legacy.prices()[0], Decimal::from(3));
+    assert_eq!(legacy.request_price(), Decimal::ZERO);
     assert!(legacy.peak_schedule().is_none());
 
     let group_id = GroupId::new(1)?;

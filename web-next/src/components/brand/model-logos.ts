@@ -1,56 +1,53 @@
 import Anthropic from '@lobehub/icons/es/Anthropic/components/Mono'
-import Baichuan from '@lobehub/icons/es/Baichuan/components/Mono'
-import Cohere from '@lobehub/icons/es/Cohere/components/Mono'
-import DeepSeek from '@lobehub/icons/es/DeepSeek/components/Mono'
-import Doubao from '@lobehub/icons/es/Doubao/components/Mono'
-import Gemini from '@lobehub/icons/es/Gemini/components/Mono'
+import Baichuan from '@lobehub/icons/es/Baichuan/components/Color'
+import Cohere from '@lobehub/icons/es/Cohere/components/Color'
+import DeepSeek from '@lobehub/icons/es/DeepSeek/components/Color'
+import Doubao from '@lobehub/icons/es/Doubao/components/Color'
+import Gemini from '@lobehub/icons/es/Gemini/components/Color'
 import Groq from '@lobehub/icons/es/Groq/components/Mono'
-import Hunyuan from '@lobehub/icons/es/Hunyuan/components/Mono'
-import Kimi from '@lobehub/icons/es/Kimi/components/Mono'
-import Meta from '@lobehub/icons/es/Meta/components/Mono'
-import Minimax from '@lobehub/icons/es/Minimax/components/Mono'
-import Mistral from '@lobehub/icons/es/Mistral/components/Mono'
+import Hunyuan from '@lobehub/icons/es/Hunyuan/components/Color'
+import Kimi from '@lobehub/icons/es/Kimi/components/Color'
+import Meta from '@lobehub/icons/es/Meta/components/Color'
+import Minimax from '@lobehub/icons/es/Minimax/components/Color'
+import Mistral from '@lobehub/icons/es/Mistral/components/Color'
 import Moonshot from '@lobehub/icons/es/Moonshot/components/Mono'
 import Ollama from '@lobehub/icons/es/Ollama/components/Mono'
 import OpenAI from '@lobehub/icons/es/OpenAI/components/Mono'
 import OpenCode from '@lobehub/icons/es/OpenCode/components/Mono'
-import OpenRouter from '@lobehub/icons/es/OpenRouter/components/Mono'
-import Perplexity from '@lobehub/icons/es/Perplexity/components/Mono'
-import Qwen from '@lobehub/icons/es/Qwen/components/Mono'
-import Spark from '@lobehub/icons/es/Spark/components/Mono'
+import OpenRouter from '@lobehub/icons/es/OpenRouter/components/Color'
+import Perplexity from '@lobehub/icons/es/Perplexity/components/Color'
+import Qwen from '@lobehub/icons/es/Qwen/components/Color'
+import Spark from '@lobehub/icons/es/Spark/components/Color'
 import Stepfun from '@lobehub/icons/es/Stepfun/components/Mono'
-import Together from '@lobehub/icons/es/Together/components/Mono'
-import Wenxin from '@lobehub/icons/es/Wenxin/components/Mono'
+import Together from '@lobehub/icons/es/Together/components/Color'
+import Wenxin from '@lobehub/icons/es/Wenxin/components/Color'
 import XAI from '@lobehub/icons/es/XAI/components/Mono'
-import Zhipu from '@lobehub/icons/es/Zhipu/components/Mono'
-import type { ComponentType, SVGProps } from 'react'
+import Zhipu from '@lobehub/icons/es/Zhipu/components/Color'
+import { createElement, lazy, Suspense, type ComponentType, type SVGProps } from 'react'
 import Ai21 from '@lobehub/icons/es/Ai21/components/Mono'
-import Alibaba from '@lobehub/icons/es/Alibaba/components/Mono'
-import Aws from '@lobehub/icons/es/Aws/components/Mono'
-import Azure from '@lobehub/icons/es/Azure/components/Mono'
-import Baidu from '@lobehub/icons/es/Baidu/components/Mono'
-import ByteDance from '@lobehub/icons/es/ByteDance/components/Mono'
-import Cerebras from '@lobehub/icons/es/Cerebras/components/Mono'
-import Fireworks from '@lobehub/icons/es/Fireworks/components/Mono'
-import Google from '@lobehub/icons/es/Google/components/Mono'
-import HuggingFace from '@lobehub/icons/es/HuggingFace/components/Mono'
+import Alibaba from '@lobehub/icons/es/Alibaba/components/Color'
+import Aws from '@lobehub/icons/es/Aws/components/Color'
+import Azure from '@lobehub/icons/es/Azure/components/Color'
+import Baidu from '@lobehub/icons/es/Baidu/components/Color'
+import ByteDance from '@lobehub/icons/es/ByteDance/components/Color'
+import Cerebras from '@lobehub/icons/es/Cerebras/components/Color'
+import Fireworks from '@lobehub/icons/es/Fireworks/components/Color'
+import Google from '@lobehub/icons/es/Google/components/Color'
+import HuggingFace from '@lobehub/icons/es/HuggingFace/components/Color'
 import Jina from '@lobehub/icons/es/Jina/components/Mono'
-import Microsoft from '@lobehub/icons/es/Microsoft/components/Mono'
-import Nvidia from '@lobehub/icons/es/Nvidia/components/Mono'
-import SambaNova from '@lobehub/icons/es/SambaNova/components/Mono'
-import SiliconCloud from '@lobehub/icons/es/SiliconCloud/components/Mono'
-import Tencent from '@lobehub/icons/es/Tencent/components/Mono'
+import Microsoft from '@lobehub/icons/es/Microsoft/components/Color'
+import Nvidia from '@lobehub/icons/es/Nvidia/components/Color'
+import SambaNova from '@lobehub/icons/es/SambaNova/components/Color'
+import SiliconCloud from '@lobehub/icons/es/SiliconCloud/components/Color'
+import Tencent from '@lobehub/icons/es/Tencent/components/Color'
 import XiaomiMiMo from '@lobehub/icons/es/XiaomiMiMo/components/Mono'
 
+import { lobeHubIconLoaders, lobeHubModelIconRules, lobeHubProviderIconRules } from './lobehub-icon-index'
 import { findProvider, normalizeProvider } from './provider-catalog'
 
 export type LogoComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
 
-/**
- * 网关已覆盖 / 规划覆盖的模型厂商标识。
- * 统一用 lobehub 的 Mono 变体（走 currentColor），便于按主题与透明度精确控制，
- * 彩色版在密集排布时会显得杂乱，不符合当前的克制取向。
- */
+/** 优先使用 LobeHub 的原版彩色厂商图标，单色标志随主题显示。 */
 export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
   { name: 'OpenAI', Icon: OpenAI as LogoComponent },
   { name: 'OpenCode', Icon: OpenCode as LogoComponent },
@@ -96,12 +93,40 @@ export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
   { name: 'Tencent', Icon: Tencent as LogoComponent },
 ]
 
-const logoByName = new Map(modelLogos.map((logo) => [logo.name, logo]))
+type BrandLogo = (typeof modelLogos)[number]
+
+const logoByName = new Map(modelLogos.map((logo) => [normalizeProvider(logo.name), logo]))
+const packageLogos = new Map<string, BrandLogo>()
+for (const [id, title, load] of lobeHubIconLoaders) {
+  const LazyIcon = lazy(load)
+  const Icon: LogoComponent = (props) => createElement(Suspense, { fallback: null }, createElement(LazyIcon, props))
+  const logo = logoByName.get(normalizeProvider(id)) ?? { name: title, Icon }
+  packageLogos.set(id, logo)
+  for (const name of [id, title]) {
+    const key = normalizeProvider(name)
+    if (!logoByName.has(key)) logoByName.set(key, logo)
+  }
+}
+
+const mappedProviderLogos = new Map<string, BrandLogo>()
+for (const [id, keywords] of lobeHubProviderIconRules) {
+  const logo = packageLogos.get(id)
+  if (!logo) continue
+  for (const key of keywords) {
+    const name = normalizeProvider(key)
+    if (!mappedProviderLogos.has(name)) mappedProviderLogos.set(name, logo)
+  }
+}
+
+const mappedModels = lobeHubModelIconRules.map(([id, keywords]) => ({
+  logo: packageLogos.get(id),
+  matchers: keywords.map((pattern) => new RegExp(pattern, 'i')),
+}))
 
 export function findLogoByName(value: string) {
   const normalized = normalizeProvider(value)
   if (!normalized) return undefined
-  return modelLogos.find((logo) => normalizeProvider(logo.name) === normalized)
+  return logoByName.get(normalized) ?? mappedProviderLogos.get(normalized)
 }
 
 /**
@@ -109,6 +134,8 @@ export function findLogoByName(value: string) {
  * 未命中稳定命名约定时返回 undefined，由调用方展示通用模型图标。
  */
 export function findModelLogo(model: string) {
+  const mapped = mappedModels.find(({ matchers }) => matchers.some((matcher) => matcher.test(model)))
+  if (mapped?.logo) return mapped.logo
   const value = model.toLowerCase()
   const brand = value.includes('claude')
     ? 'Anthropic'
@@ -149,7 +176,7 @@ export function findModelLogo(model: string) {
                                       || value.includes('openai')
                                     ? 'OpenAI'
                                     : undefined
-  return brand ? logoByName.get(brand) : undefined
+  return brand ? logoByName.get(normalizeProvider(brand)) : undefined
 }
 
 /** 根据权威厂商字段选择界面图标，不从模型名推断后端能力或归属。 */

@@ -210,55 +210,95 @@ fn parse_models_dev(
     if model_count.is_none_or(|count| count > MAX_MODELS_DEV_MODELS) {
         return Err(ModelPriceSourceDiscoveryError::CandidateLimitExceeded);
     }
-
-    let mut candidates = Vec::new();
-    for target in targets {
-        let Some(provider) = providers.get(target.provider()) else {
-            continue;
-        };
-        if provider
+    if providers.iter().any(|(provider_id, provider)| {
+        provider
             .id
             .as_deref()
-            .is_some_and(|id| id != target.provider())
-        {
-            return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
-        }
-        let Some(model) = provider.models.get(target.model()) else {
-            continue;
-        };
-        if model.id.as_deref().is_some_and(|id| id != target.model()) {
-            return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
-        }
-        let context_window = model.limit.as_ref().and_then(|limit| limit.context);
-        if model.cost.is_none() && context_window.is_none() {
-            continue;
-        }
-        let cost = model.cost.as_ref();
-        candidates.push(ModelPriceSourceCandidate::new(
-            target.model().to_owned(),
-            target.provider().to_owned(),
-            provider.name.clone(),
-            model
-                .id
-                .clone()
-                .unwrap_or_else(|| target.model().to_owned()),
-            model.name.clone(),
-            model.last_updated.clone(),
-            context_window,
-            [
-                parse_decimal(cost.and_then(|value| value.input.as_deref()))?,
-                parse_decimal(cost.and_then(|value| value.output.as_deref()))?,
-                parse_decimal(cost.and_then(|value| value.cache_read.as_deref()))?,
-                parse_decimal(cost.and_then(|value| value.cache_write.as_deref()))?,
-            ],
-            cost.is_some_and(|value| {
-                value.tiers.as_ref().is_some_and(nonempty_json) || value.context_over_200k.is_some()
-            }),
-            model.status.as_deref() == Some("deprecated"),
-        )?);
+            .is_some_and(|id| id != provider_id.as_str())
+    }) {
+        return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
     }
-    candidates.sort_by(|left, right| left.model().cmp(right.model()));
-    ModelPriceSourcePreview::new("models_dev", fetched_at, revision, candidates)
+
+    let targets = targets
+        .into_iter()
+        .map(|target| (target.model().to_owned(), target))
+        .collect::<BTreeMap<_, _>>();
+    let mut candidates = BTreeMap::<String, ModelPriceSourceCandidate>::new();
+    for (provider_id, provider) in &providers {
+        for (source_model_id, model) in &provider.models {
+            let Some(target) = targets.get(source_model_id) else {
+                continue;
+            };
+            if model
+                .id
+                .as_deref()
+                .is_some_and(|id| id != source_model_id.as_str())
+            {
+                return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
+            }
+            let context_window = model.limit.as_ref().and_then(|limit| limit.context);
+            if model.cost.is_none() && context_window.is_none() {
+                continue;
+            }
+            let cost = model.cost.as_ref();
+            let candidate = ModelPriceSourceCandidate::new(
+                target.model().to_owned(),
+                provider_id.clone(),
+                provider.name.clone(),
+                source_model_id.clone(),
+                model.name.clone(),
+                model.last_updated.clone(),
+                context_window,
+                [
+                    parse_decimal(cost.and_then(|value| value.input.as_deref()))?,
+                    parse_decimal(cost.and_then(|value| value.output.as_deref()))?,
+                    parse_decimal(cost.and_then(|value| value.cache_read.as_deref()))?,
+                    parse_decimal(cost.and_then(|value| value.cache_write.as_deref()))?,
+                ],
+                cost.is_some_and(|value| {
+                    value.tiers.as_ref().is_some_and(nonempty_json)
+                        || value.context_over_200k.is_some()
+                }),
+                model.status.as_deref() == Some("deprecated"),
+            )?;
+            match candidates.get(target.model()) {
+                Some(current) if !models_dev_candidate_is_better(&candidate, current) => {}
+                _ => {
+                    candidates.insert(target.model().to_owned(), candidate);
+                }
+            }
+        }
+    }
+    ModelPriceSourcePreview::new(
+        "models_dev",
+        fetched_at,
+        revision,
+        candidates.into_values().collect(),
+    )
+}
+
+fn models_dev_candidate_is_better(
+    candidate: &ModelPriceSourceCandidate,
+    current: &ModelPriceSourceCandidate,
+) -> bool {
+    let candidate_input = candidate.costs()[0];
+    let current_input = current.costs()[0];
+    let candidate_has_nonzero_input = candidate_input.is_some_and(|price| !price.is_zero());
+    let current_has_nonzero_input = current_input.is_some_and(|price| !price.is_zero());
+    match (candidate_has_nonzero_input, current_has_nonzero_input) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => match (candidate_input, current_input) {
+            (Some(candidate_price), Some(current_price)) => {
+                candidate_price < current_price
+                    || (candidate_price == current_price
+                        && candidate.provider() < current.provider())
+            }
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => candidate.provider() < current.provider(),
+        },
+    }
 }
 
 fn parse_decimal(
@@ -356,7 +396,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parser_matches_exact_provider_and_preserves_decimal_costs() {
+    fn parser_matches_local_model_ids_across_providers_and_preserves_decimal_costs() {
         let preview = parse_models_dev(
             br#"{
               "openai": {
@@ -379,8 +419,8 @@ mod tests {
               }
             }"#,
             vec![
-                ModelPriceSourceTarget::new("gpt-test".to_owned(), "openai".to_owned()).unwrap(),
-                ModelPriceSourceTarget::new("gpt-test".to_owned(), "other".to_owned()).unwrap(),
+                ModelPriceSourceTarget::new("gpt-test".to_owned(), "local-alias".to_owned())
+                    .unwrap(),
             ],
             1_700_000_000,
             Some("revision-1".to_owned()),
@@ -397,6 +437,27 @@ mod tests {
         );
         assert!(candidate.has_tiered_pricing());
         assert!(candidate.costs()[3].is_none());
+    }
+
+    #[test]
+    fn parser_prefers_the_lowest_nonzero_input_price_for_duplicate_model_ids() {
+        let preview = parse_models_dev(
+            br#"{
+              "openai": {"name":"OpenAI","models":{"shared-model":{"name":"Shared","cost":{"input":2}}}},
+              "vendor": {"name":"Vendor","models":{"shared-model":{"name":"Shared","cost":{"input":1.5}}}}
+            }"#,
+            vec![ModelPriceSourceTarget::new("shared-model".to_owned(), "local".to_owned()).unwrap()],
+            1,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(preview.candidates().len(), 1);
+        assert_eq!(preview.candidates()[0].provider(), "vendor");
+        assert_eq!(
+            preview.candidates()[0].costs()[0],
+            Some(Decimal::new(15, 1))
+        );
     }
 
     #[test]

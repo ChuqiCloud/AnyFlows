@@ -31,6 +31,7 @@ pub(crate) enum AdminModelPriceBillingModeValue {
     PerToken,
     Free,
     Expression,
+    PerCall,
 }
 
 impl From<AdminModelPriceBillingMode> for AdminModelPriceBillingModeValue {
@@ -39,6 +40,7 @@ impl From<AdminModelPriceBillingMode> for AdminModelPriceBillingModeValue {
             AdminModelPriceBillingMode::PerToken => Self::PerToken,
             AdminModelPriceBillingMode::Free => Self::Free,
             AdminModelPriceBillingMode::Expression => Self::Expression,
+            AdminModelPriceBillingMode::PerCall => Self::PerCall,
         }
     }
 }
@@ -49,6 +51,7 @@ impl From<AdminModelPriceBillingModeValue> for AdminModelPriceBillingMode {
             AdminModelPriceBillingModeValue::PerToken => Self::PerToken,
             AdminModelPriceBillingModeValue::Free => Self::Free,
             AdminModelPriceBillingModeValue::Expression => Self::Expression,
+            AdminModelPriceBillingModeValue::PerCall => Self::PerCall,
         }
     }
 }
@@ -107,6 +110,9 @@ pub(crate) struct AdminModelPriceResponse {
     model: String,
     billing_mode: AdminModelPriceBillingModeValue,
     prices: AdminModelPriceValues,
+    /// 固定美元/请求价格，非按次模式为零。
+    #[schema(value_type = String, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
+    request_price: String,
     #[schema(max_length = 8192, required = true)]
     billing_expression: Option<String>,
     /// 模型级周计划；空值表示沿用分组时段倍率。
@@ -200,6 +206,10 @@ pub(crate) struct AdminModelPriceWriteItemRequest {
     context_window: Option<i64>,
     billing_mode: AdminModelPriceBillingModeValue,
     prices: AdminModelPriceValues,
+    /// 按次模式必填且大于零。其他模式可省略或传零。
+    #[serde(default)]
+    #[schema(value_type = Option<String>, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
+    request_price: Option<String>,
     #[schema(max_length = 8192)]
     billing_expression: Option<String>,
     /// 缺省或 null 保留现有计划，空数组清除计划，非空数组替换计划。
@@ -429,6 +439,7 @@ impl AdminModelPriceResponse {
             model: price.model().to_owned(),
             billing_mode: price.billing_mode().into(),
             prices: AdminModelPriceValues::from_prices(price.prices()),
+            request_price: decimal_text(price.request_price()),
             billing_expression: price.billing_expression().map(str::to_owned),
             peak_windows: price.peak_schedule().map(|schedule| {
                 schedule
@@ -514,12 +525,17 @@ impl AdminModelPriceWriteItemRequest {
                     .map_err(|_| ManagementError::InvalidRequest)
             })
             .transpose()?;
-        AdminModelPriceWriteCommand::new_with_schedule_patch(
+        AdminModelPriceWriteCommand::new_with_request_price_and_schedule_patch(
             self.model,
             self.expected_version,
             self.context_window,
             self.billing_mode.into(),
             self.prices.into_prices()?,
+            self.request_price
+                .as_deref()
+                .map(parse_decimal)
+                .transpose()?
+                .unwrap_or(Decimal::ZERO),
             self.billing_expression,
             peak_schedule,
         )
@@ -765,6 +781,37 @@ mod tests {
                 Err(ManagementError::InvalidRequest)
             ));
         }
+    }
+
+    #[test]
+    fn per_call_write_request_parses_fixed_price_without_token_prices() {
+        let request: AdminModelPriceWriteItemRequest = serde_json::from_value(serde_json::json!({
+            "model": "fixed-model",
+            "expected_version": null,
+            "context_window": null,
+            "billing_mode": "per_call",
+            "request_price": "0.025",
+            "prices": {
+                "input": "0", "output": "0", "cache_read": "0",
+                "cache_creation_5m": "0", "cache_creation_1h": "0"
+            }
+        }))
+        .unwrap();
+        assert!(request.into_command().is_ok());
+        assert!(matches!(
+            AdminModelPriceWriteItemRequest {
+                model: "fixed-model".to_owned(),
+                expected_version: None,
+                context_window: None,
+                billing_mode: AdminModelPriceBillingModeValue::PerCall,
+                prices: AdminModelPriceValues::from_prices([Decimal::ONE; 5]),
+                request_price: Some("0.025".to_owned()),
+                billing_expression: None,
+                peak_windows: None,
+            }
+            .into_command(),
+            Err(ManagementError::InvalidRequest)
+        ));
     }
 
     #[test]

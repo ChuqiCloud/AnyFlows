@@ -6,18 +6,34 @@ import {
   defaultModelPriceDraft,
   expressionModelPriceDraft,
   freeModelPriceDraft,
+  perCallModelPriceDraft,
   toModelPriceWriteItem,
 } from '../src/features/model-management/model-price-form-model.ts'
 import { newModelPeakRule } from '../src/features/model-management/model-price-peak-model.ts'
 
 const messages = {
-  decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression length', expressionValues: 'expression values',
+  decimal: 'decimal', free: 'free', positiveRequestPrice: 'request price', perCallValues: 'token prices', expression: 'expression', expressionTooLong: 'expression length', expressionValues: 'expression values',
   ratio: 'ratio', peakWindow: 'window', weekdays: 'weekdays', timezone: 'timezone', rules: 'rules', overlap: 'overlap',
 }
 
 function write(draft) {
   return toModelPriceWriteItem('scheduled-model', { draft, expectedVersion: 1, contextWindow: null })
 }
+
+test('按次价需要明确的正金额，提交时与 Token 价格分开', () => {
+  const schema = buildModelPriceDraftSchema(messages)
+  for (const price of ['', '0', '0.00', '-1']) {
+    assert.equal(schema.safeParse(perCallModelPriceDraft(price)).success, false)
+  }
+  const draft = perCallModelPriceDraft('0.025')
+  assert.equal(schema.safeParse(draft).success, true)
+  assert.equal(schema.safeParse({ ...draft, input: '1' }).success, false)
+  const { billing_mode, request_price, prices } = write(draft)
+  assert.equal(billing_mode, 'per_call')
+  assert.equal(request_price, '0.025')
+  assert.ok(Object.values(prices).every((price) => price === '0'))
+  assert.equal(defaultModelPriceDraft({ billing_mode, request_price, prices }).requestPrice, '0.025')
+})
 
 test('模型规则精确往返时区、跨午夜、零倍率，模型范围固定为所属模型', () => {
   const peakRules = [{ ...newModelPeakRule(), weekdays: [1, 3], start: '23:00', end: '02:00', ratio: '0', utcOffset: '480' }]

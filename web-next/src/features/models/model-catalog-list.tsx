@@ -92,7 +92,7 @@ export function ModelCatalogList({
           <thead className="bg-surface-2/60 text-muted-foreground">
             <tr>
               <th className="w-[34%] px-3 py-2 font-medium">{t('models.columns.model')}</th>
-              <th className="w-[14%] px-3 py-2 font-medium">{t('models.columns.input')}</th>
+              <th className="w-[14%] px-3 py-2 font-medium">{t('models.columns.inputOrRequestPrice')}</th>
               <th className="w-[14%] px-3 py-2 font-medium">{t('models.columns.output')}</th>
               <th className="w-[14%] px-3 py-2 font-medium">{t('models.columns.cacheRead')}</th>
               <th className="w-[24%] px-3 py-2 text-right font-medium">{t('models.columns.status')}</th>

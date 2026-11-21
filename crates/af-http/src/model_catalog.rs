@@ -79,6 +79,9 @@ pub(crate) struct ModelCatalogItemResponse {
     billing_mode: ModelCatalogBillingMode,
     #[schema(required = true)]
     prices: Option<ModelCatalogTokenPricesResponse>,
+    /// 固定美元/请求价格，仅按次模式返回。
+    #[schema(value_type = Option<String>, required = true, max_length = 39)]
+    request_price: Option<String>,
     ratios: ModelCatalogRatiosResponse,
     #[schema(minimum = 1)]
     price_version: u64,
@@ -287,6 +290,9 @@ impl ModelCatalogItemResponse {
             runtime_status: item.runtime_status().into(),
             billing_mode: item.billing_mode(),
             prices,
+            request_price: item
+                .request_price()
+                .map(|price| price.normalize().to_string()),
             ratios: ModelCatalogRatiosResponse {
                 group_micros: ratios.group_micros().to_string(),
                 group_model_micros: ratios.group_model_micros().to_string(),
@@ -396,6 +402,7 @@ fn parse_billing_mode(value: &str) -> Result<ModelCatalogBillingMode, Management
     match value {
         "per_token" => Ok(ModelCatalogBillingMode::PerToken),
         "free" => Ok(ModelCatalogBillingMode::Free),
+        "per_call" => Ok(ModelCatalogBillingMode::PerCall),
         _ => Err(ManagementError::InvalidRequest),
     }
 }
@@ -462,6 +469,12 @@ mod tests {
         assert_eq!(query.output_modalities(), &[ModelCatalogModality::Image]);
         assert_eq!(query.capabilities(), &[ModelCatalogCapability::Reasoning]);
         assert_eq!(query.protocols(), &[Protocol::OpenAiResponses]);
+        assert_eq!(
+            parse_list_query(Some("billing_mode=per_call"))
+                .unwrap()
+                .billing_mode(),
+            Some(ModelCatalogBillingMode::PerCall)
+        );
 
         for raw_query in [
             "q=",

@@ -41,6 +41,8 @@ impl ModelPriceSource for ModelSource {
                     12,
                 )
                 .unwrap(),
+                ModelPriceSourceRecord::per_call("call-model".to_owned(), Decimal::new(25, 2), 13)
+                    .unwrap(),
             ])
         })
     }
@@ -94,6 +96,48 @@ async fn merchant_sales_price_replaces_group_ratios_and_rejects_expression_price
         snapshot.with_merchant_sales_ratio(0),
         Err(RequestPricingSnapshotError::MerchantPricingUnavailable)
     ));
+}
+
+#[tokio::test]
+async fn per_call_snapshot_applies_platform_and_merchant_ratios() {
+    let model_cache = ModelPriceCache::load(Arc::new(ModelSource)).await.unwrap();
+    let group_cache = GroupPricingCache::load(Arc::new(GroupSource))
+        .await
+        .unwrap();
+    let source = CachedRequestPricingSnapshotSource::new(model_cache, group_cache);
+    let base = source
+        .capture(
+            "call-model",
+            GroupId::new(1).unwrap(),
+            GroupId::new(2).unwrap(),
+            0,
+        )
+        .unwrap();
+    assert_eq!(base.billing_mode(), BillingMode::PerCall);
+    assert_eq!(base.model_mode(), ModelPriceMode::PerCall);
+    assert_eq!(
+        base.per_call_resolver()
+            .unwrap()
+            .effective_price_usd()
+            .unwrap(),
+        Decimal::new(225, 3)
+    );
+
+    let merchant = base.with_merchant_sales_ratio(800_000).unwrap();
+    assert_eq!(
+        merchant
+            .per_call_resolver()
+            .unwrap()
+            .effective_price_usd()
+            .unwrap(),
+        Decimal::new(2, 1)
+    );
+    let charged = merchant
+        .resolver()
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(charged.billing_mode(), BillingMode::PerCall);
+    assert_eq!(charged.quota(), Quota::new(100_000).unwrap());
 }
 
 impl GroupPricingSource for GroupSource {

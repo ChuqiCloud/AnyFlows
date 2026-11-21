@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use af_admin::{
     AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,
@@ -80,6 +80,8 @@ pub(crate) struct AdminEmailSettingsResponse {
     reply_to: Option<String>,
     #[schema(minimum = 1, maximum = 60)]
     timeout_seconds: u16,
+    /// 按邮件类型保存的自定义 HTML 模板。
+    html_templates: BTreeMap<String, String>,
     #[schema(minimum = 1)]
     version: i64,
     delivery_ready: bool,
@@ -98,6 +100,7 @@ impl From<AdminEmailSettings> for AdminEmailSettingsResponse {
             from_name: settings.from_name().map(str::to_owned),
             reply_to: settings.reply_to().map(str::to_owned),
             timeout_seconds: settings.timeout_seconds(),
+            html_templates: settings.html_templates().clone(),
             version: settings.version(),
             delivery_ready: settings.delivery_ready(),
         }
@@ -127,6 +130,8 @@ pub(crate) struct AdminEmailSettingsRequest {
     reply_to: Option<String>,
     #[schema(minimum = 1, maximum = 60)]
     timeout_seconds: u16,
+    /// 更新指定类型的 HTML 模板，空字符串恢复纯文本。
+    html_templates: Option<BTreeMap<String, String>>,
 }
 
 /// 测试邮件只允许指定收件人，不接受主题或正文。
@@ -190,6 +195,7 @@ async fn update_email_settings(
         request.reply_to,
         request.timeout_seconds,
     )
+    .and_then(|command| command.with_html_templates(request.html_templates.unwrap_or_default()))
     .map_err(map_email_settings_error)?;
     let settings = state
         .service
@@ -199,7 +205,7 @@ async fn update_email_settings(
     Ok(no_store_json(AdminEmailSettingsResponse::from(settings)))
 }
 
-/// 使用当前数据库快照投递固定正文测试邮件，成功时不回显任何地址。
+/// 使用当前数据库快照和已保存的测试模板投递邮件。
 async fn send_test_email(
     State(state): State<EmailSettingsHttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,

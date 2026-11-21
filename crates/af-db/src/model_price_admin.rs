@@ -54,6 +54,7 @@ pub struct ModelPriceWriteRecord {
     context_window: Option<i64>,
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
+    request_price: Decimal,
     billing_expression: Option<String>,
     /// None 保留现有计划；Some(None) 清除计划；Some(Some(_)) 替换计划。
     peak_schedule: Option<Option<ModelPeakSchedule>>,
@@ -118,6 +119,29 @@ impl ModelPriceWriteRecord {
         billing_expression: Option<String>,
         peak_schedule: Option<Option<ModelPeakSchedule>>,
     ) -> Result<Self, ModelPriceWriteError> {
+        Self::new_with_request_price_and_schedule_patch(
+            model,
+            expected_version,
+            context_window,
+            billing_mode,
+            prices,
+            Decimal::ZERO,
+            billing_expression,
+            peak_schedule,
+        )
+    }
+
+    /// 写入含固定美元/请求价的模型价格，并可原子保留、清除或替换分时计划。
+    pub fn new_with_request_price_and_schedule_patch(
+        model: String,
+        expected_version: Option<u64>,
+        context_window: Option<i64>,
+        billing_mode: ModelPriceBillingMode,
+        prices: [Decimal; 5],
+        request_price: Decimal,
+        billing_expression: Option<String>,
+        peak_schedule: Option<Option<ModelPeakSchedule>>,
+    ) -> Result<Self, ModelPriceWriteError> {
         if !is_valid_model_name(&model)
             || expected_version == Some(0)
             || context_window
@@ -125,9 +149,11 @@ impl ModelPriceWriteRecord {
             || prices
                 .iter()
                 .any(|price| !is_valid_model_price_decimal(*price))
+            || !is_valid_model_price_decimal(request_price)
             || !crate::model_price::is_valid_model_price_shape(
                 billing_mode,
                 prices,
+                request_price,
                 billing_expression.as_deref(),
             )
             || peak_schedule
@@ -145,6 +171,7 @@ impl ModelPriceWriteRecord {
             context_window,
             billing_mode,
             prices,
+            request_price,
             billing_expression,
             peak_schedule,
         })
@@ -174,6 +201,12 @@ impl ModelPriceWriteRecord {
     #[must_use]
     pub const fn prices(&self) -> [Decimal; 5] {
         self.prices
+    }
+
+    /// 返回待写入的固定美元/请求价格。
+    #[must_use]
+    pub const fn request_price(&self) -> Decimal {
+        self.request_price
     }
 
     /// 返回待写入的表达式正文；调用方不得将正文写入日志或错误。
@@ -429,6 +462,7 @@ fn apply_fields(
     active.cache_read_price = Set(SensitiveDecimal::from(cache_read));
     active.cache_creation_5m_price = Set(SensitiveDecimal::from(cache_creation_5m));
     active.cache_creation_1h_price = Set(SensitiveDecimal::from(cache_creation_1h));
+    active.request_price = Set(SensitiveDecimal::from(write.request_price));
     // 表达式正文与计费模式保持同一事务更新，切回固定单价时显式清除旧正文。
     active.billing_expression = Set(write.billing_expression.clone().map(SensitiveString::from));
     if let Some(schedule) = &write.peak_schedule {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Input, Skeleton } from '@heroui/react'
 import { Check, ChevronDown, Cpu, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { findProviderLogo } from '@/components/brand/model-logos'
+import { findModelLogo, findProviderLogo } from '@/components/brand/model-logos'
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
 import { cn } from '@/lib/utils'
 import { PoolButton as Button } from './merchant-pool-ui'
@@ -51,9 +51,9 @@ function MerchantModelCatalog({ value, excludedModels, disabled, onSelect }: Mer
         {models.map((model) => {
           const selected = value.trim() === model.model
           const unavailable = excludedModels.includes(model.model)
-          const ProviderIcon = findProviderLogo(model.provider)?.Icon ?? Cpu
+          const ModelIcon = findModelLogo(model.model)?.Icon ?? findProviderLogo(model.provider)?.Icon ?? Cpu
           return <button key={model.model} type="button" role="option" aria-label={model.model} aria-selected={selected} disabled={disabled || unavailable} onClick={() => onSelect(model.model)} className={cn('flex min-h-10 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50', selected && 'bg-primary/8')}>
-            <ProviderIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <ModelIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="min-w-0 flex-1"><span className="block truncate font-mono text-xs">{model.model}</span><span className="block truncate text-[11px] text-muted-foreground">{model.display_name} · {model.provider}</span></span>
             {unavailable ? <span className="shrink-0 text-[11px] text-muted-foreground">{t('merchantPool.modelPicker.alreadyAdded')}</span> : <Check className={cn('size-3.5 shrink-0 text-primary', !selected && 'opacity-0')} aria-hidden="true" />}
           </button>

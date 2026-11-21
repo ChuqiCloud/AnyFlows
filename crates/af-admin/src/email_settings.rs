@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin, sync::Arc};
+use std::{collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_account::{DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretKind};
 use af_db::{
@@ -9,7 +9,10 @@ use af_domain::Quota;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use crate::{SessionPrincipal, SessionRole};
+use crate::{
+    SessionPrincipal, SessionRole,
+    email_template::{self, EmailTemplateKind},
+};
 
 const MAX_HOST_BYTES: usize = 255;
 const MAX_EMAIL_BYTES: usize = 320;
@@ -61,6 +64,7 @@ pub struct AdminEmailSettings {
     from_name: Option<String>,
     reply_to: Option<String>,
     timeout_seconds: u16,
+    html_templates: BTreeMap<String, String>,
     version: i64,
     delivery_ready: bool,
 }
@@ -111,6 +115,7 @@ impl AdminEmailSettings {
             from_name,
             reply_to,
             timeout_seconds,
+            html_templates: BTreeMap::new(),
             version,
             delivery_ready,
         })
@@ -176,6 +181,12 @@ impl AdminEmailSettings {
         self.delivery_ready
     }
 
+    /// 返回管理员配置的模板，键为业务邮件类型。
+    #[must_use]
+    pub const fn html_templates(&self) -> &BTreeMap<String, String> {
+        &self.html_templates
+    }
+
     fn from_record(record: &EmailSettingsRecord) -> Self {
         Self {
             enabled: record.enabled(),
@@ -188,6 +199,7 @@ impl AdminEmailSettings {
             from_name: record.from_name().map(str::to_owned),
             reply_to: record.reply_to().map(str::to_owned),
             timeout_seconds: record.timeout_seconds(),
+            html_templates: record.html_templates().clone(),
             version: record.version(),
             delivery_ready: record.delivery_ready(),
         }
@@ -226,6 +238,7 @@ pub struct AdminEmailSettingsCommand {
     from_name: Option<String>,
     reply_to: Option<String>,
     timeout_seconds: u16,
+    html_templates: BTreeMap<String, String>,
 }
 
 impl AdminEmailSettingsCommand {
@@ -275,7 +288,18 @@ impl AdminEmailSettingsCommand {
             from_name,
             reply_to,
             timeout_seconds,
+            html_templates: BTreeMap::new(),
         })
+    }
+
+    /// 仅更新给出的邮件类型，空字符串恢复纯文本邮件。
+    pub fn with_html_templates(
+        mut self,
+        mut templates: BTreeMap<String, String>,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        email_template::validate_templates(&mut templates)?;
+        self.html_templates = templates;
+        Ok(self)
     }
 
     fn into_record(
@@ -304,7 +328,8 @@ impl AdminEmailSettingsCommand {
             self.from_name,
             self.reply_to,
             self.timeout_seconds,
-        ))
+        )
+        .with_html_templates(self.html_templates))
     }
 }
 
@@ -347,6 +372,7 @@ pub struct EmailDeliveryRequest {
     recipient: String,
     subject: String,
     body: Zeroizing<String>,
+    html: Option<Zeroizing<String>>,
     timeout_seconds: u16,
 }
 
@@ -357,6 +383,8 @@ impl EmailDeliveryRequest {
         recipient: String,
         subject: String,
         body: String,
+        kind: EmailTemplateKind,
+        values: &[(&str, &str)],
     ) -> Result<Self, AdminEmailSettingsError> {
         if !record.delivery_ready() || !is_valid_email_address(&recipient) {
             return Err(AdminEmailSettingsError::NotConfigured);
@@ -369,6 +397,10 @@ impl EmailDeliveryRequest {
                     .map_err(|_| AdminEmailSettingsError::Internal)
             })
             .transpose()?;
+        let html = record
+            .html_templates()
+            .get(kind.key())
+            .and_then(|source| email_template::render(source, &subject, &body, &recipient, values));
         Ok(Self {
             host: record.host().to_owned(),
             port: record.port(),
@@ -381,6 +413,7 @@ impl EmailDeliveryRequest {
             recipient,
             subject,
             body: Zeroizing::new(body),
+            html,
             timeout_seconds: record.timeout_seconds(),
         })
     }
@@ -396,6 +429,8 @@ impl EmailDeliveryRequest {
             recipient,
             TEST_EMAIL_SUBJECT.to_owned(),
             TEST_EMAIL_BODY.to_owned(),
+            EmailTemplateKind::SmtpTest,
+            &[],
         )
     }
 
@@ -419,6 +454,11 @@ impl EmailDeliveryRequest {
             recipient,
             REGISTRATION_EMAIL_SUBJECT.to_owned(),
             body,
+            EmailTemplateKind::Registration,
+            &[
+                ("code", code),
+                ("expires_minutes", &ttl_minutes.to_string()),
+            ],
         )
     }
 
@@ -442,6 +482,11 @@ impl EmailDeliveryRequest {
             recipient,
             EMAIL_BINDING_SUBJECT.to_owned(),
             body,
+            EmailTemplateKind::EmailBinding,
+            &[
+                ("code", code),
+                ("expires_minutes", &ttl_minutes.to_string()),
+            ],
         )
     }
 
@@ -471,6 +516,12 @@ impl EmailDeliveryRequest {
             recipient,
             PASSWORD_RESET_EMAIL_SUBJECT.to_owned(),
             body,
+            EmailTemplateKind::PasswordReset,
+            &[
+                ("site_name", site_name),
+                ("reset_url", reset_url),
+                ("expires_minutes", &ttl_minutes.to_string()),
+            ],
         )
     }
 
@@ -500,7 +551,20 @@ impl EmailDeliveryRequest {
             current_quota.units(),
             threshold.units()
         );
-        Self::from_record(record, cipher, recipient, subject, body)
+        Self::from_record(
+            record,
+            cipher,
+            recipient,
+            subject,
+            body,
+            EmailTemplateKind::BalanceAlert,
+            &[
+                ("site_name", site_name),
+                ("username", username),
+                ("balance", &current_quota.units().to_string()),
+                ("threshold", &threshold.units().to_string()),
+            ],
+        )
     }
 
     #[allow(
@@ -553,7 +617,23 @@ impl EmailDeliveryRequest {
             "您好，{username}：\n\n您的订阅计划“{plan_name}”当前剩余额度为 {remaining} / {}，已达到剩余 {threshold_percent}% 的提醒边界。本窗口将在 {window_end} 结束，请及时检查后续用量安排。\n\n同一订阅窗口最多发送一次此类提醒。如不希望继续接收，可在个人资料的通知偏好中关闭用量提醒。",
             quota_amount.units()
         );
-        Self::from_record(record, cipher, recipient, subject, body)
+        Self::from_record(
+            record,
+            cipher,
+            recipient,
+            subject,
+            body,
+            EmailTemplateKind::SubscriptionBalanceAlert,
+            &[
+                ("site_name", site_name),
+                ("username", username),
+                ("plan_name", plan_name),
+                ("remaining", &remaining.to_string()),
+                ("quota", &quota_amount.units().to_string()),
+                ("threshold_percent", &threshold_percent.to_string()),
+                ("window_end", &window_end),
+            ],
+        )
     }
 
     #[must_use]
@@ -611,6 +691,12 @@ impl EmailDeliveryRequest {
     #[must_use]
     pub fn body(&self) -> &str {
         &self.body
+    }
+
+    /// 返回渲染后的可选 HTML 正文。
+    #[must_use]
+    pub fn html(&self) -> Option<&str> {
+        self.html.as_ref().map(|html| html.as_str())
     }
 
     #[must_use]

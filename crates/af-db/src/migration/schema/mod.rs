@@ -147,7 +147,8 @@ pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,
 };
 pub(super) use pricing::{
-    create_group_model_ratios, create_model_prices, rebuild_model_prices_for_expression,
+    create_group_model_ratios, create_model_prices, create_model_prices_with_peak_windows,
+    rebuild_model_prices_for_expression,
 };
 pub(super) use proxy::{
     CREDENTIAL_PROXY_FOREIGN_KEY, create_credential_proxy_reference, create_proxies,

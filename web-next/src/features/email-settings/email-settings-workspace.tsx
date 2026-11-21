@@ -16,6 +16,7 @@ import {
 } from './email-settings-form-model'
 import { EmailTestPanel } from './email-test-panel'
 import { EmailSenderFields } from './email-settings-sender-fields'
+import { EmailTemplateEditor } from './email-template-editor'
 
 type EmailSettingsWorkspaceProps = {
   settings: AdminEmailSettings
@@ -40,6 +41,7 @@ export function EmailSettingsWorkspace({ settings }: EmailSettingsWorkspaceProps
       fromName: t('emailSettings.validation.fromName'),
       replyTo: t('emailSettings.validation.replyTo'),
       timeout: t('emailSettings.validation.timeout'),
+      htmlTemplates: t('emailSettings.templates.errors.save'),
     })),
   })
 
@@ -50,7 +52,7 @@ export function EmailSettingsWorkspace({ settings }: EmailSettingsWorkspaceProps
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
-      const saved = await mutation.mutateAsync(toEmailSettingsRequest(values))
+      const saved = await mutation.mutateAsync(toEmailSettingsRequest(values, settings.html_templates))
       form.reset(emailSettingsValues(saved))
       setPasswordVisible(false)
     } catch {
@@ -117,10 +119,19 @@ export function EmailSettingsWorkspace({ settings }: EmailSettingsWorkspaceProps
           onPasswordVisibilityChange={() => setPasswordVisible((visible) => !visible)}
         />
         <EmailSenderFields form={form} />
+        <Controller
+          control={form.control}
+          name="htmlTemplates"
+          render={({ field }) => (
+            <EmailTemplateEditor templates={field.value} onChange={field.onChange} disabled={mutation.isPending} />
+          )}
+        />
 
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] bg-surface-2/25 px-4 py-3">
           <div className="text-xs">
-            {mutation.isError ? (
+            {form.formState.errors.htmlTemplates ? (
+              <span role="alert" className="text-destructive">{t('emailSettings.templates.errors.save')}</span>
+            ) : mutation.isError ? (
               <span role="alert" className="text-destructive">{t('emailSettings.errors.save')}</span>
             ) : mutation.isSuccess && !form.formState.isDirty ? (
               <span className="inline-flex items-center gap-1.5 text-success">

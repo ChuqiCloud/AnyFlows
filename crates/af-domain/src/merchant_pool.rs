@@ -150,6 +150,7 @@ pub struct MerchantModelPrices {
     pub cache_read: String,
     pub cache_write_5m: String,
     pub cache_write_1h: String,
+    pub request_price: Option<String>,
     pub version: i64,
 }
 
