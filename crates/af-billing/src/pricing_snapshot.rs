@@ -6,8 +6,8 @@ use thiserror::Error;
 use crate::{
     BillingMode, ContractPriceSource, ContractPriceSourceError, GroupPricingCache,
     GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache, ModelPriceCacheError,
-    ModelPriceMode, PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver,
-    TokenPrices,
+    ModelPriceMode, PerCallPricingResolver, PricingRatio, PricingRatios, PricingResolver,
+    RatioPricingResolver, TokenPrices,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
@@ -85,6 +85,7 @@ pub struct RequestPricingSnapshot {
     model_mode: ModelPriceMode,
     resolver: Arc<dyn PricingResolver>,
     ratio_resolver: Option<RatioPricingResolver>,
+    per_call_resolver: Option<PerCallPricingResolver>,
     model_version: u64,
     ratios: PricingRatios,
     model_generation: u64,
@@ -103,7 +104,7 @@ impl RequestPricingSnapshot {
             || self.contract_price.is_some()
             || !matches!(
                 self.model_mode,
-                ModelPriceMode::PerToken | ModelPriceMode::Free
+                ModelPriceMode::PerToken | ModelPriceMode::Free | ModelPriceMode::PerCall
             )
         {
             return Err(RequestPricingSnapshotError::MerchantPricingUnavailable);
@@ -111,13 +112,21 @@ impl RequestPricingSnapshot {
         let ratio = PricingRatio::new(ratio_micros)
             .map_err(|_| RequestPricingSnapshotError::MerchantPricingUnavailable)?;
         let ratios = PricingRatios::new(ratio, PricingRatio::ONE, PricingRatio::ONE);
-        let resolver = self
-            .ratio_resolver
-            .ok_or(RequestPricingSnapshotError::MerchantPricingUnavailable)?
-            .with_ratios(ratios);
+        let resolver: Arc<dyn PricingResolver> = if let Some(ratio_resolver) = self.ratio_resolver {
+            Arc::new(ratio_resolver.with_ratios(ratios))
+        } else if let Some(per_call_resolver) = self.per_call_resolver {
+            Arc::new(per_call_resolver.with_ratios(ratios))
+        } else {
+            return Err(RequestPricingSnapshotError::MerchantPricingUnavailable);
+        };
         self.ratios = ratios;
-        self.ratio_resolver = Some(resolver);
-        self.resolver = Arc::new(resolver);
+        self.ratio_resolver = self
+            .ratio_resolver
+            .map(|resolver| resolver.with_ratios(ratios));
+        self.per_call_resolver = self
+            .per_call_resolver
+            .map(|resolver| resolver.with_ratios(ratios));
+        self.resolver = resolver;
         Ok(self)
     }
 
@@ -173,6 +182,12 @@ impl RequestPricingSnapshot {
     #[must_use]
     pub const fn ratio_resolver(&self) -> Option<RatioPricingResolver> {
         self.ratio_resolver
+    }
+
+    /// 返回固定按次解析器，供模型目录展示倍率后的请求价格。
+    #[must_use]
+    pub const fn per_call_resolver(&self) -> Option<PerCallPricingResolver> {
+        self.per_call_resolver
     }
 }
 
@@ -311,8 +326,10 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         let billing_mode = match model_mode {
             ModelPriceMode::PerToken | ModelPriceMode::Expression => BillingMode::PerToken,
             ModelPriceMode::Free => BillingMode::Free,
+            ModelPriceMode::PerCall => BillingMode::PerCall,
         };
         let ratio_resolver = model_price.resolver(ratios);
+        let per_call_resolver = model_price.per_call_resolver(ratios);
         let resolver = model_price
             .request_resolver(ratios)
             .map_err(|_| RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
@@ -321,6 +338,7 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
             model_mode,
             resolver,
             ratio_resolver,
+            per_call_resolver,
             model_version: model_price.version(),
             ratios,
             model_generation: model_snapshot.generation(),
@@ -392,6 +410,7 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
             let neutral_ratios =
                 PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE);
             snapshot.ratio_resolver = Some(RatioPricingResolver::metered(prices, neutral_ratios));
+            snapshot.per_call_resolver = None;
             snapshot.resolver = Arc::new(RatioPricingResolver::metered(prices, neutral_ratios));
             snapshot.contract_price = Some(contract_price);
             Ok(snapshot)

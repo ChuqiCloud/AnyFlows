@@ -2649,6 +2649,19 @@
   },
   "modelManagement": {
     "title": "Model management",
+    "lobehub": {
+      "action": "Import LobeHub catalog",
+      "description": "Import {{providers}} providers and {{models}} models. Existing entries are skipped. New models are saved as hidden drafts for review, pricing, channel setup, and publishing.",
+      "loading": "Checking existing providers and models…",
+      "progressLabel": "LobeHub catalog import progress",
+      "progress": "Processed {{completed}} of {{total}}. Added {{providersCreated}} providers and {{modelsCreated}} models. Skipped {{skipped}}.",
+      "complete": "LobeHub catalog import complete.",
+      "failed": "The import was interrupted. Saved entries are kept. Start another import to continue.",
+      "stopped": "Import stopped. Saved entries are kept. Start another import to continue.",
+      "submit": "Import all",
+      "stop": "Stop import",
+      "close": "Close"
+    },
     "subtitle": "Maintain verified model products or create an upstream sync preview for explicit review.",
     "count_one": "{{count}} model loaded",
     "count_other": "{{count}} models loaded",
@@ -2955,6 +2968,7 @@
       "status": {
         "unpriced": "Unpriced",
         "priced": "Priced",
+        "per_call": "Per request",
         "free": "Explicitly free",
         "expression": "Expression billing",
         "staged": "Staged",
@@ -2965,6 +2979,7 @@
       },
       "billing": {
         "per_token": "Per Token",
+        "per_call": "Per request",
         "free": "Explicitly free",
         "expression": "Expression billing"
       },
@@ -2975,6 +2990,8 @@
         "litellm": "LiteLLM official prices"
       },
       "fields": {
+        "requestPrice": "Price per request",
+        "inputOrRequestPrice": "Input / per request",
         "input": "Input",
         "output": "Output",
         "cacheRead": "Cache read",
@@ -2990,6 +3007,8 @@
         "values": "Formal sale prices",
         "valuesHint": "These values affect new request billing and are never overwritten automatically from a reference source.",
         "priceUnit": "USD / million Token",
+        "perCallHint": "Charge the same fixed amount for each successful request, regardless of Token usage.",
+        "requestPriceUnit": "USD / request",
         "expressionHint": "The server validates the expression in the Rhai sandbox and settles it per request; fixed price columns remain zero.",
         "versionChanged": "This draft expects {{expected}}, while the current formal price is v{{current}}. Review it before updating the precondition.",
         "newVersion": "a new-price precondition"
@@ -3010,6 +3029,8 @@
       "validation": {
         "decimal": "Enter a non-negative plain decimal without a sign or exponent, with up to 10 integer and 28 fractional digits.",
         "free": "All five values must be zero in explicitly free mode.",
+        "positiveRequestPrice": "Enter a request price greater than zero.",
+        "perCallValues": "All five Token prices must be zero in per-request mode.",
         "expression": "Enter a billing expression.",
         "expressionTooLong": "The expression cannot exceed 8192 UTF-8 bytes.",
         "expressionValues": "Fixed price columns must all be zero in expression mode.",
@@ -3028,6 +3049,7 @@
         "apply": "Apply {{count}} prices",
         "select": "Select the price draft for {{model}}",
         "selectionReady": "This draft can be included in the batch",
+        "selectionLimitReached": "A batch can contain up to 100 models",
         "editBeforeSelect": "Edit and complete the pricing draft first",
         "edit": "Edit pricing for {{model}}",
         "editPrice": "Edit price",
@@ -3039,12 +3061,14 @@
       "preview": {
         "loaded_one": "Matched {{count}} public reference price",
         "loaded_other": "Matched {{count}} public reference prices",
+        "showAll": "Show all models",
+        "showMatches": "Show matches only",
         "fetchedAt": "Fetched {{value}}"
       },
       "evidence": {
         "title": "{{source}} public reference evidence",
         "sourceBadge": "Public price source",
-        "none": "{{source}} has not returned a reference price for this exact provider and Canonical identifier.",
+        "none": "{{source}} has not returned a reference price for this exact Canonical model identifier.",
         "disclaimer": "Public costs are review evidence only. They are not this site's sale prices and never overwrite a draft automatically.",
         "deprecated": "Deprecated at source",
         "deprecationDate": "Deprecates on {{date}}",
@@ -3769,11 +3793,15 @@
     "billing": {
       "per_token": "Per token",
       "per_token_short": "Usage",
+      "per_call": "Per request",
+      "per_call_short": "Per request",
       "free": "Free"
     },
     "columns": {
       "model": "Model",
       "input": "Input price",
+      "inputOrRequestPrice": "Input / per request",
+      "requestPrice": "Per request",
       "output": "Output price",
       "cacheRead": "Cache read",
       "cacheCreation5m": "5-minute cache write",
@@ -3785,8 +3813,11 @@
       "compatible": "Compatible model",
       "notApplicable": "Not applicable",
       "priceTitle": "{{label}}: ${{value}} per million tokens",
+      "requestPriceTitle": "{{label}}: ${{value}} per request",
       "perMillion": "per million tokens",
       "perMillionCompact": "/ 1M",
+      "perRequest": "per request",
+      "perRequestCompact": "/ request",
       "appliedRatios": "Applied ratios",
       "baseRatios": "Public base ratios",
       "moreTags": "+{{count}}",
@@ -4891,6 +4922,38 @@
     }
   },
   "emailSettings": {
+    "templates": {
+      "title": "Email HTML templates",
+      "kind": "Email type",
+      "html": "HTML body",
+      "hint": "Select a variable to insert it at the cursor. Save an empty body to restore the default email for this type.",
+      "variables": "Available variables",
+      "useExample": "Load example template",
+      "restore": "Restore default body",
+      "preview": "Preview sample email",
+      "kinds": {
+        "registration": "Registration code",
+        "email_binding": "Email verification code",
+        "password_reset": "Password reset",
+        "balance_alert": "Low balance alert",
+        "subscription_balance_alert": "Subscription quota alert",
+        "smtp_test": "SMTP test"
+      },
+      "samples": {
+        "registration": "Your registration code is {{code}}. It expires in {{expires_minutes}} minutes.",
+        "email_binding": "Your email verification code is {{code}}. It expires in {{expires_minutes}} minutes.",
+        "password_reset": "Open this link within {{expires_minutes}} minutes to reset your {{site_name}} password.\n{{reset_url}}",
+        "balance_alert": "Hi {{username}}, your balance of {{balance}} is below the threshold of {{threshold}}.",
+        "subscription_balance_alert": "Hi {{username}}, your {{plan_name}} plan has {{remaining}} of {{quota}} left, at or below the {{threshold_percent}}% threshold. The window ends at {{window_end}}.",
+        "smtp_test": "If you received this email, your SMTP configuration is working."
+      },
+      "errors": {
+        "size": "Use up to 16 KiB of HTML. Line breaks and tabs are allowed.",
+        "variable": "Use complete variables from the list. A template can contain up to 64 variable references.",
+        "required": "Insert the code, reset link, or full body variable so the recipient can complete the action.",
+        "save": "An email template needs attention. Check each email type."
+      }
+    },
     "title": "Email settings",
     "subtitle": "Configure system SMTP delivery. Passwords are encrypted, and test recipients are never stored.",
     "loading": "Loading email settings",

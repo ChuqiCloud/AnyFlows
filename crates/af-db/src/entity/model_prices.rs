@@ -24,6 +24,8 @@ pub struct Model {
     pub cache_creation_5m_price: SensitiveDecimal,
     #[sea_orm(column_type = "Decimal(Some((38, 28)))")]
     pub cache_creation_1h_price: SensitiveDecimal,
+    #[sea_orm(column_type = "Decimal(Some((38, 28)))")]
+    pub request_price: SensitiveDecimal,
     #[sea_orm(column_type = "Text", nullable)]
     pub billing_expression: Option<SensitiveString>,
     /// 可选模型级周计划；命中时覆盖分组高峰倍率。

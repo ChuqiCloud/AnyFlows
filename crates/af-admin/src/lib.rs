@@ -145,6 +145,7 @@ mod email_binding;
 mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
+mod email_template;
 mod gateway_model_auth;
 mod group_key_access;
 mod group_model_policy;

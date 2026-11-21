@@ -190,12 +190,13 @@ function BillingModeFilter(props: {
   const options: { value: ModelBillingFilter; label: string }[] = [
     { value: 'all', label: t('models.filters.allShort') },
     { value: 'per_token', label: t('models.billing.per_token_short') },
+    { value: 'per_call', label: t('models.billing.per_call_short') },
     { value: 'free', label: t('models.billing.free') },
   ]
   return (
     <fieldset className="border-t border-[var(--hairline)] pt-4">
       <legend className="mb-2.5 text-xs font-semibold">{t('models.filters.billingMode')}</legend>
-      <div className="grid grid-cols-3 gap-1 rounded-lg bg-surface-2/70 p-1">
+      <div className="grid grid-cols-4 gap-1 rounded-lg bg-surface-2/70 p-1">
         {options.map((option) => (
           <button
             key={option.value}

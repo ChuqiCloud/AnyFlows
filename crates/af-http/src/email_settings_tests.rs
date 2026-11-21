@@ -181,7 +181,9 @@ async fn admin_can_update_read_and_test_email_without_secret_echo() -> Result<()
         .await?;
     assert_eq!(initial.status(), StatusCode::OK);
     assert_eq!(initial.headers()[CACHE_CONTROL], "no-store");
-    assert_eq!(response_json(initial).await?["enabled"], false);
+    let initial_body = response_json(initial).await?;
+    assert_eq!(initial_body["enabled"], false);
+    assert_eq!(initial_body["html_templates"], json!({}));
 
     let updated = app
         .clone()
@@ -199,6 +201,7 @@ async fn admin_can_update_read_and_test_email_without_secret_echo() -> Result<()
     assert_eq!(updated_body["password_configured"], true);
     assert_eq!(updated_body["delivery_ready"], true);
     assert_eq!(updated_body["version"], 2);
+    assert_eq!(updated_body["html_templates"], json!({}));
     assert!(updated_body.get("password").is_none());
     assert!(!updated_body.to_string().contains(SMTP_PASSWORD));
 

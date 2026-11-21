@@ -149,6 +149,8 @@ mod m20261116_000185_create_plugin_action_proposals;
 mod m20261118_000186_create_plugin_capability_actions;
 mod m20261119_000187_create_plugin_storage;
 mod m20261119_000188_create_plugin_host_records;
+mod m20261121_000189_add_model_per_call_pricing;
+mod m20261121_000190_add_email_html_templates;
 mod schema;
 
 #[cfg(test)]
@@ -571,6 +573,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261118_000186_create_plugin_capability_actions::Migration),
             Box::new(m20261119_000187_create_plugin_storage::Migration),
             Box::new(m20261119_000188_create_plugin_host_records::Migration),
+            Box::new(m20261121_000189_add_model_per_call_pricing::Migration),
+            Box::new(m20261121_000190_add_email_html_templates::Migration),
         ]
     }
 }

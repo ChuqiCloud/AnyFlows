@@ -131,7 +131,10 @@ pub(super) fn document() -> OpenApi {
             &[
                 ("currency", string()),
                 ("unit", string()),
-                ("billing_mode", enumeration(&["token", "free", "video"])),
+                (
+                    "billing_mode",
+                    enumeration(&["token", "free", "video", "per_call"]),
+                ),
                 (
                     "video_per_second",
                     nullable(object(
@@ -148,6 +151,7 @@ pub(super) fn document() -> OpenApi {
                 ("cache_read", string()),
                 ("cache_write_5m", string()),
                 ("cache_write_1h", string()),
+                ("request_price", nullable(string())),
                 ("version", integer()),
             ],
             &[],

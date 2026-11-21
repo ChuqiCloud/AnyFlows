@@ -17,6 +17,7 @@
 | [插件协议参考](plugin-protocol-reference.md) | Manifest、JSON Lines 请求响应、包格式和签名规则 |
 | [插件动作确认](plugin-actions.md) | 渠道监控目标启停提案、管理员确认和接口权限 |
 | [渠道配置](channels.md) | 客户端档案、代理池和 NVIDIA 上游 |
+| [模型价格](model-pricing.md) | 按次收费、倍率和公开参考价 |
 | [渠道质量评分](channel-routing.md) | 成功率与延迟、模型隔离、软避让和可选上游价值配置 |
 | [对话协议](conversation-compatibility.md) | 四类协议转换、历史回放和兼容范围 |
 | [运行状态](runtime-status.md) | 节点、依赖健康和用量统计 |

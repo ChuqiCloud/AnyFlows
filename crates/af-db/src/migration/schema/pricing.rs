@@ -11,18 +11,44 @@ const MODEL_PRICES_TABLE: &str = "model_prices";
 const MODEL_PRICES_NEXT_TABLE: &str = "model_prices_next";
 const MAX_BILLING_EXPRESSION_BYTES: usize = 8 * 1024;
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum ModelPriceTableVersion {
+    Token,
+    Expression,
+    PeakWindows,
+    PerCall,
+}
+
 /// 创建当前 Ratio 定价能力需要的模型价格目录。
 pub(in crate::migration) async fn create_model_prices(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
-    create_model_prices_table(manager, MODEL_PRICES_TABLE, false).await
+    create_model_prices_table(manager, MODEL_PRICES_TABLE, ModelPriceTableVersion::Token).await
+}
+
+pub(in crate::migration) async fn create_model_prices_with_peak_windows(
+    manager: &SchemaManager<'_>,
+    table_name: &'static str,
+    allow_per_call: bool,
+) -> Result<(), DbErr> {
+    let version = if allow_per_call {
+        ModelPriceTableVersion::PerCall
+    } else {
+        ModelPriceTableVersion::PeakWindows
+    };
+    create_model_prices_table(manager, table_name, version).await
 }
 
 async fn create_model_prices_table(
     manager: &SchemaManager<'_>,
     table_name: &'static str,
-    allow_expression: bool,
+    version: ModelPriceTableVersion,
 ) -> Result<(), DbErr> {
+    let modes = match version {
+        ModelPriceTableVersion::Token => vec![1_i16, 2],
+        ModelPriceTableVersion::Expression | ModelPriceTableVersion::PeakWindows => vec![1, 2, 3],
+        ModelPriceTableVersion::PerCall => vec![1, 2, 3, 4],
+    };
     let mut statement = table(manager, Alias::new(table_name));
     statement
         .col(
@@ -36,21 +62,21 @@ async fn create_model_prices_table(
             ColumnDef::new(model_prices::Column::BillingMode)
                 .small_integer()
                 .not_null()
-                .check(
-                    Expr::col(model_prices::Column::BillingMode).is_in(if allow_expression {
-                        vec![1_i16, 2_i16, 3_i16]
-                    } else {
-                        vec![1_i16, 2_i16]
-                    }),
-                ),
+                .check(Expr::col(model_prices::Column::BillingMode).is_in(modes)),
         )
         .col(price(manager, model_prices::Column::InputPrice))
         .col(price(manager, model_prices::Column::OutputPrice))
         .col(price(manager, model_prices::Column::CacheReadPrice))
         .col(price(manager, model_prices::Column::CacheCreation5mPrice))
         .col(price(manager, model_prices::Column::CacheCreation1hPrice));
-    if allow_expression {
+    if version >= ModelPriceTableVersion::Expression {
         statement.col(ColumnDef::new(model_prices::Column::BillingExpression).text());
+    }
+    if version >= ModelPriceTableVersion::PeakWindows {
+        statement.col(ColumnDef::new(Alias::new("peak_windows")).json_binary());
+    }
+    if version == ModelPriceTableVersion::PerCall {
+        statement.col(price(manager, model_prices::Column::RequestPrice));
     }
     statement
         .col(
@@ -62,16 +88,24 @@ async fn create_model_prices_table(
         )
         .col(timestamp(manager, model_prices::Column::CreatedAt))
         .col(timestamp(manager, model_prices::Column::UpdatedAt));
-    if allow_expression {
-        statement.check(expression_price_shape_check(manager.get_database_backend()));
-    } else {
-        // 模式 2 表示显式免费，禁止同时留下会被误读的非零单价。
-        statement.check(
-            Expr::col(model_prices::Column::BillingMode)
-                .eq(1_i16)
-                .or(prices_are_zero()),
-        );
-    }
+    let shape = match version {
+        ModelPriceTableVersion::Token => Expr::col(model_prices::Column::BillingMode)
+            .eq(1_i16)
+            .or(prices_are_zero()),
+        ModelPriceTableVersion::Expression | ModelPriceTableVersion::PeakWindows => {
+            expression_price_shape_check(manager.get_database_backend())
+        }
+        ModelPriceTableVersion::PerCall => {
+            expression_price_shape_check(manager.get_database_backend())
+                .and(Expr::col(model_prices::Column::RequestPrice).eq(0_i64))
+                .or(Expr::col(model_prices::Column::BillingMode)
+                    .eq(4_i16)
+                    .and(Expr::col(model_prices::Column::RequestPrice).gt(0_i64))
+                    .and(prices_are_zero())
+                    .and(Expr::col(model_prices::Column::BillingExpression).is_null()))
+        }
+    };
+    statement.check(shape);
     manager.create_table(statement.to_owned()).await
 }
 
@@ -99,7 +133,12 @@ pub(in crate::migration) async fn rebuild_model_prices_for_expression(
                     )
                     .await?;
             }
-            create_model_prices_table(manager, MODEL_PRICES_NEXT_TABLE, allow_expression).await?;
+            let version = if allow_expression {
+                ModelPriceTableVersion::Expression
+            } else {
+                ModelPriceTableVersion::Token
+            };
+            create_model_prices_table(manager, MODEL_PRICES_NEXT_TABLE, version).await?;
             copy_model_prices(manager).await?;
             manager
                 .drop_table(

@@ -52,6 +52,8 @@ pub enum AdminModelPriceBillingMode {
     Free,
     /// 使用版本化 Rhai 表达式定价，五类固定单价必须全部为零。
     Expression,
+    /// 按固定美元/请求价格计费。
+    PerCall,
 }
 
 impl From<ModelPriceBillingMode> for AdminModelPriceBillingMode {
@@ -60,6 +62,7 @@ impl From<ModelPriceBillingMode> for AdminModelPriceBillingMode {
             ModelPriceBillingMode::PerToken => Self::PerToken,
             ModelPriceBillingMode::Free => Self::Free,
             ModelPriceBillingMode::Expression => Self::Expression,
+            ModelPriceBillingMode::PerCall => Self::PerCall,
         }
     }
 }
@@ -70,6 +73,7 @@ impl From<AdminModelPriceBillingMode> for ModelPriceBillingMode {
             AdminModelPriceBillingMode::PerToken => Self::PerToken,
             AdminModelPriceBillingMode::Free => Self::Free,
             AdminModelPriceBillingMode::Expression => Self::Expression,
+            AdminModelPriceBillingMode::PerCall => Self::PerCall,
         }
     }
 }
@@ -79,6 +83,7 @@ pub struct AdminModelPrice {
     model: String,
     billing_mode: AdminModelPriceBillingMode,
     prices: [Decimal; 5],
+    request_price: Decimal,
     billing_expression: Option<String>,
     peak_schedule: Option<ModelPeakSchedule>,
     version: u64,
@@ -90,6 +95,7 @@ impl AdminModelPrice {
             model: record.model().to_owned(),
             billing_mode: record.billing_mode().into(),
             prices: record.prices(),
+            request_price: record.request_price(),
             billing_expression: record.billing_expression().map(str::to_owned),
             peak_schedule: record.peak_schedule().cloned(),
             version: record.version(),
@@ -109,6 +115,12 @@ impl AdminModelPrice {
     #[must_use]
     pub const fn prices(&self) -> [Decimal; 5] {
         self.prices
+    }
+
+    /// 返回固定美元/请求价格。
+    #[must_use]
+    pub const fn request_price(&self) -> Decimal {
+        self.request_price
     }
 
     /// 返回管理员可编辑的表达式正文；不存在时表示固定单价或免费模式。
@@ -276,6 +288,29 @@ impl AdminModelPriceWriteCommand {
         billing_expression: Option<String>,
         peak_schedule: Option<Option<ModelPeakSchedule>>,
     ) -> Result<Self, AdminModelPriceError> {
+        Self::new_with_request_price_and_schedule_patch(
+            model,
+            expected_version,
+            context_window,
+            billing_mode,
+            prices,
+            Decimal::ZERO,
+            billing_expression,
+            peak_schedule,
+        )
+    }
+
+    /// 校验包含按次价格的正式价格写入命令。
+    pub fn new_with_request_price_and_schedule_patch(
+        model: String,
+        expected_version: Option<u64>,
+        context_window: Option<i64>,
+        billing_mode: AdminModelPriceBillingMode,
+        prices: [Decimal; 5],
+        request_price: Decimal,
+        billing_expression: Option<String>,
+        peak_schedule: Option<Option<ModelPeakSchedule>>,
+    ) -> Result<Self, AdminModelPriceError> {
         if billing_mode == AdminModelPriceBillingMode::Expression {
             let source = billing_expression
                 .as_deref()
@@ -286,12 +321,13 @@ impl AdminModelPriceWriteCommand {
         } else if billing_expression.is_some() {
             return Err(AdminModelPriceError::InvalidInput);
         }
-        let record = ModelPriceWriteRecord::new_with_schedule_patch(
+        let record = ModelPriceWriteRecord::new_with_request_price_and_schedule_patch(
             model,
             expected_version,
             context_window,
             billing_mode.into(),
             prices,
+            request_price,
             billing_expression,
             peak_schedule,
         )
@@ -1174,6 +1210,34 @@ mod tests {
                 Err(AdminModelPriceError::InvalidInput)
             ));
         }
+    }
+
+    #[test]
+    fn per_call_write_commands_reject_token_prices_and_accept_fixed_price() {
+        let valid = AdminModelPriceWriteCommand::new_with_request_price_and_schedule_patch(
+            "gpt-test".to_owned(),
+            None,
+            None,
+            AdminModelPriceBillingMode::PerCall,
+            [Decimal::ZERO; 5],
+            Decimal::new(25, 2),
+            None,
+            None,
+        );
+        assert!(valid.is_ok());
+        assert!(matches!(
+            AdminModelPriceWriteCommand::new_with_request_price_and_schedule_patch(
+                "gpt-test".to_owned(),
+                None,
+                None,
+                AdminModelPriceBillingMode::PerCall,
+                [Decimal::ONE; 5],
+                Decimal::new(25, 2),
+                None,
+                None,
+            ),
+            Err(AdminModelPriceError::InvalidInput)
+        ));
     }
 
     #[test]

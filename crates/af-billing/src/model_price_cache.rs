@@ -109,6 +109,29 @@ impl ModelPriceSourceRecord {
         })
     }
 
+    /// 构造按固定美元/请求价格计费的 source 记录。
+    pub fn per_call(
+        model: String,
+        request_price: rust_decimal::Decimal,
+        version: u64,
+    ) -> Result<Self, ModelPriceCacheError> {
+        if !is_valid_model_name(&model)
+            || version == 0
+            || request_price < rust_decimal::Decimal::ZERO
+        {
+            return Err(ModelPriceCacheError::InvalidRecord);
+        }
+        Ok(Self {
+            model,
+            price: ModelPrice {
+                definition: ModelPriceDefinition::PerCall(request_price),
+                version,
+                peak_schedule: None,
+            },
+            peak_schedule: None,
+        })
+    }
+
     /// 为该模型设置已校验的定时倍率覆盖。
     #[must_use]
     pub fn with_peak_schedule(mut self, schedule: Option<ModelPeakSchedule>) -> Self {
@@ -134,6 +157,7 @@ pub struct ModelPrice {
 #[derive(Clone, Eq, PartialEq)]
 enum ModelPriceDefinition {
     PerToken(TokenPrices),
+    PerCall(rust_decimal::Decimal),
     Free,
     Expression(BillingExpressionDefinition),
 }
@@ -147,6 +171,8 @@ pub enum ModelPriceMode {
     Free,
     /// 版本化计费表达式。
     Expression,
+    /// 固定美元/请求价格。
+    PerCall,
 }
 
 impl ModelPrice {
@@ -155,16 +181,18 @@ impl ModelPrice {
     pub const fn mode(&self) -> ModelPriceMode {
         match &self.definition {
             ModelPriceDefinition::PerToken(_) => ModelPriceMode::PerToken,
+            ModelPriceDefinition::PerCall(_) => ModelPriceMode::PerCall,
             ModelPriceDefinition::Free => ModelPriceMode::Free,
             ModelPriceDefinition::Expression(_) => ModelPriceMode::Expression,
         }
     }
 
-    /// 返回当前 Ratio/Free 生命周期可处理的模式；Expression 尚未接线时返回空。
+    /// 返回缓存模型对应的请求计费模式；Expression 尚未接线时返回空。
     #[must_use]
     pub const fn billing_mode(&self) -> Option<BillingMode> {
         match &self.definition {
             ModelPriceDefinition::PerToken(_) => Some(BillingMode::PerToken),
+            ModelPriceDefinition::PerCall(_) => Some(BillingMode::PerCall),
             ModelPriceDefinition::Free => Some(BillingMode::Free),
             ModelPriceDefinition::Expression(_) => None,
         }
@@ -184,7 +212,7 @@ impl ModelPrice {
             .and_then(|schedule| schedule.ratio_at(time))
     }
 
-    /// 把固定单价与本次请求倍率组合成解析器；Expression 尚未接线时返回空。
+    /// 把 Token 价格或免费模式与本次请求倍率组合成解析器。
     #[must_use]
     pub const fn resolver(&self, ratios: PricingRatios) -> Option<RatioPricingResolver> {
         match &self.definition {
@@ -192,7 +220,22 @@ impl ModelPrice {
                 Some(RatioPricingResolver::metered(*prices, ratios))
             }
             ModelPriceDefinition::Free => Some(RatioPricingResolver::free()),
+            ModelPriceDefinition::PerCall(_) => None,
             ModelPriceDefinition::Expression(_) => None,
+        }
+    }
+
+    /// 把固定请求价格与本次倍率组合成解析器。
+    #[must_use]
+    pub const fn per_call_resolver(
+        &self,
+        ratios: PricingRatios,
+    ) -> Option<crate::PerCallPricingResolver> {
+        match &self.definition {
+            ModelPriceDefinition::PerCall(price) => Some(
+                crate::PerCallPricingResolver::from_validated(*price, ratios),
+            ),
+            _ => None,
         }
     }
 
@@ -206,6 +249,9 @@ impl ModelPrice {
                 Ok(Arc::new(RatioPricingResolver::metered(*prices, ratios)))
             }
             ModelPriceDefinition::Free => Ok(Arc::new(RatioPricingResolver::free())),
+            ModelPriceDefinition::PerCall(price) => Ok(Arc::new(
+                crate::PerCallPricingResolver::from_validated(*price, ratios),
+            )),
             ModelPriceDefinition::Expression(definition) => Ok(Arc::new(
                 ExpressionPricingResolver::new(definition.compile(ratios)?),
             )),
@@ -460,6 +506,13 @@ impl ModelPriceSource for DatabaseModelPriceSource {
                         .map(|source| source.with_peak_schedule(record.peak_schedule().cloned()))
                         .map_err(|_| ModelPriceSourceError::Invariant)
                     }
+                    ModelPriceBillingMode::PerCall => ModelPriceSourceRecord::per_call(
+                        record.model().to_owned(),
+                        record.request_price(),
+                        record.version(),
+                    )
+                    .map(|source| source.with_peak_schedule(record.peak_schedule().cloned()))
+                    .map_err(|_| ModelPriceSourceError::Invariant),
                 })
                 .collect()
         })

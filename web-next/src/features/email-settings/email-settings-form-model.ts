@@ -4,6 +4,7 @@ import type {
   AdminEmailSettings,
   AdminEmailSettingsRequestWritable,
 } from '@/lib/api/generated/types.gen'
+import { emailTemplateError, emailTemplateKinds } from './email-template-model.ts'
 
 export type EmailSettingsValues = {
   enabled: boolean
@@ -16,6 +17,7 @@ export type EmailSettingsValues = {
   fromName: string
   replyTo: string
   timeoutSeconds: number
+  htmlTemplates: Record<string, string>
 }
 
 type ValidationMessages = {
@@ -30,6 +32,7 @@ type ValidationMessages = {
   fromName: string
   replyTo: string
   timeout: string
+  htmlTemplates: string
 }
 
 /** 从服务端脱敏投影构造表单值，密码始终从空字符串开始。 */
@@ -45,6 +48,7 @@ export function emailSettingsValues(settings: AdminEmailSettings): EmailSettings
     fromName: settings.from_name ?? '',
     replyTo: settings.reply_to ?? '',
     timeoutSeconds: settings.timeout_seconds,
+    htmlTemplates: settings.html_templates ?? {},
   }
 }
 
@@ -64,6 +68,7 @@ export function buildEmailSettingsSchema(
     fromName: z.string(),
     replyTo: z.string(),
     timeoutSeconds: z.number().int(messages.timeout).min(1, messages.timeout).max(60, messages.timeout),
+    htmlTemplates: z.record(z.string(), z.string()),
   }).superRefine((values, context) => {
     if (values.host && !isValidHost(values.host)) {
       addIssue(context, 'host', messages.host)
@@ -95,13 +100,22 @@ export function buildEmailSettingsSchema(
     if (values.replyTo && !isValidEmail(values.replyTo)) {
       addIssue(context, 'replyTo', messages.replyTo)
     }
+    if (emailTemplateKinds.some((kind) => emailTemplateError(kind, values.htmlTemplates[kind] ?? ''))) {
+      addIssue(context, 'htmlTemplates', messages.htmlTemplates)
+    }
   })
 }
 
 /** 将表单值转换为完整覆盖请求；空密码表示保留，空用户名会关闭认证。 */
 export function toEmailSettingsRequest(
   values: EmailSettingsValues,
+  savedTemplates: Record<string, string> = {},
 ): AdminEmailSettingsRequestWritable {
+  const htmlTemplates = Object.fromEntries(emailTemplateKinds.flatMap((kind) => {
+    const source = values.htmlTemplates[kind] ?? ''
+    const html = source.trim() ? source : ''
+    return html === (savedTemplates[kind] ?? '') ? [] : [[kind, html]]
+  }))
   return {
     enabled: values.enabled,
     host: values.host,
@@ -113,6 +127,7 @@ export function toEmailSettingsRequest(
     from_name: values.fromName || null,
     reply_to: values.replyTo || null,
     timeout_seconds: values.timeoutSeconds,
+    ...(Object.keys(htmlTemplates).length ? { html_templates: htmlTemplates } : {}),
   }
 }
 

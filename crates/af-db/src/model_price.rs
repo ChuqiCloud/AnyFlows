@@ -24,6 +24,8 @@ pub enum ModelPriceBillingMode {
     Free,
     /// 由版本化表达式计算用量价格；五类固定单价必须全部为零。
     Expression,
+    /// 固定美元/请求价格。
+    PerCall,
 }
 
 impl ModelPriceBillingMode {
@@ -32,6 +34,7 @@ impl ModelPriceBillingMode {
             1 => Ok(Self::PerToken),
             2 => Ok(Self::Free),
             3 => Ok(Self::Expression),
+            4 => Ok(Self::PerCall),
             _ => Err(ModelPriceRepositoryError::Invariant),
         }
     }
@@ -41,6 +44,7 @@ impl ModelPriceBillingMode {
             Self::PerToken => 1,
             Self::Free => 2,
             Self::Expression => 3,
+            Self::PerCall => 4,
         }
     }
 }
@@ -51,6 +55,7 @@ pub struct ModelPriceRecord {
     model: String,
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
+    request_price: Decimal,
     billing_expression: Option<String>,
     peak_schedule: Option<ModelPeakSchedule>,
     version: u64,
@@ -73,6 +78,12 @@ impl ModelPriceRecord {
     #[must_use]
     pub const fn prices(&self) -> [Decimal; 5] {
         self.prices
+    }
+
+    /// 返回固定美元/请求价格；其他模式必须为零。
+    #[must_use]
+    pub const fn request_price(&self) -> Decimal {
+        self.request_price
     }
 
     /// 返回版本化计费表达式正文；调用方不得将正文写入日志或公共错误。
@@ -105,6 +116,7 @@ impl ModelPriceRecord {
             model.cache_creation_5m_price.expose(),
             model.cache_creation_1h_price.expose(),
         ];
+        let request_price = model.request_price.expose();
         let billing_expression = model
             .billing_expression
             .as_ref()
@@ -129,7 +141,8 @@ impl ModelPriceRecord {
             || prices
                 .iter()
                 .any(|price| !is_valid_model_price_decimal(*price))
-            || !is_valid_model_price_shape(billing_mode, prices, billing_expression)
+            || !is_valid_model_price_decimal(request_price)
+            || !is_valid_model_price_shape(billing_mode, prices, request_price, billing_expression)
         {
             return Err(ModelPriceRepositoryError::Invariant);
         }
@@ -137,6 +150,7 @@ impl ModelPriceRecord {
             model: name.to_owned(),
             billing_mode,
             prices,
+            request_price,
             billing_expression: billing_expression.map(str::to_owned),
             peak_schedule,
             version,
@@ -265,16 +279,25 @@ pub(crate) fn is_valid_model_price_decimal(price: Decimal) -> bool {
 pub(crate) fn is_valid_model_price_shape(
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
+    request_price: Decimal,
     billing_expression: Option<&str>,
 ) -> bool {
     match billing_mode {
-        ModelPriceBillingMode::PerToken => billing_expression.is_none(),
+        ModelPriceBillingMode::PerToken => request_price.is_zero() && billing_expression.is_none(),
         ModelPriceBillingMode::Free => {
-            billing_expression.is_none() && prices.iter().all(Decimal::is_zero)
+            request_price.is_zero()
+                && billing_expression.is_none()
+                && prices.iter().all(Decimal::is_zero)
         }
         ModelPriceBillingMode::Expression => {
-            prices.iter().all(Decimal::is_zero)
+            request_price.is_zero()
+                && prices.iter().all(Decimal::is_zero)
                 && billing_expression.is_some_and(is_valid_billing_expression_storage)
+        }
+        ModelPriceBillingMode::PerCall => {
+            request_price > Decimal::ZERO
+                && prices.iter().all(Decimal::is_zero)
+                && billing_expression.is_none()
         }
     }
 }

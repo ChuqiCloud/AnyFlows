@@ -3,7 +3,7 @@ import { Button, Chip } from '@heroui/react'
 import { Boxes, Pencil, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { findProviderLogo } from '@/components/brand/model-logos'
+import { findModelLogo, findProviderLogo } from '@/components/brand/model-logos'
 import type { AdminModel, AdminModelModality } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { SiteTooltip } from '@/shared/components/site-tooltip'
@@ -86,12 +86,11 @@ export function ModelManagementTable({ models, onDelete, onEdit }: ModelManageme
 
 function ModelIdentity({ model }: { model: AdminModel }) {
   const { t } = useTranslation()
-  const logo = findProviderLogo(model.provider)
-  const ProviderIcon = logo?.Icon
+  const ModelIcon = findModelLogo(model.model)?.Icon ?? findProviderLogo(model.provider)?.Icon ?? Boxes
   return (
     <div className="flex min-w-0 items-start gap-2.5">
       <div className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-2 text-muted-foreground">
-        {ProviderIcon ? <ProviderIcon className="size-4" aria-hidden="true" /> : <Boxes className="size-4" aria-hidden="true" />}
+        <ModelIcon className="size-4" aria-hidden="true" />
         {model.icon_url ? <img key={model.icon_url} src={model.icon_url} alt="" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.hidden = true }} /> : null}
       </div>
       <div className="min-w-0">

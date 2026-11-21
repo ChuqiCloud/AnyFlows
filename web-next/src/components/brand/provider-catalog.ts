@@ -1,3 +1,5 @@
+import { lobeHubProviders } from './lobehub-providers.ts'
+
 export type ProviderOption = {
   id: string
   name: string
@@ -7,7 +9,7 @@ export type ProviderOption = {
 
 
 // Brand identity is independent of the channel's transport adapter.
-export const providerCatalog: readonly ProviderOption[] = [
+const builtInProviders: readonly ProviderOption[] = [
   { id: 'opencode', name: 'OpenCode', logo: 'OpenCode' },
   { id: 'openai', name: 'OpenAI', logo: 'OpenAI' },
   { id: 'codex', name: 'OpenAI Codex', logo: 'OpenAI', aliases: ['codex', 'chatgpt codex'] },
@@ -42,8 +44,8 @@ export const providerCatalog: readonly ProviderOption[] = [
   { id: 'openrouter', name: 'OpenRouter', logo: 'OpenRouter' },
   { id: 'ollama', name: 'Ollama', logo: 'Ollama' },
   { id: 'amazon', name: 'Amazon', logo: 'AWS', aliases: ['aws'] },
-  { id: 'bedrock', name: 'Amazon Bedrock', logo: 'AWS', aliases: ['amazon-bedrock', 'aws-bedrock'] },
-  { id: 'vertex', name: 'Google Vertex AI', logo: 'Google', aliases: ['vertexai', 'google-vertex'] },
+  { id: 'bedrock', name: 'Amazon Bedrock', logo: 'Bedrock', aliases: ['amazon-bedrock', 'aws-bedrock'] },
+  { id: 'vertex', name: 'Google Vertex AI', logo: 'VertexAI', aliases: ['vertexai', 'google-vertex'] },
   { id: 'microsoft', name: 'Microsoft', logo: 'Microsoft' },
   { id: 'azure', name: 'Microsoft Azure', logo: 'Azure', aliases: ['azureopenai'] },
   { id: 'siliconflow', name: 'SiliconFlow', logo: 'SiliconCloud', aliases: ['siliconcloud', '硅基流动'] },
@@ -55,6 +57,15 @@ export const providerCatalog: readonly ProviderOption[] = [
   { id: 'ai21', name: 'AI21 Labs', logo: 'AI21' },
 ]
 
+const builtInProviderIds = new Set(builtInProviders.map(({ id }) => id))
+
+export const providerCatalog: readonly ProviderOption[] = [
+  ...builtInProviders,
+  ...lobeHubProviders
+    .filter(({ id }) => !builtInProviderIds.has(id))
+    .map(({ id, name }) => ({ id, name, logo: id })),
+]
+
 export function normalizeProvider(value: string) {
   return value.trim().toLowerCase().replace(/[\s._-]/g, '')
 }
@@ -62,6 +73,9 @@ export function normalizeProvider(value: string) {
 export function findProviderOption(provider: string, options: readonly ProviderOption[]) {
   const normalized = normalizeProvider(provider)
   if (!normalized) return undefined
+  const exact = provider.trim().toLowerCase()
+  const exactMatch = options.find(({ id }) => id.toLowerCase() === exact)
+  if (exactMatch) return exactMatch
   const separated = provider.trim().toLowerCase().replace(/[\s._-]+/g, '-')
   return options
     .map((item) => ({ item, score: [item.id, item.name, ...(item.aliases ?? [])].reduce((best, value) => {

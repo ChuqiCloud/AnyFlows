@@ -3,7 +3,7 @@ import { Button, Chip, Drawer, DrawerBody, DrawerContent, DrawerHeader, DrawerFo
 import { Boxes, Check, ChevronRight, Cpu, RefreshCw, Search, SearchX } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { findProviderLogo } from '@/components/brand/model-logos'
+import { findModelLogo, findProviderLogo } from '@/components/brand/model-logos'
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
 import { cn } from '@/lib/utils'
 
@@ -127,8 +127,7 @@ export function ApiKeyModelSelector({ allowCustom = false, values, error, onChan
                     <div className="grid gap-0.5">
                       {models.map((item) => {
                         const selected = values.includes(item.model)
-                        const logo = findProviderLogo(item.provider)
-                        const ProviderIcon = logo?.Icon ?? Cpu
+                        const ModelIcon = findModelLogo(item.model)?.Icon ?? findProviderLogo(item.provider)?.Icon ?? Cpu
                         return (
                           <button
                             key={item.model}
@@ -145,7 +144,7 @@ export function ApiKeyModelSelector({ allowCustom = false, values, error, onChan
                           >
                             {/* 只使用模型商品里的权威厂商字段与显式图标，不按模型名猜测归属。 */}
                             <span className="relative grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-surface-2 text-muted-foreground">
-                              <ProviderIcon className="size-4" aria-hidden="true" />
+                              <ModelIcon className="size-4" aria-hidden="true" />
                               {item.icon_url ? (
                                 <img
                                   key={item.icon_url}

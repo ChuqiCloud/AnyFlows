@@ -8,8 +8,8 @@ use af_admin::{
     SessionAuthentication, SessionRole,
 };
 use af_billing::{
-    BillingMode, ModelPrice, ModelPriceCache, PricingRatio, PricingRatios, RatioPricingResolver,
-    RequestPricingSnapshotError, RequestPricingSnapshotSource,
+    BillingMode, ModelPrice, ModelPriceCache, PerCallPricingResolver, PricingRatio, PricingRatios,
+    RatioPricingResolver, RequestPricingSnapshotError, RequestPricingSnapshotSource,
 };
 use af_db::{
     AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
@@ -24,6 +24,14 @@ mod providers;
 
 type CatalogClock = Arc<dyn Fn() -> Option<PricingWeekTime> + Send + Sync>;
 const MAX_METADATA_SCAN_PAGES: usize = 100;
+
+struct CatalogPricing {
+    billing_mode: BillingMode,
+    token_resolver: Option<RatioPricingResolver>,
+    per_call_resolver: Option<PerCallPricingResolver>,
+    ratios: PricingRatios,
+    model_version: u64,
+}
 
 /// 组合模型价格、调度运行时与请求定价快照的模型目录读取服务。
 pub(crate) struct RuntimeModelCatalogReader {
@@ -63,31 +71,37 @@ impl RuntimeModelCatalogReader {
 
     fn catalog_item_from_pricing(
         metadata: ModelCatalogMetadata,
-        billing_mode: BillingMode,
-        resolver: RatioPricingResolver,
-        ratios: PricingRatios,
-        model_version: u64,
+        pricing: CatalogPricing,
         runtime_status: ModelCatalogRuntimeStatus,
         available_protocols: Vec<Protocol>,
         supports_responses_compact: bool,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
-        let billing_mode = Self::catalog_billing_mode(billing_mode)?;
-        let prices = resolver
-            .effective_token_prices()
+        let billing_mode = Self::catalog_billing_mode(pricing.billing_mode)?;
+        let prices = pricing
+            .token_resolver
+            .map(|resolver| resolver.effective_token_prices())
+            .transpose()
             .map_err(|_| ModelCatalogReadError::Internal)?
+            .flatten()
             .map(|prices| ModelCatalogTokenPrices::from_decimals(prices.into_values()))
             .transpose()?;
+        let request_price = pricing
+            .per_call_resolver
+            .map(|resolver| resolver.effective_price_usd())
+            .transpose()
+            .map_err(|_| ModelCatalogReadError::Internal)?;
         let ratios = ModelCatalogRatios::new(
-            ratios.group().micros(),
-            ratios.group_model().micros(),
-            ratios.applied_peak().micros(),
+            pricing.ratios.group().micros(),
+            pricing.ratios.group_model().micros(),
+            pricing.ratios.applied_peak().micros(),
         )?;
-        ModelCatalogItem::new(
+        ModelCatalogItem::new_with_request_price(
             metadata,
             billing_mode,
             prices,
+            request_price,
             ratios,
-            model_version,
+            pricing.model_version,
             runtime_status,
             available_protocols,
             supports_responses_compact,
@@ -100,6 +114,7 @@ impl RuntimeModelCatalogReader {
         match billing_mode {
             BillingMode::PerToken => Ok(ModelCatalogBillingMode::PerToken),
             BillingMode::Free => Ok(ModelCatalogBillingMode::Free),
+            BillingMode::PerCall => Ok(ModelCatalogBillingMode::PerCall),
             _ => Err(ModelCatalogReadError::Internal),
         }
     }
@@ -126,12 +141,13 @@ impl RuntimeModelCatalogReader {
         };
         Self::catalog_item_from_pricing(
             metadata,
-            pricing.billing_mode(),
-            pricing
-                .ratio_resolver()
-                .ok_or(ModelCatalogReadError::Internal)?,
-            pricing.ratios(),
-            pricing.model_version(),
+            CatalogPricing {
+                billing_mode: pricing.billing_mode(),
+                token_resolver: pricing.ratio_resolver(),
+                per_call_resolver: pricing.per_call_resolver(),
+                ratios: pricing.ratios(),
+                model_version: pricing.model_version(),
+            },
             ModelCatalogRuntimeStatus::Available,
             available_protocols,
             supports_responses_compact,
@@ -149,15 +165,17 @@ impl RuntimeModelCatalogReader {
         let billing_mode = price
             .billing_mode()
             .ok_or(ModelCatalogReadError::Internal)?;
-        let resolver = price
-            .resolver(ratios)
-            .ok_or(ModelCatalogReadError::Internal)?;
+        let resolver = price.resolver(ratios);
+        let per_call_resolver = price.per_call_resolver(ratios);
         Self::catalog_item_from_pricing(
             metadata,
-            billing_mode,
-            resolver,
-            ratios,
-            price.version(),
+            CatalogPricing {
+                billing_mode,
+                token_resolver: resolver,
+                per_call_resolver,
+                ratios,
+                model_version: price.version(),
+            },
             ModelCatalogRuntimeStatus::NotEvaluated,
             Vec::new(),
             supports_responses_compact,
@@ -700,6 +718,8 @@ mod tests {
                     1,
                 )
                 .unwrap(),
+                ModelPriceSourceRecord::per_call("fixed-test".to_owned(), Decimal::new(25, 2), 3)
+                    .unwrap(),
             ],
         }))
         .await
@@ -715,6 +735,7 @@ mod tests {
         let model_metadata = AdminModelRepository::new(pool, Duration::from_secs(2)).unwrap();
         for (model, display_name, provider) in [
             ("free-test", "Community Free", "community"),
+            ("fixed-test", "Fixed Request Model", "OpenAI"),
             ("gpt-test", "Flagship Model", "OpenAI"),
             ("no-price", "No Price", "provider"),
         ] {
@@ -750,9 +771,12 @@ mod tests {
                 .iter()
                 .map(ModelCatalogItem::model)
                 .collect::<Vec<_>>(),
-            vec!["free-test", "gpt-test"]
+            vec!["fixed-test", "free-test", "gpt-test"]
         );
-        let paid = &page.items()[1];
+        let fixed = &page.items()[0];
+        assert_eq!(fixed.billing_mode(), ModelCatalogBillingMode::PerCall);
+        assert_eq!(fixed.request_price(), Some(Decimal::new(25, 2)));
+        let paid = &page.items()[2];
         assert_eq!(paid.prices().unwrap().input(), "1.25");
         assert_eq!(paid.ratios().group_micros(), 1_000_000);
         assert_eq!(paid.ratios().group_model_micros(), 1_000_000);
@@ -778,6 +802,31 @@ mod tests {
             .unwrap();
         assert_eq!(filtered.items().len(), 1);
         assert_eq!(filtered.items()[0].model(), "gpt-test");
+
+        let per_call = reader
+            .list(
+                None,
+                &ModelCatalogQuery::new(
+                    None,
+                    Some(ModelCatalogBillingMode::PerCall),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    24,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(per_call.items().len(), 1);
+        assert_eq!(per_call.items()[0].model(), "fixed-test");
+        assert_eq!(
+            per_call.items()[0].request_price(),
+            Some(Decimal::new(25, 2))
+        );
 
         let provider_filtered = reader
             .list(
@@ -811,7 +860,7 @@ mod tests {
                 .iter()
                 .map(|provider| (provider.name(), provider.model_count()))
                 .collect::<Vec<_>>(),
-            vec![("OpenAI", 1), ("community", 1)]
+            vec![("OpenAI", 2), ("community", 1)]
         );
 
         let capable = reader
@@ -832,7 +881,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(capable.items().len(), 2);
+        assert_eq!(capable.items().len(), 3);
 
         let unavailable_protocol = reader
             .list(

@@ -5,7 +5,7 @@ use af_admin::{
 };
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::{Mailbox, header::ContentType},
+    message::{Mailbox, MultiPart, header::ContentType},
     transport::smtp::{AsyncSmtpTransportBuilder, authentication::Credentials},
 };
 use tokio::time::timeout;
@@ -42,14 +42,21 @@ fn build_message(request: &EmailDeliveryRequest) -> Result<Message, EmailDeliver
     let mut builder = Message::builder()
         .from(from)
         .to(recipient)
-        .subject(request.subject())
-        .header(ContentType::TEXT_PLAIN);
+        .subject(request.subject());
     if let Some(reply_to) = request.reply_to() {
         builder = builder.reply_to(mailbox(reply_to, None)?);
     }
-    builder
-        .body(request.body().to_owned())
-        .map_err(|_| EmailDeliveryError::InvalidConfiguration)
+    let message = if let Some(html) = request.html() {
+        builder.multipart(MultiPart::alternative_plain_html(
+            request.body().to_owned(),
+            html.to_owned(),
+        ))
+    } else {
+        builder
+            .header(ContentType::TEXT_PLAIN)
+            .body(request.body().to_owned())
+    };
+    message.map_err(|_| EmailDeliveryError::InvalidConfiguration)
 }
 
 fn mailbox(address: &str, display_name: Option<&str>) -> Result<Mailbox, EmailDeliveryError> {

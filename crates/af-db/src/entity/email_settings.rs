@@ -25,6 +25,8 @@ pub struct Model {
     #[sea_orm(column_type = "String(StringLen::N(320))", nullable)]
     pub reply_to: Option<SensitiveString>,
     pub timeout_seconds: i32,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub html_templates: Option<Json>,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

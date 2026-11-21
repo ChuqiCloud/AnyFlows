@@ -2649,6 +2649,19 @@
   },
   "modelManagement": {
     "title": "模型管理",
+    "lobehub": {
+      "action": "导入 LobeHub 目录",
+      "description": "导入目录中的 {{providers}} 个厂商和 {{models}} 个模型。已有条目会跳过，新模型保存为隐藏草稿，核实后可配置价格、绑定渠道并发布。",
+      "loading": "正在核对已有厂商和模型…",
+      "progressLabel": "LobeHub 目录导入进度",
+      "progress": "已处理 {{completed}} / {{total}}，新增厂商 {{providersCreated}} 个、新增模型 {{modelsCreated}} 个、跳过 {{skipped}} 个。",
+      "complete": "LobeHub 目录导入完成。",
+      "failed": "导入中断。已新增的条目已保存，再次导入可继续。",
+      "stopped": "导入已停止。已新增的条目已保存，再次导入可继续。",
+      "submit": "导入全部",
+      "stop": "停止导入",
+      "close": "关闭"
+    },
     "subtitle": "管理模型的展示信息、能力和发布状态。也可从上游同步模型列表，经人工确认后导入。",
     "count_one": "已加载 {{count}} 个模型",
     "count_other": "已加载 {{count}} 个模型",
@@ -2955,6 +2968,7 @@
       "status": {
         "unpriced": "未定价",
         "priced": "已定价",
+        "per_call": "按次计费",
         "free": "显式免费",
         "expression": "表达式计费",
         "staged": "待提交",
@@ -2965,6 +2979,7 @@
       },
       "billing": {
         "per_token": "按 Token 计费",
+        "per_call": "按次计费",
         "free": "显式免费",
         "expression": "表达式计费"
       },
@@ -2975,6 +2990,8 @@
         "litellm": "LiteLLM 官方价表"
       },
       "fields": {
+        "requestPrice": "每次请求价格",
+        "inputOrRequestPrice": "输入 / 每次请求",
         "input": "输入",
         "output": "输出",
         "cacheRead": "缓存读取",
@@ -2990,6 +3007,8 @@
         "values": "正式销售价格",
         "valuesHint": "这些值会直接参与新请求计费，不会根据参考来源自动覆盖。",
         "priceUnit": "美元 / 百万 Token",
+        "perCallHint": "每个成功请求收取固定金额，Token 用量不影响这笔价格。",
+        "requestPriceUnit": "美元 / 次",
         "expressionHint": "表达式由服务端 Rhai 沙箱校验并在请求级结算；五项固定价格列保持为 0。",
         "versionChanged": "草稿基于 {{expected}}，当前正式价格为 v{{current}}。核对后才能更新版本前置条件。",
         "newVersion": "新建前置条件"
@@ -3010,6 +3029,8 @@
       "validation": {
         "decimal": "请输入不带符号或科学计数法的非负十进制数，整数最多 10 位，小数最多 28 位。",
         "free": "显式免费模式的五项价格必须全部为 0。",
+        "positiveRequestPrice": "每次请求价格必须大于 0。",
+        "perCallValues": "按次模式的五项 Token 价格必须全部为 0。",
         "expression": "请输入计费表达式正文。",
         "expressionTooLong": "表达式正文不能超过 8192 个 UTF-8 字节。",
         "expressionValues": "表达式模式的固定价格列必须全部为 0。",
@@ -3028,6 +3049,7 @@
         "apply": "应用 {{count}} 项价格",
         "select": "选择模型 {{model}} 的价格草稿",
         "selectionReady": "此草稿可加入批量提交",
+        "selectionLimitReached": "单批最多选择 100 个模型",
         "editBeforeSelect": "先编辑并完成定价草稿",
         "edit": "编辑模型 {{model}} 的价格",
         "editPrice": "编辑价格",
@@ -3039,12 +3061,14 @@
       "preview": {
         "loaded_one": "匹配 {{count}} 条公开参考价",
         "loaded_other": "匹配 {{count}} 条公开参考价",
+        "showAll": "显示全部模型",
+        "showMatches": "只看匹配结果",
         "fetchedAt": "读取于 {{value}}"
       },
       "evidence": {
         "title": "{{source}} 公开参考证据",
         "sourceBadge": "公开价表",
-        "none": "{{source}} 暂无与当前厂商和标准模型标识完全匹配的参考价。",
+        "none": "{{source}} 暂无与当前标准模型标识匹配的参考价。",
         "disclaimer": "公开成本只用于人工复核，不代表本站正式售价，也不会自动覆盖草稿。",
         "deprecated": "来源已弃用",
         "deprecationDate": "计划于 {{date}} 弃用",
@@ -3769,11 +3793,15 @@
     "billing": {
       "per_token": "按 token 计费",
       "per_token_short": "按量",
+      "per_call": "按次计费",
+      "per_call_short": "按次",
       "free": "免费"
     },
     "columns": {
       "model": "模型",
       "input": "输入价格",
+      "inputOrRequestPrice": "输入 / 每次请求",
+      "requestPrice": "每次请求",
       "output": "输出价格",
       "cacheRead": "缓存读取",
       "cacheCreation5m": "缓存创建 5 分钟",
@@ -3785,8 +3813,11 @@
       "compatible": "兼容模型",
       "notApplicable": "不适用",
       "priceTitle": "{{label}}：每百万 token ${{value}}",
+      "requestPriceTitle": "{{label}}：每次请求 ${{value}}",
       "perMillion": "每百万 token",
       "perMillionCompact": "/ 1M",
+      "perRequest": "每次请求",
+      "perRequestCompact": "/ 次",
       "appliedRatios": "已应用倍率",
       "baseRatios": "公开基础倍率",
       "moreTags": "+{{count}}",
@@ -4890,6 +4921,38 @@
     }
   },
   "emailSettings": {
+    "templates": {
+      "title": "邮件 HTML 模板",
+      "kind": "邮件类型",
+      "html": "HTML 正文",
+      "hint": "点击变量插入到光标处。保存空白正文可恢复该类型的默认邮件。",
+      "variables": "可插入的变量",
+      "useExample": "载入示例模板",
+      "restore": "恢复默认正文",
+      "preview": "预览示例邮件",
+      "kinds": {
+        "registration": "注册验证码",
+        "email_binding": "邮箱绑定验证码",
+        "password_reset": "密码重置",
+        "balance_alert": "余额预警",
+        "subscription_balance_alert": "订阅额度预警",
+        "smtp_test": "SMTP 测试"
+      },
+      "samples": {
+        "registration": "您的注册验证码是 {{code}}，将在 {{expires_minutes}} 分钟后失效。",
+        "email_binding": "您的邮箱绑定验证码是 {{code}}，将在 {{expires_minutes}} 分钟后失效。",
+        "password_reset": "请在 {{expires_minutes}} 分钟内打开以下链接重置 {{site_name}} 密码。\n{{reset_url}}",
+        "balance_alert": "您好，{{username}}。当前可用额度为 {{balance}}，低于提醒阈值 {{threshold}}。",
+        "subscription_balance_alert": "您好，{{username}}。订阅 {{plan_name}} 当前剩余 {{remaining}} / {{quota}}，已达到 {{threshold_percent}}% 提醒阈值。本窗口将于 {{window_end}} 结束。",
+        "smtp_test": "收到此邮件表示 SMTP 配置可用。"
+      },
+      "errors": {
+        "size": "模板需在 16 KiB 以内，正文中的换行和制表符可以保留。",
+        "variable": "请使用列表中的完整变量，每封模板最多使用 64 处变量。",
+        "required": "请插入验证码、重置链接或完整正文变量，确保收件人能完成操作。",
+        "save": "有邮件模板尚未通过校验，请检查各邮件类型。"
+      }
+    },
     "title": "邮件设置",
     "subtitle": "配置系统邮件使用的 SMTP 服务。密码加密保存；测试邮件使用固定正文，不记录收件人地址。",
     "loading": "正在加载邮件设置",

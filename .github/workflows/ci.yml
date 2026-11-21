@@ -750,6 +750,17 @@ jobs:
           cargo test --locked -p af-db --lib channel_monitor_tests
           cargo test --locked -p af-db --lib external_account_connection_tests::same_connector_subject_can_be_bound_to_distinct_canonical_issuers -- --exact
           cargo test --locked -p af-http --lib openapi::proxy_pools::tests
+          cargo test --locked -p af-admin --lib email_
+          cargo test --locked -p af-http --lib email_settings_tests
+
+      - name: Run focused model pricing regressions
+        if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'
+        run: |
+          cargo test --locked -p af-billing --lib pricing_tests::per_call_mode
+          cargo test --locked -p af-db --lib model_price_admin_tests::per_call_price
+          cargo test --locked -p af-http --lib management_model_prices::tests::per_call_write
+          cargo test --locked -p af-server --lib model_price_source
+          cargo test --locked -p af-server --lib model_catalog::tests::guest_catalog
 
       - name: Run routing health and value scoring regressions
         if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.full != 'true'

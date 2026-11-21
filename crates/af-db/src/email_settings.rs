@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{collections::BTreeMap, fmt, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
@@ -82,10 +82,17 @@ pub struct EmailSettingsRecord {
     from_name: Option<String>,
     reply_to: Option<String>,
     timeout_seconds: u16,
+    html_templates: BTreeMap<String, String>,
     version: i64,
 }
 
 impl EmailSettingsRecord {
+    /// 已保存的邮件 HTML 模板，未配置的邮件类型使用纯文本。
+    #[must_use]
+    pub const fn html_templates(&self) -> &BTreeMap<String, String> {
+        &self.html_templates
+    }
+
     /// 返回是否允许业务邮件投递；测试邮件仍可在关闭时验证完整配置。
     #[must_use]
     pub const fn enabled(&self) -> bool {
@@ -191,6 +198,7 @@ pub struct EmailSettingsWriteRecord {
     from_name: Option<String>,
     reply_to: Option<String>,
     timeout_seconds: u16,
+    html_templates: BTreeMap<String, String>,
 }
 
 impl EmailSettingsWriteRecord {
@@ -220,7 +228,15 @@ impl EmailSettingsWriteRecord {
             from_name,
             reply_to,
             timeout_seconds,
+            html_templates: BTreeMap::new(),
         }
+    }
+
+    /// 在 SMTP 设置事务中更新指定类型。空字符串清除该类型的模板。
+    #[must_use]
+    pub fn with_html_templates(mut self, templates: BTreeMap<String, String>) -> Self {
+        self.html_templates = templates;
+        self
     }
 
     fn validate(&self) -> Result<(), EmailSettingsRepositoryError> {
@@ -374,6 +390,22 @@ impl EmailSettingsRepository {
             .ok_or_else(|| internal_error(EmailSettingsRepositoryError::Invariant))?;
         let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
         let created_at = existing.created_at;
+        let mut html_templates = parse_html_templates(existing.html_templates)?;
+        for (kind, template) in record.html_templates {
+            if template.is_empty() {
+                html_templates.remove(&kind);
+            } else {
+                html_templates.insert(kind, template);
+            }
+        }
+        let html_templates = if html_templates.is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::to_value(html_templates)
+                    .map_err(|_| internal_error(EmailSettingsRepositoryError::Invariant))?,
+            )
+        };
         let model = email_settings::ActiveModel {
             id: Set(EMAIL_SETTINGS_ID),
             enabled: Set(record.enabled),
@@ -386,6 +418,7 @@ impl EmailSettingsRepository {
             from_name: Set(record.from_name.map(SensitiveString::from)),
             reply_to: Set(record.reply_to.map(SensitiveString::from)),
             timeout_seconds: Set(i32::from(record.timeout_seconds)),
+            html_templates: Set(html_templates),
             version: Set(version),
             created_at: Set(created_at),
             updated_at: Set(now),
@@ -493,12 +526,23 @@ fn record_from_model(
         reply_to: model.reply_to.map(|value| value.as_str().to_owned()),
         timeout_seconds: u16::try_from(model.timeout_seconds)
             .map_err(|_| internal_error(EmailSettingsRepositoryError::Invariant))?,
+        html_templates: parse_html_templates(model.html_templates)?,
         version: model.version,
     };
     if record.enabled && !record.delivery_ready() {
         return Err(internal_error(EmailSettingsRepositoryError::Invariant));
     }
     Ok(record)
+}
+
+fn parse_html_templates(
+    value: Option<serde_json::Value>,
+) -> Result<BTreeMap<String, String>, EmailSettingsRepositoryError> {
+    value
+        .map(serde_json::from_value)
+        .transpose()
+        .map(Option::unwrap_or_default)
+        .map_err(|_| internal_error(EmailSettingsRepositoryError::Invariant))
 }
 
 fn encrypted_json(
@@ -594,6 +638,7 @@ mod tests {
             from_name: Some("Private Sender".to_owned()),
             reply_to: Some("reply@example.com".to_owned()),
             timeout_seconds: 10,
+            html_templates: BTreeMap::from([("smtp_test".to_owned(), "private-html".to_owned())]),
             version: 1,
         };
         let rendered = format!("{record:?}");
@@ -604,6 +649,7 @@ mod tests {
             "Private Sender",
             "reply@example.com",
             "mail-key",
+            "private-html",
         ] {
             assert!(!rendered.contains(secret));
         }

@@ -120,7 +120,7 @@ export function ModelCatalogDesktopEntry({ item, pricingScope, expanded, onToggl
           <ModelDescription item={item} className="mt-2" />
           <ModelCapabilitySummary item={item} className="mt-2" />
         </td>
-        <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} /></td>
+        <td className="px-3 py-2.5"><ModelPriceValue label={t(item.billing_mode === 'per_call' ? 'models.columns.requestPrice' : 'models.columns.input')} value={item.request_price ?? item.prices?.input} unit={item.billing_mode === 'per_call' ? 'per_request' : 'per_million'} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.cacheRead')} value={item.prices?.cache_read} muted /></td>
         <td className="relative isolate px-3 py-2.5">
@@ -194,7 +194,7 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
           <ModelStateBadges item={item} />
         </div>
         <div className="grid w-full grid-cols-2 gap-3 @min-[36rem]:w-48">
-          <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} showLabel />
+          <ModelPriceValue label={t(item.billing_mode === 'per_call' ? 'models.columns.requestPrice' : 'models.columns.input')} value={item.request_price ?? item.prices?.input} showLabel unit={item.billing_mode === 'per_call' ? 'per_request' : 'per_million'} />
           <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} showLabel />
         </div>
       </div>

@@ -30,6 +30,8 @@ pub enum ModelCatalogBillingMode {
     PerToken,
     /// 显式免费，仍记录用量。
     Free,
+    /// 按固定美元/请求价格计费。
+    PerCall,
 }
 
 /// 模型目录可筛选的闭合输入或输出模态。
@@ -486,6 +488,7 @@ pub struct ModelCatalogItem {
     metadata: ModelCatalogMetadata,
     billing_mode: ModelCatalogBillingMode,
     prices: Option<ModelCatalogTokenPrices>,
+    request_price: Option<Decimal>,
     ratios: ModelCatalogRatios,
     price_version: u64,
     runtime_status: ModelCatalogRuntimeStatus,
@@ -505,10 +508,39 @@ impl ModelCatalogItem {
         available_protocols: Vec<Protocol>,
         supports_responses_compact: bool,
     ) -> Result<Self, ModelCatalogReadError> {
-        let prices_match_mode = matches!(
-            (billing_mode, prices.is_some()),
-            (ModelCatalogBillingMode::PerToken, true) | (ModelCatalogBillingMode::Free, false)
-        );
+        Self::new_with_request_price(
+            metadata,
+            billing_mode,
+            prices,
+            None,
+            ratios,
+            price_version,
+            runtime_status,
+            available_protocols,
+            supports_responses_compact,
+        )
+    }
+
+    /// 组合含固定按次价格的模型目录记录。
+    #[allow(clippy::too_many_arguments, reason = "字段与目录响应契约一一对应")]
+    pub fn new_with_request_price(
+        metadata: ModelCatalogMetadata,
+        billing_mode: ModelCatalogBillingMode,
+        prices: Option<ModelCatalogTokenPrices>,
+        request_price: Option<Decimal>,
+        ratios: ModelCatalogRatios,
+        price_version: u64,
+        runtime_status: ModelCatalogRuntimeStatus,
+        available_protocols: Vec<Protocol>,
+        supports_responses_compact: bool,
+    ) -> Result<Self, ModelCatalogReadError> {
+        let prices_match_mode = match billing_mode {
+            ModelCatalogBillingMode::PerToken => prices.is_some() && request_price.is_none(),
+            ModelCatalogBillingMode::Free => prices.is_none() && request_price.is_none(),
+            ModelCatalogBillingMode::PerCall => {
+                prices.is_none() && request_price.is_some_and(|price| price >= Decimal::ZERO)
+            }
+        };
         let protocols_are_stable = available_protocols
             .windows(2)
             .all(|window| window[0] < window[1]);
@@ -519,6 +551,7 @@ impl ModelCatalogItem {
             metadata,
             billing_mode,
             prices,
+            request_price,
             ratios,
             price_version,
             runtime_status,
@@ -549,6 +582,12 @@ impl ModelCatalogItem {
     #[must_use]
     pub const fn prices(&self) -> Option<&ModelCatalogTokenPrices> {
         self.prices.as_ref()
+    }
+
+    /// 返回固定美元/请求价格；其他模式为空。
+    #[must_use]
+    pub const fn request_price(&self) -> Option<Decimal> {
+        self.request_price
     }
 
     /// 返回本条目实际应用的倍率快照。
@@ -588,6 +627,7 @@ impl fmt::Debug for ModelCatalogItem {
             .debug_struct("ModelCatalogItem")
             .field("billing_mode", &self.billing_mode)
             .field("has_prices", &self.prices.is_some())
+            .field("has_request_price", &self.request_price.is_some())
             .field("price_version", &self.price_version)
             .field("runtime_status", &self.runtime_status)
             .field("available_protocol_count", &self.available_protocols.len())
@@ -972,6 +1012,38 @@ mod tests {
         assert_eq!(prices.cache_read(), "0.125");
         assert_eq!(prices.cache_creation_5m(), "0");
         assert_eq!(prices.cache_creation_1h(), "2.500000001");
+    }
+
+    #[test]
+    fn catalog_per_call_mode_requires_a_fixed_request_price() {
+        let ratios = ModelCatalogRatios::new(1_000_000, 1_000_000, 1_000_000).unwrap();
+        let item = ModelCatalogItem::new_with_request_price(
+            metadata("fixed-model"),
+            ModelCatalogBillingMode::PerCall,
+            None,
+            Some(Decimal::new(25, 2)),
+            ratios,
+            1,
+            ModelCatalogRuntimeStatus::NotEvaluated,
+            Vec::new(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(item.request_price(), Some(Decimal::new(25, 2)));
+        assert!(
+            ModelCatalogItem::new_with_request_price(
+                metadata("invalid-fixed-model"),
+                ModelCatalogBillingMode::PerCall,
+                None,
+                None,
+                ratios,
+                1,
+                ModelCatalogRuntimeStatus::NotEvaluated,
+                Vec::new(),
+                false,
+            )
+            .is_err()
+        );
     }
 
     #[test]

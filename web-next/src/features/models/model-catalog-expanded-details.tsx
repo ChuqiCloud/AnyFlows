@@ -71,6 +71,11 @@ export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDeta
 
       <section className="border-t border-[var(--hairline)] pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5" aria-label={t('models.details.pricing')}>
         <h3 className="text-xs font-semibold">{t('models.details.pricing')}</h3>
+        {item.billing_mode === 'per_call' ? (
+          <div className="mt-3 max-w-52">
+            <ModelPriceValue label={t('models.columns.requestPrice')} value={item.request_price ?? undefined} showLabel unit="per_request" />
+          </div>
+        ) : null}
         <div className="mt-3 grid grid-cols-2 gap-4">
           <ModelPriceValue label={t('models.columns.cacheCreation5m')} value={prices?.cache_creation_5m} />
           <ModelPriceValue label={t('models.columns.cacheCreation1h')} value={prices?.cache_creation_1h} />

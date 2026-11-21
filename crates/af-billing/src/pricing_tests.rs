@@ -3,8 +3,8 @@ use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
 use crate::{
-    BillingMode, PricingContext, PricingError, PricingRatio, PricingRatios, PricingResolver,
-    RatioPricingResolver, TokenPrices,
+    BillingMode, PerCallPricingResolver, PricingContext, PricingError, PricingRatio, PricingRatios,
+    PricingResolver, RatioPricingResolver, TokenPrices,
     quota_math::{QuotaClampKind, QuotaMathOperation},
 };
 
@@ -205,6 +205,37 @@ fn free_mode_is_explicit_and_distinct_from_zero_metered_cost() {
     assert_eq!(zero_metered.billing_mode(), BillingMode::PerToken);
     assert!(!zero_metered.is_free());
     assert_eq!(zero_metered.breakdown().total_usd(), Decimal::ZERO);
+}
+
+#[test]
+fn per_call_mode_charges_one_fixed_amount_independent_of_token_usage() {
+    let resolver = PerCallPricingResolver::new(
+        Decimal::new(25, 2),
+        PricingRatios::new(ratio(2_000_000), ratio(1_500_000), ratio(500_000)),
+    )
+    .unwrap();
+    let empty_usage = usage(0, 0, 0, 0, 0, UsageSemantics::Inclusive);
+    let large_usage = usage(
+        10_000_000,
+        8_000_000,
+        2_000_000,
+        0,
+        0,
+        UsageSemantics::Inclusive,
+    );
+
+    let empty = resolver
+        .resolve(&PricingContext::new(&empty_usage))
+        .unwrap();
+    let large = resolver
+        .resolve(&PricingContext::new(&large_usage))
+        .unwrap();
+
+    assert_eq!(empty.billing_mode(), BillingMode::PerCall);
+    assert_eq!(empty.breakdown().per_call_usd(), Decimal::new(375, 3));
+    assert_eq!(empty.breakdown().total_usd(), Decimal::new(375, 3));
+    assert_eq!(empty.quota(), Quota::new(187_500).unwrap());
+    assert_eq!(large, empty);
 }
 
 #[test]

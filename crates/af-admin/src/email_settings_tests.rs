@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Mutex, time::Duration};
+use std::{collections::BTreeMap, error::Error, sync::Mutex, time::Duration};
 
 use af_account::{SystemSecretCipher, SystemSecretKind};
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
@@ -21,6 +21,7 @@ struct ObservedDelivery {
     from_address: String,
     recipient: String,
     timeout_seconds: u16,
+    html: Option<String>,
 }
 
 struct RecordingDelivery {
@@ -57,6 +58,7 @@ impl EmailDelivery for RecordingDelivery {
             from_address: request.from_address().to_owned(),
             recipient: request.recipient().to_owned(),
             timeout_seconds: request.timeout_seconds(),
+            html: request.html().map(str::to_owned),
         });
         let result = self.result;
         Box::pin(async move { result })
@@ -157,8 +159,89 @@ async fn update_and_test_delivery_keep_plaintext_out_of_persistence() -> Result<
             from_address: "from@example.com".to_owned(),
             recipient: "recipient@example.com".to_owned(),
             timeout_seconds: 15,
+            html: None,
         }]
     );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn saved_html_templates_render_per_event_and_can_be_cleared() -> Result<(), Box<dyn Error>> {
+    let (pool, repository) = installed_repository().await?;
+    let cipher = cipher();
+    let delivery = std::sync::Arc::new(RecordingDelivery::successful());
+    let service = DatabaseAdminEmailSettingsService::new(
+        repository.clone(),
+        cipher.clone(),
+        delivery.clone(),
+    );
+    let admin = principal(SessionRole::Admin);
+    let recipient = "recipient@example.com";
+    let registration = "<strong>{{code}}</strong><p>{{expires_minutes}}</p>";
+    let smtp_test = "<p>{{recipient}}</p>";
+    assert!(service.settings(admin).await?.html_templates().is_empty());
+    service
+        .update(
+            admin,
+            settings_command(Some("private smtp password")).with_html_templates(BTreeMap::from(
+                [
+                    ("registration".to_owned(), registration.to_owned()),
+                    ("smtp_test".to_owned(), smtp_test.to_owned()),
+                ],
+            ))?,
+        )
+        .await?;
+
+    let record = repository.settings().await?;
+    let request = EmailDeliveryRequest::registration_verification(
+        &record,
+        &cipher,
+        recipient.to_owned(),
+        "123456",
+        61,
+    )?;
+    assert_eq!(request.html(), Some("<strong>123456</strong><p>2</p>"));
+    assert!(request.body().contains("123456"));
+    assert!(!format!("{request:?}").contains("123456"));
+
+    // An existing SMTP client can save connection settings without replacing templates.
+    assert_eq!(
+        service
+            .update(admin, settings_command(None))
+            .await?
+            .html_templates()
+            .len(),
+        2
+    );
+    service
+        .send_test(admin, AdminEmailTestCommand::new(recipient.to_owned())?)
+        .await?;
+    assert_eq!(
+        delivery.requests()[0].html.as_deref(),
+        Some("<p>recipient@example.com</p>")
+    );
+
+    let updated = service
+        .update(
+            admin,
+            settings_command(None)
+                .with_html_templates(BTreeMap::from([("smtp_test".to_owned(), String::new())]))?,
+        )
+        .await?;
+    assert_eq!(updated.html_templates().len(), 1);
+    assert_eq!(
+        updated
+            .html_templates()
+            .get("registration")
+            .map(String::as_str),
+        Some(registration)
+    );
+    service
+        .send_test(admin, AdminEmailTestCommand::new(recipient.to_owned())?)
+        .await?;
+    assert!(delivery.requests()[1].html.is_none());
 
     pool.close().await?;
     Ok(())

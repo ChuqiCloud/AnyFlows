@@ -585,6 +585,10 @@ where
             .and_then(|record| record.billing_expression.as_ref())
             .map(SensitiveString::as_str),
     };
+    let request_price = effective_price(
+        &model.request_price,
+        persisted.as_ref().map(|row| row.request_price),
+    );
     let version = model
         .version
         .try_as_ref()
@@ -597,7 +601,13 @@ where
         || prices
             .iter()
             .any(|price| !crate::model_price::is_valid_model_price_decimal(*price))
-        || !crate::model_price::is_valid_model_price_shape(billing_mode, prices, billing_expression)
+        || !crate::model_price::is_valid_model_price_decimal(request_price)
+        || !crate::model_price::is_valid_model_price_shape(
+            billing_mode,
+            prices,
+            request_price,
+            billing_expression,
+        )
     {
         return Err(DbErr::Custom("模型价格状态无效".to_owned()));
     }

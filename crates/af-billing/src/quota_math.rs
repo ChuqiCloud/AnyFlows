@@ -168,7 +168,7 @@ pub fn quota_from_cny_minor(
     Quota::new(units).map_err(Into::into)
 }
 
-fn quota_from_usd_for(
+pub(crate) fn quota_from_usd_for(
     usd: Decimal,
     operation: QuotaMathOperation,
 ) -> Result<Quota, QuotaMathError> {
@@ -328,15 +328,25 @@ pub(crate) fn quota_from_usd_with_ratios(
     usd: Decimal,
     ratio_micros: [i64; 3],
 ) -> Result<Quota, QuotaMathError> {
+    let effective = usd_after_ratios(usd, ratio_micros)?;
+    quota_from_usd_for(effective, QuotaMathOperation::PricingResolution)
+}
+
+/// 返回倍率后的美元成本，不执行额度整数舍入。
+pub(crate) fn usd_after_ratios(
+    usd: Decimal,
+    ratio_micros: [i64; 3],
+) -> Result<Decimal, QuotaMathError> {
     if usd < Decimal::ZERO || ratio_micros.into_iter().any(|ratio| ratio < 0) {
         return Err(QuotaError::Negative.into());
     }
-    // 公共倍率函数会在末尾消除一次百万尺度；美元金额必须先补齐同一固定点尺度。
+    if ratio_micros.contains(&0) {
+        return Ok(Decimal::ZERO);
+    }
     let weighted = Decimal::from(TOKENS_PER_MILLION)
         .checked_mul(usd)
         .ok_or_else(pricing_overflow)?;
-    let effective = apply_pricing_ratios(weighted, ratio_micros)?;
-    quota_from_usd_for(effective, QuotaMathOperation::PricingResolution)
+    apply_pricing_ratios(weighted, ratio_micros)
 }
 
 const fn pricing_overflow() -> QuotaClamp {

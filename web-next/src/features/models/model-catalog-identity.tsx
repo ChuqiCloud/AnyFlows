@@ -3,19 +3,19 @@ import { Chip } from '@heroui/react'
 import { Cpu } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { findProviderLogo } from '@/components/brand/model-logos'
+import { findModelLogo, findProviderLogo } from '@/components/brand/model-logos'
 import type { ModelCatalogItem } from '@/lib/api/generated/types.gen'
 import { ModelCopyButton } from './model-copy-button'
 
-/** 只使用模型商品中的权威厂商字段和显式图标，不根据模型名猜测归属。 */
+/** 模型名仅用于匹配展示图标，厂商归属仍使用模型目录字段。 */
 export function ModelCatalogIdentity({ item }: { item: ModelCatalogItem }) {
   const { t } = useTranslation()
   const logo = findProviderLogo(item.provider)
-  const ProviderIcon = logo?.Icon ?? Cpu
+  const ModelIcon = findModelLogo(item.model)?.Icon ?? logo?.Icon ?? Cpu
   return (
     <div className="flex min-w-0 items-start gap-2">
       <div className="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--hairline)] bg-surface-2 text-foreground">
-        <ProviderIcon className="size-4" aria-hidden="true" />
+        <ModelIcon className="size-4" aria-hidden="true" />
         {item.icon_url ? (
           <img
             key={item.icon_url}

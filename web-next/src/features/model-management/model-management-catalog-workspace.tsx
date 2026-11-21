@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
 import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import type { AdminModel } from '@/lib/api/generated/types.gen'
+import { LobeHubCatalogImportButton } from './lobehub-catalog-import-button'
 import { useAdminModelMetadata } from './model-management-api'
 import { ModelManagementDeleteDialog } from './model-management-delete-dialog'
 import { ModelManagementEditorSheet } from './model-management-editor-sheet'
@@ -37,7 +38,8 @@ export function ModelManagementCatalogWorkspace() {
           <span>{t('modelManagement.count', { count: models.length })}</span>
           <span>{t('modelManagement.activeCount', { count: activeCount })}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <LobeHubCatalogImportButton />
           <Button type="button" size="sm" variant="bordered" isDisabled={modelsQuery.isFetching} onClick={() => void modelsQuery.refetch()}>
             <RefreshCw className={cn('size-3.5', modelsQuery.isFetching && 'animate-spin')} aria-hidden="true" />
             {t('modelManagement.actions.refresh')}

@@ -692,6 +692,9 @@ export type AdminEmailSettings = {
     from_name?: string | null;
     reply_to?: string | null;
     timeout_seconds: number;
+    html_templates: {
+        [key: string]: string;
+    };
     version: number;
     delivery_ready: boolean;
 };
@@ -705,6 +708,9 @@ export type AdminEmailSettingsRequest = {
     from_name?: string | null;
     reply_to?: string | null;
     timeout_seconds: number;
+    html_templates?: {
+        [key: string]: string;
+    } | null;
 };
 export type AdminEmailTestRequest = {
     recipient: string;
@@ -895,6 +901,7 @@ export type AdminModelPrice = {
     model: string;
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
+    request_price: string;
     billing_expression: string | null;
     peak_windows: Array<AdminGroupPeakWindow> | null;
     version: number;
@@ -905,7 +912,7 @@ export type AdminModelPriceBatchRequest = {
 export type AdminModelPriceBatchResponse = {
     prices: Array<AdminModelPrice>;
 };
-export type AdminModelPriceBillingMode = 'per_token' | 'free' | 'expression';
+export type AdminModelPriceBillingMode = 'per_token' | 'free' | 'expression' | 'per_call';
 export type AdminModelPriceExpressionPreviewRequest = {
     billing_expression: string;
     usage: AdminModelPriceExpressionUsage;
@@ -984,6 +991,7 @@ export type AdminModelPriceWriteItem = {
     context_window: number | null;
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
+    request_price?: string | null;
     billing_expression?: string | null;
     peak_windows?: Array<AdminGroupPeakWindow> | null;
 };
@@ -2117,13 +2125,14 @@ export type MerchantModelOffer = {
     supports_vision: boolean;
 };
 export type MerchantModelPrices = {
-    billing_mode: 'token' | 'free' | 'video';
+    billing_mode: 'token' | 'free' | 'video' | 'per_call';
     cache_read: string;
     cache_write_1h: string;
     cache_write_5m: string;
     currency: string;
     input: string;
     output: string;
+    request_price: string | null;
     unit: string;
     version: number;
     video_per_second: {
@@ -2517,7 +2526,7 @@ export type MerchantWithdrawalRequest = {
     event_key: string;
     amount_quota: number;
 };
-export type ModelCatalogBillingMode = 'per_token' | 'free';
+export type ModelCatalogBillingMode = 'per_token' | 'free' | 'per_call';
 export type ModelCatalogCapability = 'reasoning' | 'tool_calls' | 'responses_compact';
 export type ModelCatalogItem = {
     model: string;
@@ -2536,6 +2545,7 @@ export type ModelCatalogItem = {
     runtime_status: ModelCatalogRuntimeStatus;
     billing_mode: ModelCatalogBillingMode;
     prices: null | ModelCatalogTokenPrices;
+    request_price: string | null;
     ratios: ModelCatalogRatios;
     price_version: number;
     available_protocols: Array<ModelCatalogProtocol>;
@@ -4112,6 +4122,9 @@ export type AdminEmailSettingsRequestWritable = {
     from_name?: string | null;
     reply_to?: string | null;
     timeout_seconds: number;
+    html_templates?: {
+        [key: string]: string;
+    } | null;
 };
 export type AdminNetworkSettingsRequestWritable = {
     mode: AdminNetworkSettingsMode;
