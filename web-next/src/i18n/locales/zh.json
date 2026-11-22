@@ -103,24 +103,38 @@
       "saveError": "保存失败，请检查渠道绑定和插件状态。",
       "save": "保存绑定"
     },
-    "eyebrow": "插件",
     "title": "插件管理",
-    "subtitle": "上传插件包即可安装并启用，也可管理配置、停用和版本回滚。",
+    "subtitle": "安装插件，管理部署版本和权限，查看各节点的运行状态。",
     "trustWarning": "默认 auto 策略不隔离文件和网络访问。插件通常以 AnyFlows 服务账号权限运行，请仅安装经过审查的插件。",
     "advanced": "高级管理：手动登记与部署",
     "signatureDetails": "发布者签名（选填）",
     "signatureHint": "自己的插件无需签名。匹配已配置发布者公钥的签名会显示为已验证；其他插件仍可由管理员确认安装。",
     "install": {
       "title": "安装插件",
-      "description": "选择插件包即可安装，无需单独登记。符合输入输出 Schema 的只读无副作用能力会自动授权；外部读取和写入能力仍需单独审核。",
+      "description": "选择安装来源。安装前会校验插件包，并根据能力声明处理授权。",
+      "sourceLabel": "安装来源",
+      "sources": {
+        "package": "上传插件包",
+        "repository": "Git 仓库",
+        "market": "插件市场"
+      },
       "package": "插件包",
-      "packageHint": "支持 .afplugin 或 ZIP 格式。系统自动读取插件信息，并按能力声明自动授权安全的自定义只读能力。",
+      "packageHint": "支持 .afplugin 和 ZIP。需要额外权限的插件可在高级管理中授权。",
+      "repository": "Git 仓库地址",
+      "repositoryHint": "输入公开 GitHub 仓库地址，系统会下载最新正式 Release 的预构建插件包。",
+      "assetName": "发布文件名（选填）",
+      "assetNameHint": "系统会优先选择唯一的 .afplugin 包。若有多个候选包，填写适合服务器的文件名。",
       "configure": "可选配置",
       "submit": "安装并启用",
       "installing": "正在安装…",
       "success": "{{plugin}} {{version}} 已安装并启用。",
       "errors": {
         "packageType": "请选择 .afplugin 或 ZIP 插件包。",
+        "repositoryUrl": "请输入公开 GitHub 仓库地址，例如 https://github.com/owner/plugin。",
+        "repositoryNotFound": "找不到仓库、正式 Release 或指定的插件包。请检查仓库地址和发布文件。",
+        "invalidRepositoryPackage": "无法选定或校验插件包。若有多个候选包，请在可选配置中填写发布文件名。",
+        "repositoryUnavailable": "GitHub 或插件运行服务暂时不可用。请稍后重试，或上传已下载的插件包。",
+        "sessionExpired": "登录状态已失效，请重新登录后重试。",
         "configJson": "配置必须是有效的 JSON 对象。",
         "conflict": "安装期间部署状态发生变化。请刷新后重试，避免覆盖并发更新。",
         "needsReview": "该插件声明了外部读取、写入或未提供有效 Schema 的能力。请到高级管理中查看并明确授权。",
@@ -143,7 +157,7 @@
     "disable": "停用",
     "rollback": "回滚到此版本",
     "grantsHint": "只勾选本次部署所需的只读能力。能力授权会作为独立部署事实保存。",
-    "configHint": "配置必须是 JSON 对象；不要填写密钥、口令或其他凭据。",
+    "configHint": "更新时留空会沿用当前配置；首次安装留空则使用空对象。填写 JSON 对象将替换原配置。不要填写密钥、口令或其他凭据。",
     "configEditor": {
       "advanced": "高级 JSON 配置",
       "hint": "这些配置会发送给插件。请勿填写密码、API Key、令牌、Cookie 或其他凭据。"
@@ -182,6 +196,8 @@
       "empty": "还没有已登记的制品。"
     },
     "deployments": {
+      "filter": "筛选已加载的插件",
+      "filterEmpty": "已加载的插件中没有匹配项。",
       "title": "当前部署",
       "description": "查看已安装的插件；服务重启后自动恢复启用状态。",
       "grants": "已授权能力",

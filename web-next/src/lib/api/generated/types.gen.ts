@@ -3016,7 +3016,9 @@ export type PluginMarketSourceRequest = {
     path?: string | null;
 };
 export type PluginPackageInstallRequest = {
-    package: Blob | File;
+    package?: Blob | File | null;
+    repository?: string | null;
+    asset_name?: string | null;
     config?: string | null;
     expected_generation?: number | null;
 };
@@ -11900,6 +11902,7 @@ export type InstallAdminPluginPackageErrors = {
     400: ManagementError;
     401: ManagementError;
     403: ManagementError;
+    404: ManagementError;
     409: ManagementError;
     413: ManagementError;
     422: ManagementError;

@@ -51,17 +51,19 @@
 
 生产环境发布 GitHub Release 的 `.afplugin` 文件，并在同一 Release 上传 `.sha256` 文件。GitHub Action 可以生成压缩包、SHA-256 和索引；服务端只下载已发布的包，不在服务器执行仓库脚本。
 
-从 Git 仓库安装时必须固定完整 commit，并指定插件子目录。分支名和短 commit 不能作为生产安装来源。受限仓库通过服务端 GitHub App 或部署凭据访问，浏览器不提交 GitHub PAT。
+市场索引使用 `git_artifact` 来源时必须固定完整 commit，并指定插件子目录。分支名和短 commit 不能作为生产安装来源。受限仓库通过服务端 GitHub App 或部署凭据访问，浏览器不提交 GitHub PAT。
 
 ## 安装流程
 
-1. 在「插件管理 → 插件市场」输入索引的 HTTPS 地址并加载。
-2. 按插件名称、ID 或作者查找，打开版本列表查看变更记录、来源、能力和 SHA-256。
-3. 选择版本后安装。更新时留空配置会沿用当前部署，填写 JSON 则用新配置替换。
+1. 在插件管理页选择「Git 仓库」并输入公开 GitHub 仓库地址，或选择「插件市场」并加载索引。
+2. 使用市场时，按名称、ID 或作者查找插件，查看版本、来源、能力和 SHA-256 后选择版本。
+3. 使用 Git 仓库时，安装器选择最新正式 Release 的预构建包；若存在多个候选包，填写发布文件名。
 4. 宿主下载并校验制品。需要额外权限的能力由管理员在部署时明确授权。
 5. 在部署列表查看节点的就绪状态。集群中的其他节点从共享制品库恢复同一制品。
 
 市场索引不会绕过插件审批、能力授权、部署代次或节点 ready 检查。
+
+「Git 仓库」入口安装最新正式 Release 中的预构建 `.afplugin` 或 ZIP。系统会优先选择唯一的 `.afplugin`；有多个候选包时需填写确切的发布文件名。仓库需公开可读，安装器不会执行仓库脚本或从分支、任意 commit 构建。更新时留空配置会沿用当前部署，填写 JSON 则用新配置替换。
 
 登录用户可以先读取远程索引，服务端会校验 HTTPS 地址、索引大小、版本来源和 SHA-256 约束：
 
@@ -71,7 +73,7 @@ GET /api/account/plugins/market/index?url=https%3A%2F%2Fexample.com%2Fanyflows-p
 
 这个接口只做发现，不会安装或执行插件。市场页面可以把返回版本的 `source` 原样提交给管理员安装接口。
 
-## 从 GitHub 安装
+## 从 GitHub 市场来源安装
 
 管理员可从 GitHub Release 资产或固定 commit 下的预构建 `.afplugin` 安装。首次安装传 `expected_generation: null`，更新时传当前部署代次。部署代次冲突时，刷新后重新确认版本和配置。更新时省略 `config` 可保留当前配置。
 
@@ -98,3 +100,9 @@ Content-Type: application/json
 ```
 
 安装接口只接受管理员会话或具备对应管理员 PAT 权限的请求。下载完成后仍会检查包大小、ZIP 路径、重复文件、可执行文件、清单、Schema 和 SHA-256，然后进入审批、部署代次和多节点分发流程。签名不是自有插件安装的强制条件；已配置的官方签名只用于显示官方来源。
+
+## 管理员直接从 Git 仓库安装
+
+管理页面的「Git 仓库」入口使用 `POST /api/admin/plugins/install`，提交 `multipart/form-data`。传 `repository` 和可选的 `asset_name`，也可选填 `config`。省略 `config` 会保留现有配置。`package` 与 `repository` 只能提供一个。
+
+仓库必须是公开 GitHub 仓库，并提供最新正式 Release 的 `.afplugin` 或 ZIP 资产。服务端会限制下载域名和文件大小；GitHub 返回 SHA-256 摘要时会进行比对，同时计算并记录实际下载包的 SHA-256。随后复用上传包的校验、审批、部署和多节点分发流程。

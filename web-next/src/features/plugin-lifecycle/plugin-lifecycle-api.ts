@@ -427,13 +427,22 @@ function invalidate(client: ReturnType<typeof useQueryClient>) {
   return client.invalidateQueries({ queryKey: root })
 }
 
+type PluginInstallSource =
+  | { packageFile: File }
+  | { repository: string; assetName?: string }
+
 export function useInstallPlugin() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async ({ packageFile, config }: { packageFile: File; config: Record<string, unknown> }) => {
+    mutationFn: async ({ source, config }: { source: PluginInstallSource; config?: Record<string, unknown> }) => {
       const body = new FormData()
-      body.append('package', packageFile, packageFile.name)
-      body.append('config', JSON.stringify(config))
+      if ('packageFile' in source) {
+        body.append('package', source.packageFile, source.packageFile.name)
+      } else {
+        body.append('repository', source.repository)
+        if (source.assetName) body.append('asset_name', source.assetName)
+      }
+      if (config) body.append('config', JSON.stringify(config))
       const result = await apiClient.post<PluginDeploymentResponse>({
         url: '/api/admin/plugins/install',
         body,

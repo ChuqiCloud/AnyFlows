@@ -92,9 +92,15 @@ pub(crate) struct PluginArtifactRegistrationRequest {
 #[schema(as = PluginPackageInstallRequest)]
 pub(crate) struct PluginPackageInstallRequest {
     /// ZIP/.afplugin archive containing anyflows-plugin.json and payload/.
-    #[schema(value_type = String, format = Binary)]
-    package: String,
-    /// Public JSON configuration, defaults to {}.
+    #[schema(value_type = Option<String>, format = Binary)]
+    package: Option<String>,
+    /// Public GitHub repository URL. Supply exactly one of package and repository.
+    #[schema(max_length = 256)]
+    repository: Option<String>,
+    /// Exact release filename when multiple candidate packages are published.
+    #[schema(max_length = 255)]
+    asset_name: Option<String>,
+    /// Optional public JSON configuration. Existing deployments retain it when omitted; first installs use an empty object.
     config: Option<String>,
     /// Required for an explicit update of an existing deployment.
     #[schema(minimum = 1)]
@@ -1755,20 +1761,21 @@ async fn install_package(
     )
     .await
     .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    let (upload, config, expected_generation) = match parsed {
-        Ok(parsed) => parsed,
-        Err(ManagementError::PluginLifecycleInvalidRequest) => {
-            return Err(ManagementError::PluginLifecycleInvalidRequest);
-        }
-        Err(error) => return Err(error),
-    };
+    let (mut upload, request) = parsed?;
+    if let Some(repository) = request.repository {
+        state
+            .service
+            .download_github_plugin_package(&mut upload, &repository, request.asset_name.as_deref())
+            .await
+            .map_err(map_service_error)?;
+    }
     let deployment = state
         .service
         .install_package(
             authentication.principal(),
             upload,
-            config,
-            expected_generation,
+            request.config,
+            request.expected_generation,
             request_id.as_str(),
         )
         .await
@@ -1808,17 +1815,26 @@ async fn install_market_package(
     Ok(no_store_json(PluginDeploymentResponse::from(deployment)))
 }
 
+struct ParsedPluginInstall {
+    repository: Option<String>,
+    asset_name: Option<String>,
+    config: Option<Value>,
+    expected_generation: Option<i64>,
+}
+
 async fn parse_package_upload(
     mut multipart: Multipart,
     mut upload: PluginPackageUpload,
-) -> Result<(PluginPackageUpload, Value, Option<i64>), ManagementError> {
+) -> Result<(PluginPackageUpload, ParsedPluginInstall), ManagementError> {
     let invalid = || ManagementError::PluginLifecycleInvalidRequest;
     let mut package_seen = false;
+    let mut repository = None;
+    let mut asset_name = None;
     let mut config = None;
     let mut generation = None;
     while let Some(mut field) = multipart.next_field().await.map_err(map_multipart_error)? {
         match field.name().ok_or_else(invalid)? {
-            "package" if !package_seen => {
+            "package" if !package_seen && repository.is_none() && asset_name.is_none() => {
                 package_seen = true;
                 while let Some(bytes) = field.chunk().await.map_err(map_multipart_error)? {
                     upload
@@ -1826,6 +1842,12 @@ async fn parse_package_upload(
                         .await
                         .map_err(map_service_error)?;
                 }
+            }
+            "repository" if !package_seen && repository.is_none() => {
+                repository = Some(read_plugin_install_text(field, 256).await?);
+            }
+            "asset_name" if !package_seen && asset_name.is_none() => {
+                asset_name = Some(read_plugin_install_text(field, 255).await?);
             }
             "config" if config.is_none() => {
                 let mut bytes = Vec::new();
@@ -1861,14 +1883,38 @@ async fn parse_package_upload(
             _ => return Err(invalid()),
         }
     }
-    if !package_seen {
+    if !package_seen && repository.is_none() {
         return Err(invalid());
     }
     Ok((
         upload,
-        config.unwrap_or_else(|| serde_json::json!({})),
-        generation,
+        ParsedPluginInstall {
+            repository,
+            asset_name,
+            config,
+            expected_generation: generation,
+        },
     ))
+}
+
+async fn read_plugin_install_text(
+    mut field: axum::extract::multipart::Field<'_>,
+    limit: usize,
+) -> Result<String, ManagementError> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = field.chunk().await.map_err(map_multipart_error)? {
+        if bytes.len().saturating_add(chunk.len()) > limit {
+            return Err(ManagementError::PluginLifecycleInvalidRequest);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?
+        .trim();
+    if text.is_empty() || text.chars().any(char::is_control) {
+        return Err(ManagementError::PluginLifecycleInvalidRequest);
+    }
+    Ok(text.to_owned())
 }
 
 fn map_multipart_error(error: axum::extract::multipart::MultipartError) -> ManagementError {

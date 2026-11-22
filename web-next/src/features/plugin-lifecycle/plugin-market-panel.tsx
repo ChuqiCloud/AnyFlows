@@ -1,6 +1,6 @@
-import { Button, Card, CardBody, CardHeader, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Textarea } from '@heroui/react'
+import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Textarea } from '@heroui/react'
 import { Package } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ApiError } from '@/lib/api'
@@ -25,7 +25,10 @@ function httpsUrl(input: string | null | undefined): string | undefined {
   return undefined
 }
 
-export function PluginMarketPanel({ disabled }: { disabled: boolean }) {
+export function PluginMarketPanel({ disabled, onInstallingChange }: {
+  disabled: boolean
+  onInstallingChange: (installing: boolean) => void
+}) {
   const { t } = useTranslation()
   const [input, setInput] = useState('')
   const [indexUrl, setIndexUrl] = useState('')
@@ -52,19 +55,12 @@ export function PluginMarketPanel({ disabled }: { disabled: boolean }) {
     }
   }
   return (
-    <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
-      <CardHeader className="p-5 pb-0">
-        <div>
-          <h2 className="text-base font-semibold">{t('pluginLifecycle.market.title')}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.market.description')}</p>
-        </div>
-      </CardHeader>
-      <CardBody className="gap-4 p-5">
-        <form className="flex flex-col items-start gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); load() }}>
+    <div className="grid gap-4">
+        <form className="flex flex-col items-start gap-2 sm:flex-row sm:items-center" onSubmit={(event) => { event.preventDefault(); load() }}>
           <Input label={t('pluginLifecycle.market.indexUrl')} placeholder="https://example.org/plugins.json"
             type="url" value={input} onValueChange={(value) => { setInput(value); setInvalidUrl(false) }}
-            isInvalid={invalidUrl} errorMessage={invalidUrl ? t('pluginLifecycle.market.invalidUrl') : undefined} />
-          <Button type="submit" variant="bordered" isLoading={market.isFetching} isDisabled={!input.trim()}>{t('pluginLifecycle.market.load')}</Button>
+            isDisabled={disabled} isInvalid={invalidUrl} errorMessage={invalidUrl ? t('pluginLifecycle.market.invalidUrl') : undefined} />
+          <Button className="shrink-0" type="submit" variant="bordered" isLoading={market.isFetching} isDisabled={disabled || !input.trim() || market.isFetching}>{t('pluginLifecycle.market.load')}</Button>
         </form>
         {notice ? <p role="status" className="text-sm text-success">{notice}</p> : null}
         {market.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.market.loadError')}</p> : null}
@@ -96,23 +92,28 @@ export function PluginMarketPanel({ disabled }: { disabled: boolean }) {
             })}
           </div>
         </> : null}
-      </CardBody>
       {entry ? <MarketInstallDialog key={entry.id} entry={entry} onClose={() => setEntry(undefined)}
+        onInstallingChange={onInstallingChange}
         onInstalled={(label) => { setNotice(label); setEntry(undefined) }} /> : null}
-    </Card>
+    </div>
   )
 }
 
-function MarketInstallDialog({ entry, onClose, onInstalled }: {
+function MarketInstallDialog({ entry, onClose, onInstalled, onInstallingChange }: {
   entry: PluginEntry
   onClose: () => void
   onInstalled: (message: string) => void
+  onInstallingChange: (installing: boolean) => void
 }) {
   const { t } = useTranslation()
   const [version, setVersion] = useState<MarketVersion | undefined>(entry.versions[0])
   const [config, setConfig] = useState('')
   const history = usePluginDeploymentHistory(entry.id)
   const install = useInstallMarketPlugin()
+  useEffect(() => {
+    onInstallingChange(install.isPending)
+    return () => onInstallingChange(false)
+  }, [install.isPending, onInstallingChange])
   const current = history.data?.[0]
   const error = install.error instanceof ApiError ? install.error.status : undefined
   const source = version?.source
@@ -148,6 +149,7 @@ function MarketInstallDialog({ entry, onClose, onInstalled }: {
       <ModalContent>
         <ModalHeader className="break-words">{entry.title}</ModalHeader>
         <ModalBody>
+          <p className="text-xs text-muted-foreground">{t('pluginLifecycle.trustWarning')}</p>
           <label className="grid gap-1 text-sm">
             {t('pluginLifecycle.market.selectVersion')}
             <select className="w-full rounded-md border border-divider bg-background px-2 py-2" value={version?.version} disabled={install.isPending}

@@ -103,24 +103,38 @@
       "saveError": "Could not save the binding. Check the channel selection and deployment.",
       "save": "Save binding"
     },
-    "eyebrow": "PLUGINS",
     "title": "Plugin management",
-    "subtitle": "Upload a plugin package to install and enable it, then manage configuration, disable it, or roll back a version.",
+    "subtitle": "Install plugins, manage versions and permissions, and check node status.",
     "trustWarning": "The default auto policy does not isolate file or network access. Plugins generally run with the AnyFlows service account's permissions. Install only reviewed plugins.",
     "advanced": "Advanced: manual registration and deployment",
     "signatureDetails": "Publisher signature (optional)",
     "signatureHint": "Your plugin does not need a signature. A matching configured publisher key verifies its signature; other packages can still be installed by an administrator.",
     "install": {
       "title": "Install plugin",
-      "description": "Choose a plugin package without separate registration. Schema-backed, read-only capabilities with no side effects are granted automatically; external reads and writes still require separate review.",
+      "description": "Choose a source. Packages are validated before activation, and declared capabilities determine the required grants.",
+      "sourceLabel": "Installation source",
+      "sources": {
+        "package": "Upload package",
+        "repository": "Git repository",
+        "market": "Marketplace"
+      },
       "package": "Plugin package",
-      "packageHint": "Choose an .afplugin or ZIP package. Safe custom read capabilities are granted automatically from their declarations.",
+      "packageHint": "Choose an .afplugin or ZIP package. Grant any additional permissions in Advanced management.",
+      "repository": "Git repository URL",
+      "repositoryHint": "Enter a public GitHub repository URL to download a prebuilt package from its latest stable release.",
+      "assetName": "Release filename (optional)",
+      "assetNameHint": "A unique .afplugin package is selected automatically. If there are multiple candidates, enter the filename for your server.",
       "configure": "Optional configuration",
       "submit": "Install and enable",
       "installing": "Installing…",
       "success": "{{plugin}} {{version}} is installed and enabled.",
       "errors": {
         "packageType": "Choose an .afplugin or ZIP plugin package.",
+        "repositoryUrl": "Enter a public GitHub repository URL such as https://github.com/owner/plugin.",
+        "repositoryNotFound": "Could not find the repository, a stable release, or the selected package. Check the URL and release files.",
+        "invalidRepositoryPackage": "Could not select or validate the package. If there are multiple candidates, enter the filename under Optional configuration.",
+        "repositoryUnavailable": "GitHub or the plugin runtime is temporarily unavailable. Retry later or upload the downloaded package.",
+        "sessionExpired": "Your session has expired. Sign in again and retry.",
         "configJson": "Configuration must be a valid JSON object.",
         "conflict": "The deployment changed while installing. Refresh and retry so the current version is preserved.",
         "needsReview": "This plugin requests an external read, write, or capability without valid schemas. Use Advanced to review and grant it explicitly.",
@@ -143,7 +157,7 @@
     "disable": "Disable",
     "rollback": "Roll back to this version",
     "grantsHint": "Select only the read capabilities required for this deployment. Grants are recorded as a separate deployment fact.",
-    "configHint": "Configuration must be a JSON object. Do not enter keys, passwords, or other credentials.",
+    "configHint": "For updates, leave blank to keep the current configuration. A first install uses an empty object. A JSON object replaces the current configuration. Do not enter keys, passwords, or other credentials.",
     "configEditor": {
       "advanced": "Advanced JSON",
       "hint": "This configuration is sent to the plugin. Never enter passwords, API keys, tokens, cookies, or other credentials."
@@ -182,6 +196,8 @@
       "empty": "No artifacts have been registered."
     },
     "deployments": {
+      "filter": "Filter loaded plugins",
+      "filterEmpty": "None of the loaded plugins match.",
       "title": "Current deployments",
       "description": "Manage installed plugins. Enabled plugins are restored automatically after a service restart.",
       "grants": "Granted capabilities",
