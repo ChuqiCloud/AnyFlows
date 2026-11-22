@@ -5,6 +5,7 @@
 //! runtime coordinator.
 
 mod data_plane;
+mod git_install;
 
 pub use data_plane::PluginNativeTaskProtocol;
 
@@ -86,12 +87,20 @@ pub(crate) fn deployment_public_configuration(deployment: &PluginDeploymentRecor
 }
 
 async fn execute_market_get(client: &PooledClient, initial_url: &str) -> Result<HttpResponse, ()> {
+    execute_market_get_with_headers(client, initial_url, HeaderMap::new()).await
+}
+
+async fn execute_market_get_with_headers(
+    client: &PooledClient,
+    initial_url: &str,
+    headers: HeaderMap,
+) -> Result<HttpResponse, ()> {
     let initial = url::Url::parse(initial_url).map_err(|_| ())?;
     let initial_host = initial.host_str().ok_or(())?.to_owned();
     let mut current = initial;
     for _ in 0..=MAX_MARKET_REDIRECTS {
         let response = client
-            .execute(Method::GET, current.as_str(), HeaderMap::new(), None)
+            .execute(Method::GET, current.as_str(), headers.clone(), None)
             .await
             .map_err(|_| ())?;
         if !response.status().is_redirection() {
@@ -1967,7 +1976,7 @@ impl DatabaseAdminPluginLifecycleService {
         &self,
         principal: SessionPrincipal,
         upload: PluginPackageUpload,
-        config: Value,
+        config: impl Into<Option<Value>> + Send,
         expected_generation: Option<i64>,
         request_id: &str,
     ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
@@ -1984,7 +1993,7 @@ impl DatabaseAdminPluginLifecycleService {
             .install_package_authorized(
                 principal,
                 upload,
-                config,
+                config.into(),
                 expected_generation,
                 false,
                 request_id,
@@ -2110,7 +2119,7 @@ impl DatabaseAdminPluginLifecycleService {
             .install_package_authorized(
                 principal,
                 upload,
-                config,
+                Some(config),
                 request.expected_generation,
                 true,
                 request_id,
@@ -2142,18 +2151,18 @@ impl DatabaseAdminPluginLifecycleService {
         &self,
         principal: SessionPrincipal,
         mut upload: PluginPackageUpload,
-        config: Value,
+        config: Option<Value>,
         expected_generation: Option<i64>,
         strict_generation: bool,
         request_id: &str,
     ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
         use tokio::io::AsyncWriteExt as _;
         if upload.uploaded == 0
-            || !config.is_object()
-            || serde_json::to_vec(&config)
-                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?
-                .len()
-                > af_db::MAX_PLUGIN_CONFIG_BYTES
+            || config.as_ref().is_some_and(|config| {
+                !config.is_object()
+                    || serde_json::to_vec(config)
+                        .map_or(true, |bytes| bytes.len() > af_db::MAX_PLUGIN_CONFIG_BYTES)
+            })
             || expected_generation.is_some_and(|generation| generation <= 0)
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
@@ -2216,6 +2225,18 @@ impl DatabaseAdminPluginLifecycleService {
         {
             return Err(AdminPluginLifecycleError::Conflict);
         }
+        let current = self
+            .repository
+            .get_deployment(&imported.plugin_id)
+            .await
+            .map_err(map_catalog_error)?;
+        let current_generation = current.as_ref().map(|deployment| deployment.generation);
+        if (strict_generation || expected_generation.is_some())
+            && expected_generation != current_generation
+        {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        let config = config.unwrap_or_else(|| current.map_or_else(|| json!({}), |row| row.config));
         manifest
             .validate()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -2237,17 +2258,6 @@ impl DatabaseAdminPluginLifecycleService {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let requires_capability_review = grants.is_empty() || grants.len() != capability_count;
-        let current = self
-            .repository
-            .get_deployment(&imported.plugin_id)
-            .await
-            .map_err(map_catalog_error)?;
-        let current_generation = current.as_ref().map(|deployment| deployment.generation);
-        if (strict_generation || expected_generation.is_some())
-            && expected_generation != current_generation
-        {
-            return Err(AdminPluginLifecycleError::Conflict);
-        }
         // Upload and Install is an explicit operator action. When replacing an
         // existing version, bind it to the generation just read so concurrent
         // installs still fail compare-and-swap rather than silently racing.

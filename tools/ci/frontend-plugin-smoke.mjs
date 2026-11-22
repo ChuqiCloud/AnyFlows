@@ -197,8 +197,14 @@ try {
     if (path === '/api/admin/plugins/install' && method === 'POST') {
       assert.match(request.headers()['content-type'], /^multipart\/form-data; boundary=/)
       const body = request.postData() ?? ''
-      assert.ok(body.includes('filename="catalog.afplugin"'))
-      assert.ok(body.includes('name="config"'))
+      if (body.includes('filename="catalog.afplugin"')) {
+        assert.equal(body.includes('name="repository"'), false)
+        assert.equal(body.includes('name="config"'), false, 'Blank configuration preserves an existing config or uses an empty object for first install')
+      } else {
+        assert.ok(body.includes('name="repository"'))
+        assert.ok(body.includes('https://github.com/example/catalog'))
+        assert.equal(body.includes('name="package"'), false)
+      }
       assert.equal(body.includes('signer_key_id'), false, 'Normal install has no forced signature input')
       installs.push(body)
       deployment = { ...deployment, generation: deployment.generation + 1 }
@@ -314,6 +320,15 @@ try {
   assert.ok(deploymentRequests > previousDeploymentRequests, 'Install refreshes desired deployment state')
   assert.ok(runtimeRequests > previousRuntimeRequests, 'Install refreshes actual node state')
 
+  await page.getByText(label('pluginLifecycle.install.sources.repository'), { exact: true }).click()
+  await page.getByRole('textbox', { name: label('pluginLifecycle.install.repository'), exact: true }).fill('https://github.com/example/catalog')
+  const repositoryInstall = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/plugins/install' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()
+  await repositoryInstall
+  await page.getByText(label('pluginLifecycle.install.success').replace('{{plugin}}', artifact.pluginId).replace('{{version}}', artifact.pluginVersion), { exact: true }).waitFor()
+  assert.equal(installs.length, 2, 'GitHub repository installs use the same package installation endpoint')
+
+  await page.getByText(label('pluginLifecycle.install.sources.market'), { exact: true }).click()
   await page.getByRole('textbox', { name: label('pluginLifecycle.market.indexUrl'), exact: true }).fill(marketIndex)
   await page.getByRole('button', { name: label('pluginLifecycle.market.load'), exact: true }).click()
   await page.getByRole('heading', { name: 'Market fixture', exact: true }).waitFor()

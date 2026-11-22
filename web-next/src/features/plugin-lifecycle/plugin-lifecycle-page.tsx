@@ -1,5 +1,5 @@
 import { Button, Card, CardBody, CardHeader, Chip, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Skeleton, Textarea } from '@heroui/react'
-import { Box, Check, Clock3, RefreshCw, ShieldAlert, Upload } from 'lucide-react'
+import { Check, Clock3, Plus, RefreshCw, Search, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -9,7 +9,6 @@ import type { PluginArtifactResponse, PluginDeploymentResponse } from '@/lib/api
 import { PluginConfigEditor } from './plugin-config-editor'
 import { PluginCapabilityConsole } from './plugin-capability-console'
 import { PluginInstallPanel } from './plugin-install-panel'
-import { PluginMarketPanel } from './plugin-market-panel'
 import { PluginProviderEditor } from './plugin-provider-editor'
 import { PluginRuntimePanel } from './plugin-runtime-panel'
 import { PluginTaskReconciliationPanel } from './plugin-task-reconciliation-panel'
@@ -166,6 +165,7 @@ export function PluginLifecyclePage() {
   const [historyPlugin, setHistoryPlugin] = useState<string>()
   const [generationRefresh, setGenerationRefresh] = useState(0)
   const [installing, setInstalling] = useState(false)
+  const [deploymentFilter, setDeploymentFilter] = useState('')
   const [confirmation, setConfirmation] = useState<
     { action: 'uninstall'; pluginId: string; generation: number }
     | { action: 'cleanup'; artifactId: number; pluginId: string }
@@ -176,6 +176,10 @@ export function PluginLifecyclePage() {
   const deploymentHistory = usePluginDeploymentHistory(grantTarget?.pluginId, generationRefresh)
   const artifactList = artifacts.data?.pages.flatMap((page) => page.artifacts) ?? []
   const deploymentList = deployments.data?.pages.flatMap((page) => page.deployments) ?? []
+  const filter = deploymentFilter.trim().toLowerCase()
+  const visibleDeployments = deploymentList.filter(({ pluginId, artifact }) =>
+    pluginId.toLowerCase().includes(filter) || artifact.pluginVersion.toLowerCase().includes(filter),
+  )
   const generationKnown = deploymentHistory.isSuccess && !deploymentHistory.isFetching
   const currentGeneration = deploymentHistory.data?.reduce<number | null>((latest, entry) => Math.max(latest ?? 0, entry.generation), null) ?? null
   const busy = installing || register.isPending || approve.isPending || revoke.isPending || deploy.isPending || disable.isPending || rollback.isPending || uninstall.isPending || cleanup.isPending
@@ -242,19 +246,48 @@ export function PluginLifecyclePage() {
   }
 
   return <main className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 sm:p-6">
-    <header className="flex flex-wrap items-start justify-between gap-3">
-      <div><p className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground"><Box size={15} />{t('pluginLifecycle.eyebrow')}</p><h1 className="mt-1 text-2xl font-semibold">{t('pluginLifecycle.title')}</h1><p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t('pluginLifecycle.subtitle')}</p></div>
-      <Button size="sm" variant="bordered" onPress={() => { void artifacts.refetch(); void deployments.refetch() }} isDisabled={artifacts.isFetching || deployments.isFetching}><RefreshCw size={15} className={(artifacts.isFetching || deployments.isFetching) ? 'animate-spin' : undefined} />{t('pluginLifecycle.refresh')}</Button>
+    <header className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-semibold">{t('pluginLifecycle.title')}</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t('pluginLifecycle.subtitle')}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="bordered" onPress={() => { void artifacts.refetch(); void deployments.refetch() }}
+          isDisabled={artifacts.isFetching || deployments.isFetching}>
+          <RefreshCw size={16} aria-hidden="true" className={artifacts.isFetching || deployments.isFetching ? 'animate-spin' : undefined} />
+          {t('pluginLifecycle.refresh')}
+        </Button>
+        <Button as="a" href="#plugin-install" color="primary">
+          <Plus size={16} aria-hidden="true" />{t('pluginLifecycle.install.title')}
+        </Button>
+      </div>
     </header>
 
-    <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm"><ShieldAlert className="mt-0.5 shrink-0 text-warning" size={18} /><p>{t('pluginLifecycle.trustWarning')}</p></div>
     {mutationText ? <p role="alert" className="rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger">{mutationText}</p> : null}
     {registrationError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.manifestJson')}</p> : null}
 
-    <PluginInstallPanel disabled={busy} onInstallingChange={setInstalling} />
-    <PluginMarketPanel disabled={busy} />
     {uninstallNotice !== undefined ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.accepted', { count: uninstallNotice })}</p> : null}
     {cleanupNotice ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.cleaned')}</p> : null}
+    <Card id="plugin-deployments" shadow="none" className="scroll-mt-6 rounded-xl border border-[var(--hairline)] bg-card">
+      <CardHeader className="flex flex-wrap items-start justify-between gap-3 p-5">
+        <div>
+          <h2 className="text-base font-semibold">{t('pluginLifecycle.deployments.title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.deployments.description')}</p>
+        </div>
+        {deploymentList.length > 0 ? <Input size="sm" className="w-full sm:max-w-60"
+          aria-label={t('pluginLifecycle.deployments.filter')} placeholder={t('pluginLifecycle.deployments.filter')}
+          startContent={<Search size={16} aria-hidden="true" />} isClearable
+          value={deploymentFilter} onValueChange={setDeploymentFilter} /> : null}
+      </CardHeader>
+      <CardBody className="space-y-3 p-5 pt-0">
+        {deployments.isPending ? <Skeleton className="h-24 rounded-lg" /> : visibleDeployments.length ? visibleDeployments.map((deployment) => <DeploymentCard key={deployment.pluginId} deployment={deployment} historyOpen={historyPlugin === deployment.pluginId} onToggleHistory={() => setHistoryPlugin(historyPlugin === deployment.pluginId ? undefined : deployment.pluginId)} history={historyPlugin === deployment.pluginId ? history.data ?? [] : []} historyLoading={historyPlugin === deployment.pluginId && history.isFetching} historyError={historyPlugin === deployment.pluginId && history.isError} onRetryHistory={() => void history.refetch()} onDisable={() => disable.mutate({ pluginId: deployment.pluginId, generation: deployment.generation })} onUninstall={() => setConfirmation({ action: 'uninstall', pluginId: deployment.pluginId, generation: deployment.generation })} onRollback={(targetGeneration) => rollback.mutate({ pluginId: deployment.pluginId, generation: deployment.generation, targetGeneration })} busy={busy} locale={locale} t={t} />) : deployments.isError ? null : <Empty text={t(filter ? 'pluginLifecycle.deployments.filterEmpty' : 'pluginLifecycle.deployments.empty')} />}
+        {deployments.isError ? <ErrorBox onRetry={() => { if (deployments.isFetchNextPageError) void deployments.fetchNextPage(); else void deployments.refetch() }} text={t('pluginLifecycle.errors.loadDeployments')} retry={t('pluginLifecycle.refresh')} /> : null}
+        {deployments.hasNextPage ? <div className="flex justify-center"><Button size="sm" variant="bordered" isDisabled={deployments.isFetching} onPress={() => void deployments.fetchNextPage()}>{t(deployments.isFetchingNextPage ? 'pluginLifecycle.loading' : 'pluginLifecycle.loadMore')}</Button></div> : null}
+      </CardBody>
+    </Card>
+
+    <PluginInstallPanel disabled={busy} onInstallingChange={setInstalling} />
+
     <PluginRuntimePanel deployments={deploymentList} />
     <PluginTaskReconciliationPanel />
     <PluginEventResultsPanel />
@@ -279,7 +312,7 @@ export function PluginLifecyclePage() {
       </CardBody> : null}
       <CardBody className="space-y-3 p-5 pt-0">
         {artifacts.isPending ? <Skeleton className="h-24 rounded-lg" /> : artifactList.length ? artifactList.map((artifact) => <article key={artifact.id} className="rounded-lg border border-[var(--hairline)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{artifact.pluginId}</strong><Chip size="sm" variant="flat">{artifact.pluginVersion}</Chip><Chip size="sm" color={artifact.revocation ? 'danger' : artifact.approval ? 'success' : 'warning'} variant="flat">{artifact.revocation ? t('pluginLifecycle.status.revoked') : artifact.approval ? t('pluginLifecycle.status.approved') : t('pluginLifecycle.status.pending')}</Chip><Chip size="sm" variant="flat">{t('official' in artifact && artifact.official === true ? 'pluginLifecycle.status.official' : artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{artifact.digest}</p><p className="mt-1 text-xs text-muted-foreground">{artifact.signerKeyId ? `${artifact.signerKeyId} · ` : ''}{prettyDate(artifact.createdAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.artifacts.capabilities')}: {capabilities(artifact).map((item) => item.id).join(', ') || '—'}</p></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="break-all text-sm">{artifact.pluginId}</strong><Chip size="sm" variant="flat">{artifact.pluginVersion}</Chip><Chip size="sm" color={artifact.revocation ? 'danger' : artifact.approval ? 'success' : 'warning'} variant="flat">{artifact.revocation ? t('pluginLifecycle.status.revoked') : artifact.approval ? t('pluginLifecycle.status.approved') : t('pluginLifecycle.status.pending')}</Chip><Chip size="sm" variant="flat">{t('official' in artifact && artifact.official === true ? 'pluginLifecycle.status.official' : artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 break-all font-mono text-xs text-muted-foreground">{artifact.digest}</p><p className="mt-1 text-xs text-muted-foreground">{artifact.signerKeyId ? `${artifact.signerKeyId} · ` : ''}{prettyDate(artifact.createdAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.artifacts.capabilities')}: {capabilities(artifact).map((item) => item.id).join(', ') || '—'}</p></div>
             <div className="flex flex-wrap gap-2">{!artifact.approval && !artifact.revocation ? <Button size="sm" variant="flat" color="success" isDisabled={busy} onPress={() => approve.mutate(artifact.id)}><Check size={14} />{t('pluginLifecycle.artifacts.approve')}</Button> : null}{artifact.approval && !artifact.revocation ? <Button size="sm" variant="bordered" isDisabled={busy} onPress={() => openGrant(artifact)}>{t('pluginLifecycle.deploy')}</Button> : null}{!artifact.revocation ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={() => { setRevocationTarget(artifact.id); setRevocationReason('') }}>{t('pluginLifecycle.artifacts.revoke')}</Button> : null}{artifact.revocation ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={() => setConfirmation({ action: 'cleanup', artifactId: artifact.id, pluginId: artifact.pluginId })}>{t('pluginLifecycle.removal.cleanup')}</Button> : null}</div>
           </div>
           {revocationTarget === artifact.id ? <div className="mt-3 flex flex-wrap items-end gap-2"><label className="min-w-56 flex-1 text-xs font-medium">{t('pluginLifecycle.artifacts.revokeReason')}<Input size="sm" maxLength={512} value={revocationReason} onChange={(event) => setRevocationReason(event.target.value)} /></label><Button size="sm" color="danger" isDisabled={busy || !revocationReason.trim()} onPress={() => revoke.mutate({ artifactId: artifact.id, reason: revocationReason.trim() }, { onSuccess: () => setRevocationTarget(undefined) })}>{t('pluginLifecycle.confirm')}</Button><Button size="sm" variant="light" onPress={() => setRevocationTarget(undefined)}>{t('pluginLifecycle.cancel')}</Button></div> : null}
@@ -290,15 +323,6 @@ export function PluginLifecyclePage() {
     </Card>
       </div>
     </details>
-
-    <Card shadow="none" className="rounded-xl border border-[var(--hairline)] bg-card">
-      <CardHeader className="p-5"><div><h2 className="text-base font-semibold">{t('pluginLifecycle.deployments.title')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('pluginLifecycle.deployments.description')}</p></div></CardHeader>
-      <CardBody className="space-y-3 p-5 pt-0">
-        {deployments.isPending ? <Skeleton className="h-24 rounded-lg" /> : deploymentList.length ? deploymentList.map((deployment) => <DeploymentCard key={deployment.pluginId} deployment={deployment} historyOpen={historyPlugin === deployment.pluginId} onToggleHistory={() => setHistoryPlugin(historyPlugin === deployment.pluginId ? undefined : deployment.pluginId)} history={historyPlugin === deployment.pluginId ? history.data ?? [] : []} historyLoading={historyPlugin === deployment.pluginId && history.isFetching} historyError={historyPlugin === deployment.pluginId && history.isError} onRetryHistory={() => void history.refetch()} onDisable={() => disable.mutate({ pluginId: deployment.pluginId, generation: deployment.generation })} onUninstall={() => setConfirmation({ action: 'uninstall', pluginId: deployment.pluginId, generation: deployment.generation })} onRollback={(targetGeneration) => rollback.mutate({ pluginId: deployment.pluginId, generation: deployment.generation, targetGeneration })} busy={busy} locale={locale} t={t} />) : deployments.isError ? null : <Empty text={t('pluginLifecycle.deployments.empty')} />}
-        {deployments.isError ? <ErrorBox onRetry={() => { if (deployments.isFetchNextPageError) void deployments.fetchNextPage(); else void deployments.refetch() }} text={t('pluginLifecycle.errors.loadDeployments')} retry={t('pluginLifecycle.refresh')} /> : null}
-        {deployments.hasNextPage ? <div className="flex justify-center"><Button size="sm" variant="bordered" isDisabled={deployments.isFetching} onPress={() => void deployments.fetchNextPage()}>{t(deployments.isFetchingNextPage ? 'pluginLifecycle.loading' : 'pluginLifecycle.loadMore')}</Button></div> : null}
-      </CardBody>
-    </Card>
 
     <Modal isOpen={confirmation !== undefined} isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={(open) => { if (!open && !busy) setConfirmation(undefined) }}>
       <ModalContent>
@@ -347,7 +371,7 @@ function DeploymentCard({ deployment, history, historyOpen, historyLoading, hist
   const pages = pluginPages(deployment, locale)
   const uiViewsEnabled = deployment.enabled && Boolean(deployment.artifact.approval) && !deployment.artifact.revocation
     && hasRenderablePluginUiViews(deployment.artifact.manifest, 'plugin_management', locale)
-  return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip><Chip size="sm" variant="flat">{t('official' in deployment.artifact && deployment.artifact.official === true ? 'pluginLifecycle.status.official' : deployment.artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onUninstall}>{t('pluginLifecycle.removal.uninstall')}</Button><Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
+  return <article className="rounded-lg border border-[var(--hairline)] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><strong className="break-all text-sm">{deployment.pluginId}</strong><Chip size="sm" variant="flat">g{deployment.generation}</Chip><Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip><Chip size="sm" variant="flat">{t('official' in deployment.artifact && deployment.artifact.official === true ? 'pluginLifecycle.status.official' : deployment.artifact.signerKeyId ? 'pluginLifecycle.status.signed' : 'pluginLifecycle.status.unverified')}</Chip></div><p className="mt-1 text-xs text-muted-foreground">{deployment.artifact.pluginVersion} · {deployment.artifact.digest.slice(0, 16)}… · {prettyDate(deployment.updatedAt, locale)}</p><p className="mt-2 text-xs">{t('pluginLifecycle.deployments.grants')}: {deployment.grantedCapabilities.map(({ id, version }) => `${id}@${version}`).join(', ') || '—'}</p></div><div className="flex flex-wrap gap-2">{deployment.enabled ? <Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onDisable}>{t('pluginLifecycle.disable')}</Button> : null}<Button size="sm" variant="bordered" color="danger" isDisabled={busy} onPress={onUninstall}>{t('pluginLifecycle.removal.uninstall')}</Button><Button size="sm" variant="light" isDisabled={historyLoading} onPress={onToggleHistory}><Clock3 size={14} />{t('pluginLifecycle.deployments.history')}</Button></div></div>
     {uiCards.length || uiViewsEnabled || pages.length ? <section aria-label={t('pluginLifecycle.ui.section')} className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><p className="text-xs text-muted-foreground">{t('pluginLifecycle.ui.scope')}</p>{uiCards.map((card) => <div key={`${deployment.pluginId}:${card.id}`} className="rounded-lg border border-[var(--hairline)] bg-content1/40 p-3" data-plugin-ui-card={card.id}><h3 className="text-sm font-medium">{card.title}</h3>{card.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{card.description}</p> : null}</div>)}{uiViewsEnabled ? <PluginUiViewsRenderer manifest={deployment.artifact.manifest} slot="plugin_management" locale={locale} /> : null}{pages.length ? <div className="flex flex-wrap gap-2" aria-label={t('pluginLifecycle.pages.title')}>{pages.map((page) => <Button key={page.id} as={Link} to={`/console/plugin-pages/${encodeURIComponent(deployment.pluginId)}/${encodeURIComponent(page.id)}`} size="sm" variant="bordered">{page.title}</Button>)}</div> : null}</section> : null}
     <PluginCapabilityConsole deployment={deployment} />
     {canConfigureProvider ? (

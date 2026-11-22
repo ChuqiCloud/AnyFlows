@@ -32675,7 +32675,7 @@
         "tags": [
           "插件生命周期"
         ],
-        "summary": "上传插件包并安装启用；自有插件无需签名",
+        "summary": "上传插件包或从 GitHub 仓库安装",
         "operationId": "installAdminPluginPackage",
         "requestBody": {
           "content": {
@@ -32699,7 +32699,7 @@
             }
           },
           "400": {
-            "description": "插件包、配置或签名无效",
+            "description": "安装来源、插件包、配置或签名无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -32720,6 +32720,16 @@
           },
           "403": {
             "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "仓库、正式 Release 或插件包不存在",
             "content": {
               "application/json": {
                 "schema": {
@@ -32759,7 +32769,7 @@
             }
           },
           "503": {
-            "description": "安装并发已满或插件运行时未启用",
+            "description": "安装并发已满、GitHub 暂不可用或插件运行时未启用",
             "content": {
               "application/json": {
                 "schema": {
@@ -56265,21 +56275,37 @@
       },
       "PluginPackageInstallRequest": {
         "type": "object",
-        "required": [
-          "package"
-        ],
         "properties": {
           "package": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "binary",
             "description": "ZIP/.afplugin archive containing anyflows-plugin.json and payload/."
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Public GitHub repository URL. Supply exactly one of package and repository.",
+            "maxLength": 256
+          },
+          "asset_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Exact release filename when multiple candidate packages are published.",
+            "maxLength": 255
           },
           "config": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Public JSON configuration, defaults to {}."
+            "description": "Optional public JSON configuration. Existing deployments retain it when omitted; first installs use an empty object."
           },
           "expected_generation": {
             "type": [
