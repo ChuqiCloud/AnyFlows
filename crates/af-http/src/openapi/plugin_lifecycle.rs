@@ -395,7 +395,7 @@ fn invoke_model_plugin_route_delete() {}
     path = "/api/admin/plugins/{plugin_id}/provider-selection",
     operation_id = "configureAdminPluginProviderSelection",
     tag = "插件生命周期",
-    summary = "设置 Provider 插件适用的渠道、模型和优先级",
+    summary = "设置 Provider 插件适用渠道、模型、优先级和上游响应模式",
     params(("plugin_id" = String, Path)),
     request_body = PluginProviderSelectionRequest,
     responses((status = 200, description = "新的插件部署代次", body = PluginDeploymentResponse), (status = 400, description = "渠道绑定或插件配置无效", body = ManagementErrorBody), (status = 409, description = "部署代次不一致", body = ManagementErrorBody)),

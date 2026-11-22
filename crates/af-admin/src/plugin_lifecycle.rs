@@ -576,6 +576,17 @@ pub struct PluginProviderSelection {
     pub models: Vec<String>,
     #[serde(default)]
     pub priority: i32,
+    #[serde(default)]
+    pub upstream_response_mode: PluginProviderUpstreamResponseMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginProviderUpstreamResponseMode {
+    #[default]
+    Auto,
+    NonStreaming,
+    Streaming,
 }
 
 impl PluginProviderSelection {
@@ -584,7 +595,8 @@ impl PluginProviderSelection {
         serde_json::from_value(json!({
             "channelIds": selection.get("channelIds").cloned().unwrap_or_else(|| json!([])),
             "models": selection.get("models").cloned().unwrap_or_else(|| json!([])),
-            "priority": selection.get("priority").cloned().unwrap_or_else(|| json!(0))
+            "priority": selection.get("priority").cloned().unwrap_or_else(|| json!(0)),
+            "upstreamResponseMode": selection.get("upstreamResponseMode").cloned().unwrap_or_else(|| json!("auto"))
         }))
         .ok()
     }
@@ -3788,6 +3800,34 @@ fn map_audit_error(error: PlatformAuditError) -> AdminPluginLifecycleError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_selection_defaults_legacy_deployments_to_automatic_response_mode() {
+        let selection = PluginProviderSelection::from_config(&json!({
+            "providerSelection": {
+                "channelIds": [12],
+                "models": ["vendor-model"],
+                "priority": 7
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            selection.upstream_response_mode,
+            PluginProviderUpstreamResponseMode::Auto
+        );
+
+        let configured = PluginProviderSelection::from_config(&json!({
+            "providerSelection": {
+                "channelIds": [12],
+                "upstreamResponseMode": "non_streaming"
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            configured.upstream_response_mode,
+            PluginProviderUpstreamResponseMode::NonStreaming
+        );
+    }
 
     fn capability(
         id: &str,

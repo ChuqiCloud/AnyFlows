@@ -14,11 +14,12 @@ use std::{
 
 use af_adapter::{Bytes, HeaderName, HeaderValue, Method, StatusCode, UpstreamResponse};
 use af_admin::AdminPluginSidecarRuntime;
+use af_admin::PluginProviderUpstreamResponseMode;
 use af_db::{
     PluginArtifactSourceKind, PluginCatalogRepository, PluginDeploymentQuery,
     PluginDeploymentRecord,
 };
-use af_domain::Protocol;
+use af_domain::{Operation, Protocol};
 use af_http::{ChatService, ChatServiceFuture};
 use af_plugin_contract::{
     PROVIDER_LIFECYCLE_CAPABILITY, PluginManifest, PluginProviderFailureClass,
@@ -185,6 +186,7 @@ struct ProviderTarget {
     generation: i64,
     capability_version: u16,
     priority: i32,
+    upstream_response_mode: PluginProviderUpstreamResponseMode,
     models: Vec<String>,
     channels: Vec<i64>,
 }
@@ -289,11 +291,17 @@ impl DatabasePluginProviderRelayHook {
                         .and_then(Value::as_array)
                         .map(|items| items.iter().filter_map(Value::as_i64).collect())
                         .unwrap_or_default();
+                    let upstream_response_mode = selection
+                        .and_then(|value| value.get("upstreamResponseMode"))
+                        .cloned()
+                        .and_then(|value| serde_json::from_value(value).ok())
+                        .unwrap_or_default();
                     targets.push(ProviderTarget {
                         plugin_id: deployment.plugin_id.clone(),
                         generation: deployment.generation,
                         capability_version: capability.version,
                         priority,
+                        upstream_response_mode,
                         models,
                         channels,
                     });
@@ -335,6 +343,27 @@ impl DatabasePluginProviderRelayHook {
         let deadline = Instant::now() + Duration::from_millis(500);
         let mut selected = None;
         for target in candidates {
+            let applies_response_mode = target.upstream_response_mode
+                != PluginProviderUpstreamResponseMode::Auto
+                && request.operation == Operation::Chat
+                && request.upstream_protocol == Protocol::OpenAiChat;
+            let upstream_response_mode = if applies_response_mode {
+                match target.upstream_response_mode {
+                    PluginProviderUpstreamResponseMode::Auto => request.response_mode,
+                    PluginProviderUpstreamResponseMode::NonStreaming => {
+                        af_adapter::ResponseMode::Full
+                    }
+                    PluginProviderUpstreamResponseMode::Streaming => {
+                        af_adapter::ResponseMode::Stream
+                    }
+                }
+            } else {
+                request.response_mode
+            };
+            let mut plugin_request = body.clone();
+            if applies_response_mode {
+                set_chat_stream_mode(&mut plugin_request, upstream_response_mode)?;
+            }
             let invocation = self.invocation(&target, &request.model, "provider-request");
             let result = tokio::time::timeout_at(
                 deadline,
@@ -346,20 +375,26 @@ impl DatabasePluginProviderRelayHook {
                     target.capability_version,
                     PluginProviderOperation::Request {
                         model: request.model.clone(),
-                        request: body.clone(),
+                        request: plugin_request,
                     },
                 ),
             )
             .await;
             if let Ok(Ok(result @ PluginProviderResult::Request { .. })) = result {
-                selected = Some((target, result));
+                selected = Some((
+                    target,
+                    result,
+                    upstream_response_mode,
+                    applies_response_mode,
+                ));
                 break;
             }
             if Instant::now() >= deadline {
                 break;
             }
         }
-        let (selected, result) = selected.ok_or(af_domain::UpstreamError::ProtocolError)?;
+        let (selected, result, upstream_response_mode, applies_response_mode) =
+            selected.ok_or(af_domain::UpstreamError::ProtocolError)?;
         let PluginProviderResult::Request {
             method,
             path,
@@ -369,6 +404,10 @@ impl DatabasePluginProviderRelayHook {
         else {
             unreachable!()
         };
+        let mut body = body;
+        if applies_response_mode {
+            set_chat_stream_mode(&mut body, upstream_response_mode)?;
+        }
         let mut target_url =
             Url::parse(&request.target).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
         let (path_only, query) = path
@@ -389,6 +428,9 @@ impl DatabasePluginProviderRelayHook {
                 .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
             header_map.insert(name, value);
         }
+        if applies_response_mode {
+            set_chat_accept_header(&mut header_map, upstream_response_mode);
+        }
         let projected = ProviderRelayRequest {
             request_id: request.request_id,
             credential_id: request.credential_id,
@@ -405,6 +447,9 @@ impl DatabasePluginProviderRelayHook {
             headers: header_map,
             body: serde_json::to_vec(&body).ok().map(Bytes::from),
             response_mode: request.response_mode,
+            upstream_response_mode,
+            upstream_response_mode_overridden: applies_response_mode,
+            upstream_protocol: request.upstream_protocol,
             response_body_limit: request.response_body_limit,
         };
         Ok(projected)
@@ -548,7 +593,11 @@ impl ProviderRelayHook for DatabasePluginProviderRelayHook {
         Box::pin(async move {
             let request = self.process_outbound(request).await?;
             let request = self.transform(request).await?;
-            self.sign_request(request).await
+            let request = self.sign_request(request).await?;
+            if request.upstream_response_mode_overridden {
+                validate_chat_stream_mode(&request)?;
+            }
+            Ok(request)
         })
     }
 
@@ -585,6 +634,7 @@ impl From<&ProviderRelayBinding> for ProviderTarget {
             generation: binding.generation,
             capability_version: binding.capability_version,
             priority: 0,
+            upstream_response_mode: PluginProviderUpstreamResponseMode::Auto,
             models: vec![],
             channels: vec![],
         }
@@ -604,6 +654,64 @@ fn protected_provider_header(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "authorization" | "host" | "content-length" | "cookie" | "proxy-authorization"
     )
+}
+
+fn set_chat_stream_mode(
+    body: &mut Value,
+    mode: af_adapter::ResponseMode,
+) -> Result<(), af_domain::UpstreamError> {
+    let object = body
+        .as_object_mut()
+        .ok_or(af_domain::UpstreamError::ProtocolError)?;
+    object.insert(
+        "stream".to_owned(),
+        Value::Bool(mode == af_adapter::ResponseMode::Stream),
+    );
+    if mode == af_adapter::ResponseMode::Full {
+        object.remove("stream_options");
+    }
+    Ok(())
+}
+
+fn set_chat_accept_header(headers: &mut af_adapter::HeaderMap, mode: af_adapter::ResponseMode) {
+    headers.insert(
+        HeaderName::from_static("accept"),
+        HeaderValue::from_static(match mode {
+            af_adapter::ResponseMode::Full => "application/json",
+            af_adapter::ResponseMode::Stream => "text/event-stream",
+        }),
+    );
+}
+
+fn validate_chat_stream_mode(
+    request: &ProviderRelayRequest,
+) -> Result<(), af_domain::UpstreamError> {
+    if request.operation != Operation::Chat || request.upstream_protocol != Protocol::OpenAiChat {
+        return Ok(());
+    }
+    let body = request
+        .body
+        .as_ref()
+        .and_then(|body| serde_json::from_slice::<Value>(body).ok())
+        .ok_or(af_domain::UpstreamError::ProtocolError)?;
+    let mut expected = body.clone();
+    set_chat_stream_mode(&mut expected, request.upstream_response_mode)?;
+    if expected != body {
+        return Err(af_domain::UpstreamError::ProtocolError);
+    }
+    let expected_accept = match request.upstream_response_mode {
+        af_adapter::ResponseMode::Full => "application/json",
+        af_adapter::ResponseMode::Stream => "text/event-stream",
+    };
+    if request
+        .headers
+        .get("accept")
+        .and_then(|value| value.to_str().ok())
+        != Some(expected_accept)
+    {
+        return Err(af_domain::UpstreamError::ProtocolError);
+    }
+    Ok(())
 }
 
 /// Selects explicitly enabled, approved and granted request observers.

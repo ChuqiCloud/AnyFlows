@@ -98,6 +98,13 @@
       "models": "Restrict models",
       "modelsHint": "Enter one model ID per line. Leave blank to match every model on the selected channels.",
       "priority": "Priority",
+      "upstreamResponseMode": "Upstream response mode",
+      "upstreamResponseModeHint": "Auto follows the client. Forced modes apply to OpenAI Chat Completions compatible channels; the host converts the result back to the format requested by the client.",
+      "responseModes": {
+        "auto": "Follow client",
+        "nonStreaming": "Force non-streaming",
+        "streaming": "Force streaming"
+      },
       "bound": "Channels bound: {{count}}",
       "conflict": "The deployment has changed. Close and reopen this dialog.",
       "saveError": "Could not save the binding. Check the channel selection and deployment.",

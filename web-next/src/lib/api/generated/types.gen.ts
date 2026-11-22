@@ -3026,11 +3026,13 @@ export type PluginProviderSelectionBody = {
     channelIds: Array<number>;
     models: Array<string>;
     priority: number;
+    upstreamResponseMode?: PluginProviderUpstreamResponseModeBody;
 };
 export type PluginProviderSelectionRequest = {
     expected_generation: number;
     selection: PluginProviderSelectionBody;
 };
+export type PluginProviderUpstreamResponseModeBody = 'auto' | 'non_streaming' | 'streaming';
 export type PluginRouteInvocationResponse = {
     pluginId: string;
     routeId: string;

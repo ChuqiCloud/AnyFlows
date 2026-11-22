@@ -35161,7 +35161,7 @@
         "tags": [
           "插件生命周期"
         ],
-        "summary": "设置 Provider 插件适用的渠道、模型和优先级",
+        "summary": "设置 Provider 插件适用渠道、模型、优先级和上游响应模式",
         "operationId": "configureAdminPluginProviderSelection",
         "parameters": [
           {
@@ -56342,6 +56342,9 @@
           "priority": {
             "type": "integer",
             "format": "int32"
+          },
+          "upstreamResponseMode": {
+            "$ref": "#/components/schemas/PluginProviderUpstreamResponseModeBody"
           }
         },
         "additionalProperties": false
@@ -56363,6 +56366,14 @@
           }
         },
         "additionalProperties": false
+      },
+      "PluginProviderUpstreamResponseModeBody": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "non_streaming",
+          "streaming"
+        ]
       },
       "PluginRouteInvocationResponse": {
         "type": "object",
