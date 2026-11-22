@@ -129,13 +129,12 @@ async fn wait_for_result(
             Some("succeeded") if protocol == PluginNativeTaskProtocol::Image => {
                 return image_view(service, auth, &task, id, b64).await;
             }
-            Some("failed" | "cancelled" | "succeeded" | "unknown")
+            Some("failed" | "cancelled" | "succeeded")
                 if protocol == PluginNativeTaskProtocol::Responses =>
             {
                 return Ok(no_store(responses_view(&task, id)?));
             }
             Some("failed" | "cancelled") => return Err(UpstreamError::ProtocolError.into()),
-            Some("unknown") => return Err(AfError::RequestOutcomeUnknown),
             _ => {}
         }
         let next = async {
@@ -164,9 +163,9 @@ async fn wait_for_result(
 fn responses_view(task: &Value, id: &str) -> Result<Value, AfError> {
     let status = match task["state"].as_str() {
         Some("succeeded") => "completed",
-        Some("failed" | "unknown") => "failed",
+        Some("failed") => "failed",
         Some("cancelled") => "cancelled",
-        Some("running" | "polling" | "settling") => "in_progress",
+        Some("running" | "polling" | "settling" | "unknown" | "submitting") => "in_progress",
         _ => "queued",
     };
     let output = if status == "completed" {
@@ -190,8 +189,8 @@ fn responses_view(task: &Value, id: &str) -> Result<Value, AfError> {
 fn video_view(task: &Value, id: &str) -> Value {
     let status = match task["state"].as_str() {
         Some("succeeded") => "completed",
-        Some("failed" | "unknown" | "cancelled") => "failed",
-        Some("running" | "polling" | "settling") => "in_progress",
+        Some("failed" | "cancelled") => "failed",
+        Some("running" | "polling" | "settling" | "unknown" | "submitting") => "in_progress",
         _ => "queued",
     };
     json!({

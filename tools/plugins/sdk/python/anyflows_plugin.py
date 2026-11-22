@@ -19,19 +19,32 @@ from typing import Any, BinaryIO
 class PluginError(Exception):
     """A public, bounded failure code; exception text is never sent to the host."""
 
-    def __init__(self, code: str = "invalid_response") -> None:
+    def __init__(self, code: str = "invalid_response", outcome: str | None = None) -> None:
         if code not in {
             "invalid_configuration", "unsupported", "authentication_required", "forbidden",
             "rate_limited", "temporarily_unavailable", "conflict", "upstream_failure",
-            "invalid_response", "invalid_key", "not_found", "storage_unavailable",
+            "partial_success", "outcome_unknown", "invalid_response",
         }:
             raise ValueError("unsupported connector error code")
+        if outcome is not None and outcome not in {"not_applied", "applied", "unknown"}:
+            raise ValueError("unsupported connector operation outcome")
         self.code = code
+        self.outcome = outcome
         super().__init__(code)
 
 
 class ProtocolError(Exception):
     """A malformed host frame ends this process instead of reusing its stream."""
+
+
+class PluginStorageError(Exception):
+    """A host storage failure that is not a connector operation result."""
+
+    def __init__(self, code: str) -> None:
+        if code not in {"invalid_key", "storage_unavailable"}:
+            raise ValueError("unsupported plugin storage error code")
+        self.code = code
+        super().__init__(code)
 
 
 class PluginInvocationContext:
@@ -251,7 +264,7 @@ class PluginInvocationContext:
             value = result["value"]
             if not isinstance(value, dict) or set(value) != {"code"} or not isinstance(value.get("code"), str):
                 raise ProtocolError("invalid storage continuation error")
-            raise PluginError(value["code"])
+            raise PluginStorageError(value["code"])
         if result["kind"] not in {"value", "entries"}:
             raise ProtocolError("invalid storage continuation result")
         if self._json_size(result["value"]) > self._max_response_bytes:
@@ -306,7 +319,7 @@ class Plugin:
         task_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
         provider_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
         credential_handler: Callable[[str, dict[str, Any], dict[str, Any]], Any] | None = None,
-        route_handler: Callable[[str, str, dict[str, Any], dict[str, Any]], Any] | None = None,
+        route_handler: Callable[..., Any] | None = None,
         clock_ms: Callable[[], int] | None = None,
     ) -> None:
         self.manifest = copy.deepcopy(manifest)
@@ -321,7 +334,8 @@ class Plugin:
         self.max_frame_bytes = 1_048_576
         self.max_response_bytes = manifest["limits"]["maxResponseBytes"]
         self.declarations = {item["id"]: item for item in manifest["capabilities"]}
-        self._handler_context_parameter = self._find_context_parameter(handler)
+        self._handler_context_parameter = self._find_context_parameter(handler, 3)
+        self._route_handler_context_parameter = self._find_context_parameter(route_handler, 4)
 
     def respond(
         self,
@@ -335,6 +349,7 @@ class Plugin:
             "protocolVersion", "pluginId", "pluginVersion", "artifactSha256",
             "deploymentGeneration", "requestId",
         )}
+        handler_started = False
         try:
             if request["deadlineUnixMs"] <= self.clock_ms():
                 raise PluginError("temporarily_unavailable")
@@ -363,11 +378,12 @@ class Plugin:
                     )
                 ):
                     raise PluginError("unsupported")
+                handler_started = True
                 output = self._invoke_handler(request, operation, source, target)
                 if self._json_size(output) > self.max_response_bytes:
                     raise PluginError("invalid_response")
                 if request["deadlineUnixMs"] <= self.clock_ms():
-                    raise PluginError("temporarily_unavailable")
+                    raise PluginError("outcome_unknown", "unknown")
                 result = {"kind": "capability", "value": {"output": output}}
             elif kind == "invoke_task":
                 declaration = self.declarations.get(operation["capabilityId"])
@@ -383,6 +399,7 @@ class Plugin:
                     or "writeSemantics" not in declaration
                 ):
                     raise PluginError("forbidden")
+                handler_started = True
                 output = self.task_handler(
                     operation["capabilityId"], operation["publicConfig"], operation["task"]
                 )
@@ -390,7 +407,7 @@ class Plugin:
                 if self._json_size(output) > self.max_response_bytes:
                     raise PluginError("invalid_response")
                 if request["deadlineUnixMs"] <= self.clock_ms():
-                    raise PluginError("temporarily_unavailable")
+                    raise PluginError("outcome_unknown", "unknown")
                 result = {"kind": "task", "value": output}
             elif kind == "invoke_credential":
                 declaration = self.declarations.get(operation["capabilityId"])
@@ -401,12 +418,15 @@ class Plugin:
                     or self.credential_handler is None
                 ):
                     raise PluginError("unsupported")
+                handler_started = True
                 output = self.credential_handler(
                     operation["capabilityId"], operation["publicConfig"], operation["credential"]
                 )
                 self._validate_credential_result(output)
                 if self._json_size(output) > self.max_response_bytes:
                     raise PluginError("invalid_response")
+                if request["deadlineUnixMs"] <= self.clock_ms():
+                    raise PluginError("outcome_unknown", "unknown")
                 result = {"kind": "credential", "value": output}
             elif kind == "plugin_route":
                 declaration = self.declarations.get(operation["capabilityId"])
@@ -423,14 +443,12 @@ class Plugin:
                     or self.route_handler is None
                 ):
                     raise PluginError("unsupported")
-                output = self.route_handler(
-                    operation["routeId"],
-                    operation["capabilityId"],
-                    operation["publicConfig"],
-                    operation["input"],
-                )
+                handler_started = True
+                output = self._invoke_route_handler(request, operation, source, target)
                 if self._json_size(output) > self.max_response_bytes:
                     raise PluginError("invalid_response")
+                if request["deadlineUnixMs"] <= self.clock_ms():
+                    raise PluginError("outcome_unknown", "unknown")
                 result = {"kind": "capability", "value": {"output": output}}
             elif kind == "invoke_provider":
                 declaration = self.declarations.get(operation["capabilityId"])
@@ -442,20 +460,26 @@ class Plugin:
                     or self.provider_handler is None
                 ):
                     raise PluginError("unsupported")
+                handler_started = True
                 output = self.provider_handler(
                     operation["capabilityId"], operation["publicConfig"], operation["provider"]
                 )
                 self._validate_provider_result(output)
                 if self._json_size(output) > self.max_response_bytes:
                     raise PluginError("invalid_response")
+                if request["deadlineUnixMs"] <= self.clock_ms():
+                    raise PluginError("outcome_unknown", "unknown")
                 result = {"kind": "provider", "value": output}
         except ProtocolError:
             raise
         except PluginError as error:
-            result = self._error(error.code)
+            outcome = error.outcome or ("unknown" if handler_started else "not_applied")
+            result = self._error(error.code, outcome)
         except Exception:
             # Do not serialize Python exceptions, paths or handler values.
-            result = self._error("upstream_failure")
+            result = self._error(
+                "upstream_failure", "unknown" if handler_started else "not_applied"
+            )
         response["result"] = result
         return response
 
@@ -486,8 +510,54 @@ class Plugin:
             )
         return self.handler(operation["capabilityId"], operation["publicConfig"], operation["input"], context)
 
+    def _invoke_route_handler(
+        self,
+        request: dict[str, Any],
+        operation: dict[str, Any],
+        source: BinaryIO | None,
+        target: BinaryIO | None,
+    ) -> Any:
+        if self.route_handler is None:
+            raise PluginError("unsupported")
+        context = PluginInvocationContext(
+            request,
+            operation["capabilityId"],
+            operation["capabilityVersion"],
+            self.max_frame_bytes,
+            self.max_response_bytes,
+            source,
+            target,
+        )
+        if self._route_handler_context_parameter is None:
+            return self.route_handler(
+                operation["routeId"],
+                operation["capabilityId"],
+                operation["publicConfig"],
+                operation["input"],
+            )
+        if self._route_handler_context_parameter == "keyword":
+            return self.route_handler(
+                operation["routeId"],
+                operation["capabilityId"],
+                operation["publicConfig"],
+                operation["input"],
+                context=context,
+            )
+        return self.route_handler(
+            operation["routeId"],
+            operation["capabilityId"],
+            operation["publicConfig"],
+            operation["input"],
+            context,
+        )
+
     @staticmethod
-    def _find_context_parameter(handler: Callable[..., Any]) -> str | None:
+    def _find_context_parameter(
+        handler: Callable[..., Any] | None,
+        base_positional_count: int,
+    ) -> str | None:
+        if handler is None:
+            return None
         try:
             parameters = inspect.signature(handler).parameters
         except (TypeError, ValueError):
@@ -500,11 +570,11 @@ class Plugin:
                 inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD
             )]
         )
-        return "positional" if positional_count >= 4 else None
+        return "positional" if positional_count > base_positional_count else None
 
     @staticmethod
-    def _error(code: str) -> dict[str, Any]:
-        return {"kind": "error", "value": {"code": code, "outcome": "not_applied"}}
+    def _error(code: str, outcome: str) -> dict[str, Any]:
+        return {"kind": "error", "value": {"code": code, "outcome": outcome}}
 
     @staticmethod
     def _json_size(value: Any) -> int:
@@ -757,7 +827,7 @@ class Plugin:
                 response = self.respond(request, source, target)
                 payload = json.dumps(response, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8") + b"\n"
                 if len(payload) > self.max_frame_bytes:
-                    response["result"] = self._error("invalid_response")
+                    response["result"] = self._error("invalid_response", "unknown")
                     payload = json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
                 if len(payload) > self.max_frame_bytes:
                     return 1

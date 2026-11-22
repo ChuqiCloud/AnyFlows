@@ -6,9 +6,9 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     plugin_lifecycle::{
-        ModelPluginTaskRequest, PluginActionResponse, PluginArtifactApprovalResponse,
-        PluginArtifactCleanupResponse, PluginArtifactPageResponse,
-        PluginArtifactRegistrationRequest, PluginArtifactResponse,
+        AdminPluginTaskListQuery, AdminPluginTaskReconciliationRequest, ModelPluginTaskRequest,
+        PluginActionResponse, PluginArtifactApprovalResponse, PluginArtifactCleanupResponse,
+        PluginArtifactPageResponse, PluginArtifactRegistrationRequest, PluginArtifactResponse,
         PluginArtifactRevocationResponse, PluginArtifactRevokeRequest,
         PluginCapabilityActionConfirmRequest, PluginCapabilityActionProposalRequest,
         PluginCapabilityActionProposalResponse, PluginCapabilityActionResultResponse,
@@ -154,6 +154,45 @@ fn invoke_admin_plugin_credential_lifecycle() {}
     security(("bearerAuth" = []))
 )]
 fn invoke_admin_plugin_task() {}
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/plugins/tasks/unknown",
+    operation_id = "listAdminUnknownPluginTasks",
+    tag = "插件任务",
+    summary = "读取需要人工核对上游状态的插件任务",
+    params(("cursor" = Option<String>, Query), ("limit" = Option<u16>, Query, minimum = 1, maximum = 100)),
+    responses(
+        (status = 200, description = "未知任务及分页游标", body = serde_json::Value),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 500, description = "内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_admin_unknown_plugin_tasks() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/plugins/tasks/{task_id}/reconcile",
+    operation_id = "reconcileAdminUnknownPluginTask",
+    tag = "插件任务",
+    summary = "依据上游核对结果结算未知插件任务并释放剩余额度",
+    description = "管理员必须先在上游确认本次任务的实际计费单位。填 0 表示上游确认未执行。该操作会写入管理员、原因和结算额度审计信息。",
+    params(("task_id" = String, Path)),
+    request_body = AdminPluginTaskReconciliationRequest,
+    responses(
+        (status = 200, description = "任务已结算", body = serde_json::Value),
+        (status = 400, description = "实际单位或原因无效", body = ManagementErrorBody),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 404, description = "插件任务不存在", body = ManagementErrorBody),
+        (status = 409, description = "任务不再处于未知状态", body = ManagementErrorBody),
+        (status = 500, description = "结算或审计记录失败", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn reconcile_admin_unknown_plugin_task() {}
 
 #[utoipa::path(
     get,
@@ -797,6 +836,8 @@ fn list_plugin_catalog_models() {}
         invoke_admin_plugin_capability,
         invoke_admin_plugin_credential_lifecycle,
         invoke_admin_plugin_task,
+        list_admin_unknown_plugin_tasks,
+        reconcile_admin_unknown_plugin_task,
         invoke_admin_plugin_route_get,
         invoke_admin_plugin_route_post,
         invoke_admin_plugin_route_put,
@@ -856,6 +897,8 @@ fn list_plugin_catalog_models() {}
         PluginCredentialInvocationResponse,
         PluginTaskInvocationRequest,
         PluginTaskInvocationResponse,
+        AdminPluginTaskListQuery,
+        AdminPluginTaskReconciliationRequest,
         PluginRouteInvocationResponse,
         PluginCapabilityActionProposalRequest,
         PluginCapabilityActionConfirmRequest,

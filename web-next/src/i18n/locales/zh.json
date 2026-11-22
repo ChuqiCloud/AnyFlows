@@ -106,7 +106,7 @@
     "eyebrow": "插件",
     "title": "插件管理",
     "subtitle": "上传插件包即可安装并启用，也可管理配置、停用和版本回滚。",
-    "trustWarning": "插件会以 AnyFlows 服务账号运行，请仅安装你信任的插件。",
+    "trustWarning": "默认 auto 策略不隔离文件和网络访问。插件通常以 AnyFlows 服务账号权限运行，请仅安装经过审查的插件。",
     "advanced": "高级管理：手动登记与部署",
     "signatureDetails": "发布者签名（选填）",
     "signatureHint": "自己的插件无需签名。匹配已配置发布者公钥的签名会显示为已验证；其他插件仍可由管理员确认安装。",
@@ -274,6 +274,23 @@
         "job_object": "Windows 作业对象",
         "unknown": "未上报"
       }
+    },
+    "tasks": {
+      "title": "待核对的插件任务",
+      "description": "结果仍不明确的任务会继续使用相同幂等键重试。只有在上游核对实际计费后，才在这里手动结算。",
+      "loadError": "无法读取待核对任务。",
+      "empty": "当前没有待核对的任务。",
+      "unknownStatus": "上游提交结果未知",
+      "review": "核对并结算",
+      "actualUnits": "上游实际计费单位",
+      "reason": "核对依据",
+      "settle": "继续结算",
+      "confirmTitle": "确认异步任务结算",
+      "confirmDescription": "请先核对上游任务状态和用量。填 0 表示确认上游没有执行。AnyFlows 将按此单位结算并释放剩余预留额度。",
+      "actualUnitsValue": "实际单位：{{count}}",
+      "confirm": "确认结算",
+      "reconcileError": "结算未完成。请刷新任务状态后再试。",
+      "more": "加载更多任务"
     },
     "removal": {
       "uninstall": "卸载",

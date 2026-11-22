@@ -20,11 +20,12 @@ use crate::{
 use af_plugin_contract::{
     CapabilityAccess, CapabilityId, CapabilityResult, ConnectorError, ConnectorErrorCode,
     ConnectorHealth, ConnectorHealthStatus, ContractValidationError, ContractVersion,
-    InvocationMetadata, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PROVIDER_LIFECYCLE_CAPABILITY,
-    PluginCredentialOperation, PluginCredentialResult, PluginHostOperation, PluginHostRequest,
-    PluginHostResponse, PluginHostResult, PluginId, PluginManifest, PluginProviderOperation,
-    PluginProviderResult, PluginProxyRequest, PluginProxyResult, PluginStorageRequest,
-    PluginTaskOperation, PluginTaskResult, PluginVersion, SideEffectClass,
+    InvocationMetadata, OperationOutcome, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY,
+    PROVIDER_LIFECYCLE_CAPABILITY, PluginCredentialOperation, PluginCredentialResult,
+    PluginHostOperation, PluginHostRequest, PluginHostResponse, PluginHostResult, PluginId,
+    PluginManifest, PluginProviderOperation, PluginProviderResult, PluginProxyRequest,
+    PluginProxyResult, PluginStorageRequest, PluginTaskOperation, PluginTaskResult, PluginVersion,
+    SideEffectClass,
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
@@ -1465,6 +1466,7 @@ impl SidecarSession {
                 Some(invocation.metadata()),
                 proxy_dispatcher,
                 storage_dispatcher,
+                None,
             )
             .await?
         {
@@ -1580,13 +1582,18 @@ impl SidecarSession {
             capability_version,
             input,
             None,
+            None,
         )
         .await
     }
 
     /// Invoke a manifest-declared route with an optional host-owned storage
-    /// callback. The route transport remains identical; storage is scoped to
-    /// the current plugin and invocation by the callback implementation.
+    /// callback. The route transport remains identical; the host selects shared
+    /// or per-user storage scope from the authenticated route audience.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "路由调用显式传递认证后选择的存储用户范围与宿主分发器"
+    )]
     pub async fn invoke_host_route_with_storage(
         &self,
         deployment_generation: u64,
@@ -1595,6 +1602,7 @@ impl SidecarSession {
         capability_id: &CapabilityId,
         capability_version: u16,
         input: Value,
+        storage_owner_user_id: Option<i64>,
         storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     ) -> Result<CapabilityResult, SidecarError> {
         self.ensure_generation(deployment_generation)?;
@@ -1648,6 +1656,7 @@ impl SidecarSession {
                 Some(invocation.metadata()),
                 None,
                 storage_dispatcher,
+                storage_owner_user_id,
             )
             .await?;
         match result {
@@ -1768,7 +1777,7 @@ impl SidecarSession {
                 }
                 Ok(result)
             }
-            PluginHostResult::Error(_) => Err(SidecarError::OperationFailed),
+            PluginHostResult::Error(error) => Err(task_operation_error(error)),
             _ => {
                 self.stop().await;
                 Err(SidecarError::ProtocolViolation)
@@ -2060,6 +2069,7 @@ impl SidecarSession {
             metadata,
             proxy_dispatcher,
             None,
+            None,
         )
         .await
     }
@@ -2071,6 +2081,7 @@ impl SidecarSession {
         metadata: Option<&InvocationMetadata>,
         proxy_dispatcher: Option<Arc<dyn PluginProxyDispatcher>>,
         storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
+        storage_owner_user_id: Option<i64>,
     ) -> Result<PluginHostResult, SidecarError> {
         let deployment_generation = self.deployment_generation;
         if deployment_generation == 0 {
@@ -2248,7 +2259,9 @@ impl SidecarSession {
                         let dispatcher = storage_dispatcher
                             .as_ref()
                             .ok_or(SidecarError::CapabilityNotGranted)?;
-                        let storage_response = dispatcher.dispatch(storage_request.clone()).await;
+                        let storage_response = dispatcher
+                            .dispatch(storage_request.clone(), storage_owner_user_id)
+                            .await;
                         if !storage_response.matches_request(&storage_request)
                             || storage_response
                                 .validate(self.manifest.limits.max_response_bytes as usize)
@@ -2602,6 +2615,14 @@ fn is_sensitive_field_name(name: &str) -> bool {
         || normalized.ends_with("token")
 }
 
+fn task_operation_error(error: ConnectorError) -> SidecarError {
+    if error.outcome == OperationOutcome::NotApplied {
+        SidecarError::OperationNotApplied
+    } else {
+        SidecarError::OperationFailed
+    }
+}
+
 /// Stable process, trust and transport failures; never contains paths or output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum SidecarError {
@@ -2631,6 +2652,8 @@ pub enum SidecarError {
     TimedOut,
     #[error("sidecar operation failed")]
     OperationFailed,
+    #[error("plugin confirmed the operation was not applied")]
+    OperationNotApplied,
     #[error("sidecar did not declare the requested read capability")]
     CapabilityNotDeclared,
     #[error("sidecar capability was not granted by host policy")]
@@ -2657,9 +2680,28 @@ mod tests {
         TrustedPluginKey, VerifiedPluginArtifact, can_publish_generation, canonicalize_json,
         contains_sensitive_fields, default_request_id, is_sensitive_field_name,
         plugin_artifact_signature_payload, plugin_package_digest,
-        proxy_request_matches_host_request, validate_public_plugin_configuration,
+        proxy_request_matches_host_request, task_operation_error,
+        validate_public_plugin_configuration,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn task_failures_preserve_confirmed_not_applied_outcomes() {
+        assert_eq!(
+            task_operation_error(ConnectorError::new(
+                ConnectorErrorCode::TemporarilyUnavailable,
+                OperationOutcome::NotApplied,
+            )),
+            SidecarError::OperationNotApplied
+        );
+        assert_eq!(
+            task_operation_error(ConnectorError::new(
+                ConnectorErrorCode::UpstreamFailure,
+                OperationOutcome::Unknown,
+            )),
+            SidecarError::OperationFailed
+        );
+    }
 
     fn signing_test_manifest() -> PluginManifest {
         PluginManifest {

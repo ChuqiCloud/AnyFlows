@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "sdk" / "python"))
-from anyflows_plugin import Plugin, ProtocolError  # noqa: E402
+from anyflows_plugin import Plugin, PluginError, ProtocolError  # noqa: E402
 
 
 MANIFEST = json.loads((ROOT / "examples" / "catalog" / "manifest.json").read_text(encoding="utf-8"))
@@ -63,6 +63,20 @@ def live_balance_review_manifest() -> dict:
         "required": ["summary", "checks"],
         "properties": {"summary": {"type": "string"}, "checks": {"type": "array"}},
     }
+    return manifest
+
+
+def plugin_route_manifest() -> dict:
+    manifest = copy.deepcopy(MANIFEST)
+    manifest["routes"] = [{
+        "id": "preferences",
+        "schemaVersion": 1,
+        "method": "GET",
+        "path": "/preferences",
+        "audience": "user",
+        "capabilityId": "catalog.models.read",
+        "capabilityVersion": 1,
+    }]
     return manifest
 
 
@@ -156,6 +170,28 @@ class PluginSdkTests(unittest.TestCase):
         result = self.plugin(broken).respond(envelope)
         self.assertEqual(result["result"]["value"]["code"], "upstream_failure")
         self.assertNotIn("private-handler-value", json.dumps(result))
+
+    def test_handler_failures_preserve_operation_outcome_without_exposing_details(self):
+        def uncertain(*args):
+            raise RuntimeError("private provider response")
+
+        def rejected(*args):
+            raise PluginError("temporarily_unavailable", "not_applied")
+
+        operation = {
+            "operation": "invoke_capability",
+            "connectionId": "catalog",
+            "publicConfig": {},
+            "capabilityId": "catalog.models.read",
+            "capabilityVersion": 1,
+            "input": {"query": None, "cursor": None, "limit": 20},
+        }
+        unknown = self.plugin(uncertain).respond(request(operation))
+        explicit = self.plugin(rejected).respond(request(operation))
+
+        self.assertEqual(unknown["result"]["value"]["outcome"], "unknown")
+        self.assertEqual(explicit["result"]["value"]["outcome"], "not_applied")
+        self.assertNotIn("private provider response", json.dumps(unknown))
 
     def test_unsupported_capability_is_a_business_error_and_stream_remains_framed(self):
         envelope = request({"operation": "invoke_capability", "connectionId": "catalog", "publicConfig": {}, "capabilityId": "catalog.models.read", "capabilityVersion": 2, "input": {"limit": 20}})
@@ -314,6 +350,50 @@ class PluginSdkTests(unittest.TestCase):
         self.assertEqual(observed[0],
             {"amount": "12.50", "unit": "USD", "status": "available", "observedAt": 1700000000},
         )
+
+    def test_user_route_handler_can_use_host_storage_context(self):
+        manifest = plugin_route_manifest()
+        observed = []
+
+        def read_preferences(route_id, capability_id, config, value, context):
+            observed.append(context.storage({"operation": "get", "key": {"key": "theme"}}))
+            return {"theme": observed[-1]}
+
+        plugin = Plugin(
+            manifest,
+            lambda *args: {},
+            route_handler=read_preferences,
+            clock_ms=lambda: 1000,
+        )
+        envelope = request({
+            "operation": "plugin_route",
+            "connectionId": "host-owned-scope",
+            "publicConfig": {},
+            "capabilityId": "catalog.models.read",
+            "capabilityVersion": 1,
+            "routeId": "preferences",
+            "input": {},
+        }, manifest)
+        storage_request = {
+            "protocolVersion": 1,
+            "pluginId": envelope["pluginId"],
+            "pluginVersion": envelope["pluginVersion"],
+            "artifactSha256": envelope["artifactSha256"],
+            "deploymentGeneration": envelope["deploymentGeneration"],
+            "requestId": envelope["requestId"],
+            "storageRequestId": "storage-1",
+        }
+        continuation = storage_request | {
+            "result": {"kind": "value", "value": {"value": {"theme": "dark"}}},
+        }
+        source = io.BytesIO((json.dumps(envelope) + "\n" + json.dumps(continuation) + "\n").encode())
+        target = io.BytesIO()
+
+        self.assertEqual(plugin.serve(source, target), 0)
+        frames = [json.loads(line) for line in target.getvalue().splitlines()]
+        self.assertEqual(frames[0]["operation"], {"operation": "get", "key": {"key": "theme"}})
+        self.assertEqual(observed, [{"value": {"theme": "dark"}}])
+        self.assertEqual(frames[1]["result"]["value"]["output"], {"theme": {"value": {"theme": "dark"}}})
 
     def test_external_proxy_rejects_mismatched_continuation_and_stops_stream(self):
         manifest = external_profile_manifest()

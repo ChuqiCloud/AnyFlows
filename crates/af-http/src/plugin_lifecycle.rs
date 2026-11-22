@@ -22,7 +22,7 @@ use axum::{
     Extension, Json, Router,
     extract::Request,
     extract::{
-        DefaultBodyLimit, Multipart, Path as PathParam, Query, State,
+        DefaultBodyLimit, Multipart, Path as PathParam, Query, RawQuery, State,
         multipart::MultipartRejection, rejection::JsonRejection, rejection::QueryRejection,
     },
     middleware,
@@ -199,6 +199,24 @@ pub(crate) struct PluginTaskInvocationRequest {
     capability_version: u16,
     #[schema(value_type = serde_json::Value)]
     task: PluginTaskOperation,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminPluginTaskListQuery)]
+pub(crate) struct AdminPluginTaskListQuery {
+    cursor: Option<String>,
+    limit: Option<u16>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminPluginTaskReconciliationRequest)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AdminPluginTaskReconciliationRequest {
+    actual_units: u64,
+    #[schema(min_length = 1, max_length = 256)]
+    reason: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -846,6 +864,14 @@ pub fn build_plugin_lifecycle_router(
             post(invoke_task_direct).layer(DefaultBodyLimit::max(1024 * 1024)),
         )
         .route(
+            "/api/admin/plugins/tasks/unknown",
+            get(list_unknown_plugin_tasks),
+        )
+        .route(
+            "/api/admin/plugins/tasks/{task_id}/reconcile",
+            post(reconcile_unknown_plugin_task),
+        )
+        .route(
             "/api/admin/plugins/{plugin_id}/capability-actions",
             post(propose_capability_action).layer(DefaultBodyLimit::max(512 * 1024)),
         )
@@ -1005,11 +1031,52 @@ async fn invoke_task_direct(
     Ok(no_store_json(PluginTaskInvocationResponse::from(result)))
 }
 
+async fn list_unknown_plugin_tasks(
+    State(state): State<PluginLifecycleHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    query: Result<Query<AdminPluginTaskListQuery>, QueryRejection>,
+) -> Result<Response, ManagementError> {
+    let Query(query) = query.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .list_unknown_plugin_tasks(
+            authentication.principal(),
+            query.cursor.as_deref(),
+            query.limit.unwrap_or(100),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(result))
+}
+
+async fn reconcile_unknown_plugin_task(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(task_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<AdminPluginTaskReconciliationRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    let result = state
+        .service
+        .reconcile_unknown_plugin_task(
+            authentication.principal(),
+            &task_id,
+            request.actual_units,
+            &request.reason,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(result))
+}
+
 async fn invoke_plugin_route_get(
     State(state): State<PluginLifecycleHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
     PathParam((plugin_id, route_id)): PathParam<(String, String)>,
     Extension(request_id): Extension<RequestId>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
     invoke_plugin_route_inner(
         state,
@@ -1017,11 +1084,55 @@ async fn invoke_plugin_route_get(
         plugin_id,
         route_id,
         af_admin::PluginRouteMethod::Get,
-        Value::Object(serde_json::Map::new()),
+        plugin_route_query_input(raw_query.as_deref())?,
         request_id,
         false,
     )
     .await
+}
+
+fn plugin_route_query_input(raw_query: Option<&str>) -> Result<Value, ManagementError> {
+    const MAX_QUERY_BYTES: usize = 16 * 1024;
+    const MAX_QUERY_PAIRS: usize = 64;
+    const MAX_QUERY_KEY_BYTES: usize = 128;
+    const MAX_QUERY_VALUE_BYTES: usize = 4 * 1024;
+
+    let Some(raw_query) = raw_query else {
+        return Ok(Value::Object(serde_json::Map::new()));
+    };
+    if raw_query.len() > MAX_QUERY_BYTES {
+        return Err(ManagementError::PluginLifecycleInvalidRequest);
+    }
+    let mut input = serde_json::Map::new();
+    let mut pair_count = 0;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        pair_count += 1;
+        if pair_count > MAX_QUERY_PAIRS
+            || key.is_empty()
+            || key.len() > MAX_QUERY_KEY_BYTES
+            || value.len() > MAX_QUERY_VALUE_BYTES
+            || key.chars().any(char::is_control)
+            || value.chars().any(char::is_control)
+        {
+            return Err(ManagementError::PluginLifecycleInvalidRequest);
+        }
+        let value = Value::String(value.into_owned());
+        match input.entry(key.into_owned()) {
+            serde_json::map::Entry::Vacant(entry) => {
+                entry.insert(value);
+            }
+            serde_json::map::Entry::Occupied(mut entry) => {
+                let current = entry.get_mut();
+                if let Value::Array(values) = current {
+                    values.push(value);
+                } else {
+                    let previous = std::mem::replace(current, Value::Null);
+                    *current = Value::Array(vec![previous, value]);
+                }
+            }
+        }
+    }
+    Ok(Value::Object(input))
 }
 
 async fn invoke_plugin_route_post(
@@ -1148,6 +1259,7 @@ async fn invoke_user_plugin_route_get(
     Extension(authentication): Extension<SessionAuthentication>,
     PathParam((plugin_id, route_id)): PathParam<(String, String)>,
     Extension(request_id): Extension<RequestId>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
     invoke_plugin_route_inner(
         state,
@@ -1155,7 +1267,7 @@ async fn invoke_user_plugin_route_get(
         plugin_id,
         route_id,
         af_admin::PluginRouteMethod::Get,
-        Value::Object(serde_json::Map::new()),
+        plugin_route_query_input(raw_query.as_deref())?,
         request_id,
         true,
     )
@@ -1247,6 +1359,7 @@ async fn invoke_model_plugin_route_get(
     Extension(authentication): Extension<af_admin::TokenAuthentication>,
     PathParam((plugin_id, route_id)): PathParam<(String, String)>,
     Extension(request_id): Extension<RequestId>,
+    RawQuery(raw_query): RawQuery,
 ) -> Result<Response, ManagementError> {
     invoke_model_plugin_route_inner(
         state,
@@ -1254,7 +1367,7 @@ async fn invoke_model_plugin_route_get(
         plugin_id,
         route_id,
         af_admin::PluginRouteMethod::Get,
-        Value::Object(serde_json::Map::new()),
+        plugin_route_query_input(raw_query.as_deref())?,
         request_id,
     )
     .await
@@ -2168,6 +2281,23 @@ mod tests {
     use serde_json::json;
     use tower::ServiceExt;
 
+    #[test]
+    fn plugin_get_query_becomes_bounded_schema_input() {
+        assert_eq!(plugin_route_query_input(None).unwrap(), json!({}));
+        assert_eq!(
+            plugin_route_query_input(Some("model=gpt-6.1-sol&tag=a&tag=b")).unwrap(),
+            json!({"model":"gpt-6.1-sol","tag":["a","b"]})
+        );
+        assert!(matches!(
+            plugin_route_query_input(Some("name=%00")),
+            Err(ManagementError::PluginLifecycleInvalidRequest)
+        ));
+        assert!(matches!(
+            plugin_route_query_input(Some(&"a=1&".repeat(65))),
+            Err(ManagementError::PluginLifecycleInvalidRequest)
+        ));
+    }
+
     struct FixtureAuthenticator;
 
     impl SessionAuthenticator for FixtureAuthenticator {
@@ -2196,6 +2326,14 @@ mod tests {
             .route(
                 "/api/admin/plugins/runtime",
                 get(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/api/admin/plugins/tasks/unknown",
+                get(|| async { StatusCode::OK }),
+            )
+            .route(
+                "/api/admin/plugins/tasks/{task_id}/reconcile",
+                post(|| async { StatusCode::OK }),
             )
             .route(
                 "/api/admin/plugins/events/results",
@@ -2242,6 +2380,8 @@ mod tests {
     async fn plugin_admin_operations_require_admin_but_catalog_accepts_authenticated_users() {
         for (method, path) in [
             ("GET", "/api/admin/plugins/runtime"),
+            ("GET", "/api/admin/plugins/tasks/unknown"),
+            ("POST", "/api/admin/plugins/tasks/task-123/reconcile"),
             ("GET", "/api/admin/plugins/events/results"),
             (
                 "POST",
@@ -2314,6 +2454,8 @@ mod tests {
         }
         let policies = [
             ("GET", "/api/admin/plugins/runtime"),
+            ("GET", "/api/admin/plugins/tasks/unknown"),
+            ("POST", "/api/admin/plugins/tasks/{task_id}/reconcile"),
             ("GET", "/api/admin/plugins/events/results"),
             (
                 "POST",

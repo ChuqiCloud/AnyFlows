@@ -24,6 +24,8 @@
 
 插件不能直接访问用户会话、数据库、钱包、API Key、渠道地址、上游凭据或任意 URL。当前实时外部读取只支持宿主固定的 `account.profile` 和 `account.balance` 回调，要求 `GET` 和空查询参数；用户每次运行都要单独同意。
 
+当前没有向插件开放系统 SMTP 投递或平台用户收件人查询能力。批量邮件插件不能直接复用 AnyFlows 邮件配置或枚举用户地址，相关能力需要由宿主提供带权限控制的投递入口。
+
 需要自定义 HTTP 入口时，在清单的 `routes` 中声明路由和受众。管理员、普通用户和模型 Key 分别使用宿主提供的固定前缀，宿主负责认证与能力授权。声明 `access=read`、`sideEffect=none` 且带有效输入/输出 Schema 的自定义能力，可以通过宿主通用入口调用。管理员会话或拥有对应权限码的 PAT 可调用该入口。
 
 ```http
@@ -387,7 +389,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 
 ### 插件路由
 
-需要让管理员通过 HTTP 调用插件自有业务时，在清单中声明 `routes`。当前宿主入口为 `/api/admin/plugins/{plugin_id}/routes/{route_id}`，请求方法和 JSON 输入会按清单中的路由声明校验，再转交绑定能力；插件只收到路由绑定能力的 JSON 输入，返回值必须符合该能力的 `outputSchema`。路由不能声明完整 URL、查询串、脚本或任意宿主路径。
+需要让管理员或普通用户通过 HTTP 调用插件自有业务时，在清单中声明 `routes`。`path` 是用于文档和客户端生成的逻辑路径，当前宿主地址使用 `route_id`，例如 `/api/account/plugins/{plugin_id}/routes/{route_id}`。请求方法和 JSON 输入会按清单中的路由声明校验，再转交绑定能力；插件只收到路由绑定能力的 JSON 输入，返回值必须符合该能力的 `outputSchema`。路由不能声明完整 URL、脚本或任意宿主路径。
 
 ```json
 {
@@ -407,13 +409,13 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 }
 ```
 
-`GET` 只能绑定 `access=read` 能力；`POST`、`PUT`、`PATCH` 和 `DELETE` 必须绑定写能力，并继续遵守现有幂等、确认和授权规则。当前管理员入口只接受管理员会话或管理员 PAT。宿主负责认证、限流、请求体大小、超时、审计和节点代次校验；插件不能选择上游主机、读取认证头、修改钱包或访问数据库。
+`GET` 只能绑定 `access=read` 能力。GET 查询参数会作为字符串组成 JSON 对象传给插件，重复参数会组成数组，并受数量和长度上限约束。其他方法使用 JSON 请求体。`POST`、`PUT`、`PATCH` 和 `DELETE` 必须绑定写能力，并继续遵守现有幂等、确认和授权规则。宿主负责认证、限流、输入大小、超时、审计和节点代次校验；插件不能选择上游主机、读取认证头、修改钱包或访问数据库。
 
 ### 插件状态存储
 
-插件可以通过 `PluginStorageOperation` 使用宿主提供的命名空间 JSON 存储。每个插件只能读写自己的键空间，键最长 128 字节，值最长 64 KiB，可设置过期时间；支持 `get`、`put`、`delete` 和带前缀的 `list`。状态适合保存同步游标、Webhook 去重键和任务辅助状态，不适合保存凭据、钱包事实或宿主任务记录。宿主负责事务、并发、过期清理和多节点共享，插件不能执行 SQL 或获取数据库连接。
+插件可以通过 `PluginStorageOperation` 使用宿主提供的命名空间 JSON 存储。每个插件只能读写自己的键空间，键最长 128 字节，值最长 64 KiB，可设置过期时间；支持 `get`、`put`、`delete` 和带前缀的 `list`。用户路由和模型 Key 路由的存储会按当前用户隔离，管理员路由使用插件共享空间。过期值不会从读取结果中返回，后台每分钟按批次清理过期记录。状态适合保存同步游标、Webhook 去重键和任务辅助状态，不适合保存凭据、钱包事实或宿主任务记录。插件不能执行 SQL 或获取数据库连接。
 
-Python SDK 在能力处理函数中提供 `context.storage(operation)`。它通过当前 Sidecar 调用的关联帧访问宿主存储，宿主会重新校验插件 ID、generation、键和值大小；插件不能伪造其他插件的命名空间。存储不可用时返回固定错误码，插件不应把存储当作计费或资金事实来源。
+Python SDK 在能力处理函数和路由处理函数中提供 `context.storage(operation)`。它通过当前 Sidecar 调用的关联帧访问宿主存储，宿主会重新校验插件 ID、generation、键和值大小，并由宿主确定用户级隔离空间；插件不能指定其他用户或插件的命名空间。存储不可用时返回固定错误码，插件不应把存储当作计费或资金事实来源。TypeScript、Go 和 Rust SDK 目前提供 JSON Lines 信封和标准错误结果封装，尚未封装存储回调。
 
 ## 8. Python 处理函数
 
@@ -545,7 +547,21 @@ JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或�
 - `tools/plugins/sdk/go/anyflows_plugin.go`
 - `tools/plugins/sdk/rust/anyflows_plugin.rs`
 
-它们都实现相同的 JSON Lines 握手、健康检查和能力调用外层。业务代码只需要实现 handler；协议字段、能力 Schema 和错误边界仍以 `contracts/plugins/v1/schema.json` 为准。
+它们都实现相同的 JSON Lines 握手、健康检查和能力调用外层。业务代码只需要实现 handler；协议字段、能力 Schema 和错误边界仍以 `contracts/plugins/v1/schema.json` 为准。Rust SDK 的 `serve` 保持简洁字符串错误接口，发生错误时按结果未知处理；需要区分结果状态时用 `serve_with_outcomes` 返回 `PluginError`，只在能够确认操作未发送或已生效时填写对应状态。
+
+```rust
+use anyflows_plugin::{serve_with_outcomes, PluginError, PluginOperationOutcome};
+
+serve_with_outcomes(manifest, |frame| {
+    match handle(frame) {
+        Ok(value) => Ok(value),
+        Err(_) => Err(PluginError::new(
+            "temporarily_unavailable",
+            PluginOperationOutcome::NotApplied,
+        )),
+    }
+})?;
+```
 
 协议文件由 Rust 契约导出，再用以下命令生成语言无关副本和 SDK 元数据：
 
@@ -588,7 +604,7 @@ python tools/plugins/generate-protocol-sdk.py
 - `POST /v1/plugin-tasks/{taskId}/cancel` 请求取消。
 - `/v1/plugins/{pluginId}/{routeId}` 调用清单中声明的 model-key 路由。
 
-任务提交时宿主按管理员配置的费率预留额度；状态、文件、报告和 `PluginTaskUsage` 回来后，宿主校验上限并用同一预留号结算。外部提交出现未知结果时任务进入 `unknown`，不会自动重放。
+任务提交时宿主按管理员配置的费率预留额度；状态、文件、报告和 `PluginTaskUsage` 回来后，宿主校验上限并用同一预留号结算。额度不足等确定失败不会进入后台重试。插件确认操作未生效时，宿主结束任务并释放预留；提交结果不明时，宿主会加密保留请求，并用相同幂等键重试，直到插件确认接收。状态、结果读取和取消暂时失败时，宿主按递增间隔重试，最多八次；部署失效、授权变化、超过重试上限或结果结构异常会进入人工核对队列。取消意图会先持久化，插件应安全处理同一 `taskId` 的重复取消。无法自动恢复的任务可由管理员在上游核对后通过管理 API 结算，填写实际单位；确认上游未执行时填写 `0` 以释放预留额度。
 
 ### 绑定标准模型任务接口
 

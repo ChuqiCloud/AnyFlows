@@ -1153,6 +1153,14 @@ export type AdminPaymentSettingsRequest = {
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
+export type AdminPluginTaskListQuery = {
+    cursor?: string | null;
+    limit?: number | null;
+};
+export type AdminPluginTaskReconciliationRequest = {
+    actualUnits: number;
+    reason: string;
+};
 export type AdminProxyCleanupRequest = {
     target: string;
     mode: string;
@@ -12040,6 +12048,44 @@ export type InvokeAdminPluginTaskResponses = {
     200: PluginTaskInvocationResponse;
 };
 export type InvokeAdminPluginTaskResponse = InvokeAdminPluginTaskResponses[keyof InvokeAdminPluginTaskResponses];
+export type ListAdminUnknownPluginTasksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/admin/plugins/tasks/unknown';
+};
+export type ListAdminUnknownPluginTasksErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminUnknownPluginTasksError = ListAdminUnknownPluginTasksErrors[keyof ListAdminUnknownPluginTasksErrors];
+export type ListAdminUnknownPluginTasksResponses = {
+    200: unknown;
+};
+export type ReconcileAdminUnknownPluginTaskData = {
+    body: AdminPluginTaskReconciliationRequest;
+    path: {
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/tasks/{task_id}/reconcile';
+};
+export type ReconcileAdminUnknownPluginTaskErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ReconcileAdminUnknownPluginTaskError = ReconcileAdminUnknownPluginTaskErrors[keyof ReconcileAdminUnknownPluginTaskErrors];
+export type ReconcileAdminUnknownPluginTaskResponses = {
+    200: unknown;
+};
 export type InvokeAdminPluginRouteDeleteData = {
     body?: never;
     path: {

@@ -726,8 +726,20 @@ jobs:
       - name: Check plugin contract schema
         run: cargo run --locked --package af-plugin-contract --example export_contract -- check
 
+      - name: Install Go for SDK conformance tests
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: tools/plugins/sdk/go/go.mod
+      - name: Install Node for TypeScript SDK regressions
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
       - name: Check plugin developer SDK and package tooling
-        run: python3 -m unittest discover -s tools/plugins/tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tools/plugins/tests
+          (cd tools/plugins/sdk/go && go test ./...)
+          node --experimental-strip-types --test tools/plugins/tests/typescript-sdk.test.mjs
 
       - name: Check OpenAPI contract
         run: |
@@ -803,8 +815,10 @@ jobs:
           cargo test --locked -p af-plugin-runtime --lib
           cargo test --locked -p af-db --lib plugin_catalog
           cargo test --locked -p af-db --lib plugin_distribution_tests
+          cargo test --locked -p af-db --lib plugin_storage_tests
           cargo test --locked -p af-admin --lib plugin_
           cargo test --locked -p af-http --lib plugin_lifecycle
+          cargo test --locked -p af-http --lib plugin_task_reconciliation_is_admin_only_and_uses_registered_operations
           cargo test --locked -p af-http --lib plugin_native_tasks
 
       - name: Run focused Passkey compatibility tests

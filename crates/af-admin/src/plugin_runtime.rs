@@ -515,6 +515,7 @@ impl AdminPluginSidecarRuntime {
             capability_version,
             input,
             None,
+            None,
         )
         .await
     }
@@ -533,6 +534,7 @@ impl AdminPluginSidecarRuntime {
         capability_id: &str,
         capability_version: u16,
         input: serde_json::Value,
+        storage_owner_user_id: Option<i64>,
         storage_dispatcher: Option<Arc<dyn PluginStorageDispatcher>>,
     ) -> Result<CapabilityResult, AdminPluginLifecycleError> {
         let plugin_id = PluginId::new(plugin_id.to_owned())
@@ -603,6 +605,7 @@ impl AdminPluginSidecarRuntime {
                 &capability_id,
                 capability_version,
                 input,
+                storage_owner_user_id,
                 storage_dispatcher,
             )
             .await
@@ -1660,6 +1663,7 @@ fn map_sidecar_error(error: SidecarError) -> AdminPluginLifecycleError {
         | SidecarError::TimedOut
         | SidecarError::IsolationUnavailable
         | SidecarError::OperationFailed => AdminPluginLifecycleError::RuntimeUnavailable,
+        SidecarError::OperationNotApplied => AdminPluginLifecycleError::Conflict,
     }
 }
 
