@@ -56345,6 +56345,9 @@
           },
           "upstreamResponseMode": {
             "$ref": "#/components/schemas/PluginProviderUpstreamResponseModeBody"
+          },
+          "sessionEnabled": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

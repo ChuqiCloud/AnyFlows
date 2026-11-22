@@ -578,6 +578,8 @@ pub struct PluginProviderSelection {
     pub priority: i32,
     #[serde(default)]
     pub upstream_response_mode: PluginProviderUpstreamResponseMode,
+    #[serde(default)]
+    pub session_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -596,7 +598,8 @@ impl PluginProviderSelection {
             "channelIds": selection.get("channelIds").cloned().unwrap_or_else(|| json!([])),
             "models": selection.get("models").cloned().unwrap_or_else(|| json!([])),
             "priority": selection.get("priority").cloned().unwrap_or_else(|| json!(0)),
-            "upstreamResponseMode": selection.get("upstreamResponseMode").cloned().unwrap_or_else(|| json!("auto"))
+            "upstreamResponseMode": selection.get("upstreamResponseMode").cloned().unwrap_or_else(|| json!("auto")),
+            "sessionEnabled": selection.get("sessionEnabled").cloned().unwrap_or(json!(false))
         }))
         .ok()
     }
@@ -3827,6 +3830,11 @@ mod tests {
             configured.upstream_response_mode,
             PluginProviderUpstreamResponseMode::NonStreaming
         );
+        let session_enabled = PluginProviderSelection::from_config(&json!({
+            "providerSelection": { "channelIds": [12], "sessionEnabled": true }
+        }))
+        .unwrap();
+        assert!(session_enabled.session_enabled);
     }
 
     fn capability(

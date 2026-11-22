@@ -5,6 +5,8 @@ use serde_json::Value;
 
 /// Capability identifier used when a manifest opts into Provider lifecycle hooks.
 pub const PROVIDER_LIFECYCLE_CAPABILITY: &str = "provider.lifecycle";
+/// Maximum JSON payload carried by one provider session request, state, or response.
+pub const MAX_PROVIDER_SESSION_VALUE_BYTES: usize = 256 * 1024;
 
 /// Provider lifecycle operations that a plugin may implement. The host still
 /// owns credentials, the upstream host, network I/O, billing and public IDs.
@@ -22,6 +24,20 @@ pub enum PluginProviderOperation {
     Request {
         model: String,
         request: Value,
+    },
+    SessionStart {
+        model: String,
+        request: Value,
+    },
+    SessionStep {
+        session_id: String,
+        state: Value,
+        response: Value,
+    },
+    SessionClose {
+        session_id: String,
+        state: Value,
+        reason: String,
     },
     Response {
         status: u16,
@@ -55,6 +71,11 @@ pub enum PluginProviderResult {
         headers: BTreeMap<String, String>,
         body: Value,
     },
+    Session {
+        session_id: String,
+        state: Value,
+        action: PluginProviderSessionAction,
+    },
     Response {
         response: Value,
     },
@@ -66,6 +87,33 @@ pub enum PluginProviderResult {
         retryable: bool,
         delay_ms: u32,
         reason_code: String,
+    },
+}
+
+/// Host-executed steps for a bounded multi-request provider session.
+///
+/// The plugin never receives credentials or an absolute URL. The host applies
+/// the same channel, header, body and response limits as a normal Relay turn.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PluginProviderSessionAction {
+    Request {
+        method: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        headers: BTreeMap<String, String>,
+        body: Value,
+        #[serde(default)]
+        stream: bool,
+    },
+    Wait {
+        delay_ms: u32,
+    },
+    Complete {
+        response: Value,
+    },
+    Abort {
+        code: String,
     },
 }
 
@@ -114,6 +162,28 @@ impl PluginProviderOperation {
                 if request.is_null() {
                     return Err(ProviderContractError::InvalidPayload);
                 }
+            }
+            Self::SessionStart { model, request } => {
+                validate_text(model, 128, ProviderContractError::InvalidModel)?;
+                validate_session_value(request)?;
+            }
+            Self::SessionStep {
+                session_id,
+                state,
+                response,
+            } => {
+                validate_session_text(session_id)?;
+                validate_session_value(state)?;
+                validate_session_value(response)?;
+            }
+            Self::SessionClose {
+                session_id,
+                state,
+                reason,
+            } => {
+                validate_session_text(session_id)?;
+                validate_session_value(state)?;
+                validate_text(reason, 128, ProviderContractError::InvalidReason)?;
             }
             Self::Response { status, response } => {
                 if !(100..=599).contains(status) || response.is_null() {
@@ -172,13 +242,20 @@ impl PluginProviderResult {
                 body,
             } => {
                 validate_text(method, 16, ProviderContractError::InvalidMethod)?;
-                validate_text(path, 2048, ProviderContractError::InvalidPath)?;
-                if !path.starts_with('/') {
-                    return Err(ProviderContractError::InvalidPath);
-                }
+                validate_provider_path(path)?;
+                validate_session_headers(headers)?;
                 if headers.len() > 64 || body.is_null() {
                     return Err(ProviderContractError::InvalidPayload);
                 }
+            }
+            Self::Session {
+                session_id,
+                state,
+                action,
+            } => {
+                validate_session_text(session_id)?;
+                validate_session_value(state)?;
+                action.validate()?;
             }
             Self::Response { response } => {
                 if response.is_null() {
@@ -201,6 +278,104 @@ impl PluginProviderResult {
         }
         Ok(())
     }
+}
+
+impl PluginProviderSessionAction {
+    pub fn validate(&self) -> Result<(), ProviderContractError> {
+        match self {
+            Self::Request {
+                method,
+                path,
+                headers,
+                body,
+                stream,
+            } => {
+                validate_text(method, 16, ProviderContractError::InvalidMethod)?;
+                validate_provider_path(path)?;
+                validate_session_headers(headers)?;
+                if *stream || body.is_null() {
+                    return Err(ProviderContractError::InvalidPayload);
+                }
+                validate_session_value(body)?;
+            }
+            Self::Wait { delay_ms } => {
+                if *delay_ms > 30_000 {
+                    return Err(ProviderContractError::InvalidDelay);
+                }
+            }
+            Self::Complete { response } => validate_session_value(response)?,
+            Self::Abort { code } => validate_text(code, 128, ProviderContractError::InvalidReason)?,
+        }
+        Ok(())
+    }
+}
+
+fn validate_session_text(value: &str) -> Result<(), ProviderContractError> {
+    validate_text(value, 128, ProviderContractError::InvalidReason)
+}
+
+fn validate_session_value(value: &Value) -> Result<(), ProviderContractError> {
+    if value.is_null()
+        || serde_json::to_vec(value)
+            .map_or(true, |bytes| bytes.len() > MAX_PROVIDER_SESSION_VALUE_BYTES)
+    {
+        Err(ProviderContractError::InvalidPayload)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_provider_path(path: &str) -> Result<(), ProviderContractError> {
+    if path.is_empty()
+        || path.len() > 2048
+        || !path.starts_with('/')
+        || path.starts_with("//")
+        || path.bytes().any(|byte| matches!(byte, b'#' | b'\\'))
+        || path.chars().any(char::is_control)
+    {
+        return Err(ProviderContractError::InvalidPath);
+    }
+    Ok(())
+}
+
+fn validate_session_headers(
+    headers: &BTreeMap<String, String>,
+) -> Result<(), ProviderContractError> {
+    if headers.len() > 64 {
+        return Err(ProviderContractError::InvalidLimit);
+    }
+    for (name, value) in headers {
+        let valid_name = !name.is_empty()
+            && name.len() <= 128
+            && name.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric()
+                    || matches!(
+                        byte,
+                        b'!' | b'#'
+                            | b'$'
+                            | b'%'
+                            | b'&'
+                            | b'\''
+                            | b'*'
+                            | b'+'
+                            | b'-'
+                            | b'.'
+                            | b'^'
+                            | b'_'
+                            | b'`'
+                            | b'|'
+                            | b'~'
+                    )
+            });
+        if !valid_name
+            || value.len() > 8192
+            || !value.is_ascii()
+            || value.bytes().any(|byte| byte < b' ' || byte == 0x7f)
+        {
+            return Err(ProviderContractError::InvalidPayload);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -289,5 +464,67 @@ mod tests {
             body: serde_json::json!({"model":"gpt-test"}),
         };
         assert_eq!(absolute.validate(), Err(ProviderContractError::InvalidPath));
+    }
+
+    #[test]
+    fn provider_sessions_reject_unbounded_or_absolute_actions() {
+        let valid = PluginProviderSessionAction::Request {
+            method: "GET".to_owned(),
+            path: "/v1/tasks/status?cursor=2".to_owned(),
+            headers: BTreeMap::new(),
+            body: serde_json::json!({}),
+            stream: false,
+        };
+        assert!(valid.validate().is_ok());
+
+        for path in [
+            "https://upstream.example/v1/tasks",
+            "//other.example/v1/tasks",
+            "/v1/tasks#fragment",
+            "/v1\\tasks",
+        ] {
+            let action = PluginProviderSessionAction::Request {
+                method: "GET".to_owned(),
+                path: path.to_owned(),
+                headers: BTreeMap::new(),
+                body: serde_json::json!({}),
+                stream: false,
+            };
+            assert_eq!(action.validate(), Err(ProviderContractError::InvalidPath));
+        }
+
+        let streaming = PluginProviderSessionAction::Request {
+            method: "GET".to_owned(),
+            path: "/v1/events".to_owned(),
+            headers: BTreeMap::new(),
+            body: serde_json::json!({}),
+            stream: true,
+        };
+        assert_eq!(
+            streaming.validate(),
+            Err(ProviderContractError::InvalidPayload)
+        );
+    }
+
+    #[test]
+    fn provider_session_state_and_response_are_size_bounded() {
+        let too_large = Value::String("x".repeat(MAX_PROVIDER_SESSION_VALUE_BYTES + 1));
+        let start = PluginProviderOperation::SessionStart {
+            model: "vendor-model".to_owned(),
+            request: too_large.clone(),
+        };
+        assert_eq!(start.validate(), Err(ProviderContractError::InvalidPayload));
+
+        let result = PluginProviderResult::Session {
+            session_id: "thread-1".to_owned(),
+            state: serde_json::json!({}),
+            action: PluginProviderSessionAction::Complete {
+                response: too_large,
+            },
+        };
+        assert_eq!(
+            result.validate(),
+            Err(ProviderContractError::InvalidPayload)
+        );
     }
 }

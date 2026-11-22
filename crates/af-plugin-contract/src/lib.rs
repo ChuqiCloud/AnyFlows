@@ -53,8 +53,9 @@ pub use market::{
 };
 pub use proposal::HostActionProposal;
 pub use provider::{
-    PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass, PluginProviderModel,
-    PluginProviderOperation, PluginProviderResult, ProviderContractError,
+    MAX_PROVIDER_SESSION_VALUE_BYTES, PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass,
+    PluginProviderModel, PluginProviderOperation, PluginProviderResult,
+    PluginProviderSessionAction, ProviderContractError,
 };
 pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,

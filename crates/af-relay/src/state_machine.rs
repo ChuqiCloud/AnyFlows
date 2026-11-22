@@ -14,14 +14,15 @@ use std::{
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorTarget, Bytes, ClientSimulationContext,
     ClientSimulationMiddleware, Credential, HeaderMap, HeaderName, HeaderValue, Method, Operation,
-    RelayContext, ResponseMode, StatusCode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
-    apply_client_simulation,
+    RelayContext, ResponseMode, StatusCode, TransportDispatchOutcome, TransportDispatcher,
+    UpstreamRequest, UpstreamResponse, apply_client_simulation,
 };
 use af_domain::{
     ChannelId, ClientSimulationProfile, ClientSimulationResult, MAX_MODEL_NAME_BYTES, Protocol,
     UpstreamError, UpstreamServerStatus,
 };
 use af_protocol::{StructuredErrorEvidence, extract_structured_error_evidence};
+use serde_json::Value;
 use thiserror::Error;
 use tokio::time::sleep;
 
@@ -566,6 +567,69 @@ pub struct ProviderRelayRequest {
     /// Protocol used by the selected Relay adapter.
     pub upstream_protocol: Protocol,
     pub response_body_limit: usize,
+    /// Optional bounded multi-request provider session state.
+    pub session: Option<ProviderRelaySession>,
+}
+
+#[derive(Clone)]
+pub struct ProviderRelaySession {
+    pub session_id: String,
+    pub state: Value,
+    /// Contract-validated action; Relay itself does not interpret the plugin protocol.
+    pub action: Value,
+}
+
+/// Frozen host context used for every step of a Provider session.
+pub struct ProviderRelaySessionContext<'a> {
+    pub adaptor: &'a dyn Adaptor,
+    pub credential: &'a Credential,
+    pub client_simulation: Option<&'a dyn ClientSimulationMiddleware>,
+    pub client_profile: Option<&'a af_domain::ClientProfileSnapshot>,
+    pub context: &'a RelayContext,
+    pub operation: Operation,
+}
+
+impl ProviderRelaySessionContext<'_> {
+    /// Reapply client identity and adapter signing after each step changes the request.
+    pub async fn prepare_request(
+        &self,
+        mut request: UpstreamRequest,
+    ) -> Result<UpstreamRequest, UpstreamError> {
+        let context = ClientSimulationContext::new(
+            self.adaptor.channel_type(),
+            self.adaptor.default_protocol(),
+            self.operation,
+            self.credential.kind(),
+        );
+        if let Some(middleware) = self.client_simulation {
+            request =
+                apply_client_simulation(middleware, context, request).map_err(map_adaptor_error)?;
+        }
+        if let Some(profile) = &self.client_profile {
+            request = af_adapter::apply_client_profile_identity(
+                profile,
+                context,
+                self.context.oauth_provider(),
+                request,
+            )
+            .map_err(map_adaptor_error)?;
+        }
+        self.adaptor
+            .finalize_request(request, self.credential, self.context)
+            .await
+            .map_err(map_adaptor_error)
+    }
+
+    /// Send one REST step through the managed HTTP client and map transport errors to Relay errors.
+    pub async fn send_http_request(
+        &self,
+        request: UpstreamRequest,
+    ) -> Result<TransportDispatchOutcome, UpstreamError> {
+        TransportDispatcher::http()
+            .send_with_report(request, self.context)
+            .await
+            .map_err(map_adaptor_error)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -587,6 +651,8 @@ pub type ProviderRelayRequestFuture<'a> =
 pub type ProviderRelayResponseFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 pub type ProviderRelayTransformFuture<'a> =
     Pin<Box<dyn Future<Output = Result<UpstreamResponse, UpstreamError>> + Send + 'a>>;
+pub type ProviderRelaySessionFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<TransportDispatchOutcome, UpstreamError>> + Send + 'a>>;
 pub type ProviderRelayFailureFuture<'a> =
     Pin<Box<dyn Future<Output = ProviderRelayFailureAction> + Send + 'a>>;
 
@@ -628,6 +694,14 @@ pub trait ProviderRelayHook: Send + Sync {
     ) -> ProviderRelayTransformFuture<'a> {
         let _ = request;
         Box::pin(async { Ok(response) })
+    }
+
+    fn execute_session<'a>(
+        &'a self,
+        _request: &'a ProviderRelayRequest,
+        _context: ProviderRelaySessionContext<'a>,
+    ) -> ProviderRelaySessionFuture<'a> {
+        Box::pin(async { Err(UpstreamError::ProtocolError) })
     }
 }
 
@@ -1373,6 +1447,7 @@ impl RelayStateMachine {
                 upstream_response_mode_overridden: false,
                 upstream_protocol: candidate.adaptor.default_protocol(),
                 response_body_limit: request.response_body_limit,
+                session: None,
             };
             if let Some(hook) = self.provider_hook.as_ref() {
                 provider_request = match hook.transform_request(provider_request).await {
@@ -1409,7 +1484,11 @@ impl RelayStateMachine {
                     ));
                 }
             };
-            let upstream_request = match candidate.client_simulation.as_ref() {
+            let upstream_request = match candidate
+                .client_simulation
+                .as_ref()
+                .filter(|_| provider_request.session.is_none())
+            {
                 Some(middleware) => match apply_client_simulation(
                     middleware.as_ref(),
                     ClientSimulationContext::new(
@@ -1450,7 +1529,11 @@ impl RelayStateMachine {
                 },
                 None => upstream_request,
             };
-            let upstream_request = match candidate.client_profile.as_ref() {
+            let upstream_request = match candidate
+                .client_profile
+                .as_ref()
+                .filter(|_| provider_request.session.is_none())
+            {
                 Some(profile) => match af_adapter::apply_client_profile_identity(
                     profile,
                     ClientSimulationContext::new(
@@ -1480,11 +1563,15 @@ impl RelayStateMachine {
                 },
                 None => upstream_request,
             };
-            let upstream_request = match candidate
-                .adaptor
-                .finalize_request(upstream_request, &candidate.credential, &candidate.context)
-                .await
-            {
+            let finalized = if provider_request.session.is_some() {
+                Ok(upstream_request)
+            } else {
+                candidate
+                    .adaptor
+                    .finalize_request(upstream_request, &candidate.credential, &candidate.context)
+                    .await
+            };
+            let upstream_request = match finalized {
                 Ok(request) => request,
                 Err(error) => {
                     if client_simulation.is_some() {
@@ -1523,25 +1610,45 @@ impl RelayStateMachine {
                 None => None,
             };
             attempt_count.fetch_add(1, Ordering::Relaxed);
-            let continuation = freeze_continuation.then(|| {
-                crate::frozen_candidate::FrozenCandidate::new(
-                    candidate.adaptor.clone(),
-                    candidate.context.clone(),
-                    candidate.credential.clone(),
-                    candidate.transport.clone(),
-                    &upstream_request,
-                    self.diagnostic_policy,
-                )
-            });
-            let outcome = match candidate
-                .transport
-                .send_with_report(upstream_request, &candidate.context)
-                .await
-            {
+            let continuation =
+                (freeze_continuation && provider_request.session.is_none()).then(|| {
+                    crate::frozen_candidate::FrozenCandidate::new(
+                        candidate.adaptor.clone(),
+                        candidate.context.clone(),
+                        candidate.credential.clone(),
+                        candidate.transport.clone(),
+                        &upstream_request,
+                        self.diagnostic_policy,
+                    )
+                });
+            let outcome_result = if provider_request.session.is_some() {
+                if let Some(hook) = self.provider_hook.as_ref() {
+                    hook.execute_session(
+                        &provider_request,
+                        ProviderRelaySessionContext {
+                            adaptor: candidate.adaptor.as_ref(),
+                            credential: &candidate.credential,
+                            client_simulation: candidate.client_simulation.as_deref(),
+                            client_profile: candidate.client_profile.as_ref(),
+                            context: &candidate.context,
+                            operation: request.operation,
+                        },
+                    )
+                    .await
+                } else {
+                    Err(UpstreamError::ProtocolError)
+                }
+            } else {
+                candidate
+                    .transport
+                    .send_with_report(upstream_request, &candidate.context)
+                    .await
+                    .map_err(map_adaptor_error)
+            };
+            let outcome = match outcome_result {
                 Ok(outcome) => outcome,
-                Err(error) => {
+                Err(mapped) => {
                     release_attempt_permit(permit).await;
-                    let mapped = map_adaptor_error(error);
                     failures.push(
                         RelayAttemptFailure::new(index, mapped, attempt_started_at.elapsed())
                             .with_diagnostic(diagnostic)

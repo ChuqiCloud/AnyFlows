@@ -536,6 +536,76 @@ JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或�
 
 声明 `provider.lifecycle` 后，插件会在候选发送前收到规范化的模型、请求方法、相对路径、非敏感 Header 和 JSON Body。插件可以返回新的相对路径、Body 和普通 Header。宿主重新绑定上游主机和认证，并过滤保护字段。响应结束后宿主会回调 `response`；非成功响应还会回调 `classify_failure`。插件的失败不会绕过 Relay 的重试、路由或计费权。
 
+#### 多步 Provider 会话
+
+需要登录、创建网页线程、等待任务完成或多次轮询的上游，可以在部署的 Provider 渠道绑定中打开 `sessionEnabled`。普通 Provider 不要打开此选项；关闭时只调用一次 `request`，不会产生额外的会话尝试。
+
+1. `session_start` 返回 `session`，初始动作通常为 `request`；如果插件已有本地结果，也可以直接返回 `complete`。
+2. 宿主发送请求。上游主机、渠道认证、客户端仿真、适配器最终签名和响应大小限制仍由宿主处理。
+3. `session_step` 收到上一次响应投影 `{status, body}`，可返回 `request`、`wait`、`complete` 或 `abort`。
+4. `request` 发送下一次上游 HTTP 请求；`wait` 暂停后会把同一份最近响应再次传给 `session_step`，插件应通过 `state` 推进轮询；`complete` 返回统一 JSON 响应；`abort` 结束本次候选并进入 Relay 故障分类。
+5. `session_close` 在成功、失败、超时或中止后调用。插件可以返回一个普通 `request`，让宿主再发送一次同渠道的清理请求；也可以返回 `response` 结束清理。清理失败不会覆盖已确定的请求结果。客户端直接取消时，宿主会尽力调用 `session_close`，但不会等待清理结果。
+
+宿主为一轮会话设置 30 秒总时限、16 次动作上限。每个状态、响应和结果最多 256 KiB；请求 Header 最多 64 个，路径必须以单个 `/` 开头。会话步骤使用完整响应缓冲，适合 REST 轮询；`stream` 必须为 `false`。插件需要 SSE 时可读取已结束响应中的 `data:` 事件，长期未结束的事件流和通用 WebSocket 目前不在会话契约范围内。
+
+部署配置示例：
+
+```json
+{
+  "providerSelection": {
+    "channelIds": [12],
+    "models": ["capy-free-model"],
+    "priority": 100,
+    "sessionEnabled": true,
+    "upstreamResponseMode": "non_streaming"
+  }
+}
+```
+
+`session_step` 的返回示例：
+
+```json
+{
+  "kind": "session",
+  "session_id": "thread-123",
+  "state": { "phase": "polling", "attempt": 2 },
+  "action": {
+    "kind": "request",
+    "method": "GET",
+    "path": "/api/thread/thread-123/status",
+    "headers": {},
+    "body": {},
+    "stream": false
+  }
+}
+```
+
+把远端线程 ID、轮询游标等非敏感状态放在 `state` 中。同一 `sessionId` 的重复步骤和清理应保持幂等。不要把 Cookie、Bearer Token、完整网页响应或文件内容写入状态；会话数据大小受宿主限制。
+
+#### 本地测试会话插件
+
+可以先用 `tools/plugins/test-plugin.py` 完成 Manifest、health 和 Provider 操作三步握手，不需要启动 AnyFlows。准备一个 `session-start.json`：
+
+```json
+{
+  "kind": "session_start",
+  "model": "capy-free-model",
+  "request": { "messages": [{ "role": "user", "content": "hello" }] }
+}
+```
+
+运行：
+
+```bash
+python tools/plugins/test-plugin.py \
+  --root path/to/plugin \
+  --manifest path/to/plugin/manifest.json \
+  --capability provider.lifecycle \
+  --provider-operation session-start.json
+```
+
+脚本会检查协议帧、能力声明、Provider 结果类型和基本的会话动作边界。要测试轮询分支，把 `--provider-operation` 换成 `session-step.json`，内容使用 `kind: "session_step"`、`session_id`、`state` 和宿主投影的 `response`。真实上游请求只在 AnyFlows Relay 中执行；本地脚本不会访问网络，也不会读取渠道 Key。
+
 ### 市场发布
 
 插件可以发布到 GitHub Release 或固定 commit 的仓库。市场索引格式和安装约束见 [插件市场](plugin-market.md)。Release 包必须提供完整 SHA-256；Git 源必须固定 40 位 commit。市场只负责发现，安装仍复用管理员审批、能力授权和多节点分发。生产节点只下载预构建 `.afplugin`，不会执行仓库中的构建脚本。

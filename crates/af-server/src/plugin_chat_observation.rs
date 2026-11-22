@@ -1,6 +1,7 @@
 //! Host-controlled plugin stages and Provider adapters for authenticated requests.
 
 mod processing;
+mod session;
 
 use std::{
     future::Future,
@@ -32,7 +33,7 @@ use af_relay::RelayDiagnosticInput;
 use af_relay::{
     ProviderRelayBinding, ProviderRelayFailureAction, ProviderRelayHook, ProviderRelayRequest,
     ProviderRelayRequestFuture, ProviderRelayResponse, ProviderRelayResponseFuture,
-    ProviderRelayTransformFuture,
+    ProviderRelaySessionContext, ProviderRelaySessionFuture, ProviderRelayTransformFuture,
 };
 use futures_util::future::join_all;
 use serde_json::{Value, json};
@@ -189,6 +190,7 @@ struct ProviderTarget {
     upstream_response_mode: PluginProviderUpstreamResponseMode,
     models: Vec<String>,
     channels: Vec<i64>,
+    session_enabled: bool,
 }
 
 /// Connects the versioned Provider adapter to the actual Relay candidate
@@ -296,6 +298,10 @@ impl DatabasePluginProviderRelayHook {
                         .cloned()
                         .and_then(|value| serde_json::from_value(value).ok())
                         .unwrap_or_default();
+                    let session_enabled = selection
+                        .and_then(|value| value.get("sessionEnabled"))
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
                     targets.push(ProviderTarget {
                         plugin_id: deployment.plugin_id.clone(),
                         generation: deployment.generation,
@@ -304,6 +310,7 @@ impl DatabasePluginProviderRelayHook {
                         upstream_response_mode,
                         models,
                         channels,
+                        session_enabled,
                     });
                 }
             }
@@ -324,7 +331,7 @@ impl DatabasePluginProviderRelayHook {
 
     async fn transform(
         &self,
-        request: ProviderRelayRequest,
+        mut request: ProviderRelayRequest,
     ) -> Result<ProviderRelayRequest, af_domain::UpstreamError> {
         let targets = self.provider_targets().await;
         let candidates: Vec<_> = targets
@@ -361,10 +368,30 @@ impl DatabasePluginProviderRelayHook {
                 request.response_mode
             };
             let mut plugin_request = body.clone();
-            if applies_response_mode {
+            let session_mode = target.session_enabled;
+            let session_chat_mode = session_mode
+                && request.operation == Operation::Chat
+                && request.upstream_protocol == Protocol::OpenAiChat;
+            let upstream_response_mode = if session_mode {
+                af_adapter::ResponseMode::Full
+            } else {
+                upstream_response_mode
+            };
+            if applies_response_mode || session_chat_mode {
                 set_chat_stream_mode(&mut plugin_request, upstream_response_mode)?;
             }
             let invocation = self.invocation(&target, &request.model, "provider-request");
+            let operation = if target.session_enabled {
+                PluginProviderOperation::SessionStart {
+                    model: request.model.clone(),
+                    request: plugin_request,
+                }
+            } else {
+                PluginProviderOperation::Request {
+                    model: request.model.clone(),
+                    request: plugin_request,
+                }
+            };
             let result = tokio::time::timeout_at(
                 deadline,
                 self.runtime.invoke_provider(
@@ -373,14 +400,18 @@ impl DatabasePluginProviderRelayHook {
                     target.generation,
                     &invocation,
                     target.capability_version,
-                    PluginProviderOperation::Request {
-                        model: request.model.clone(),
-                        request: plugin_request,
-                    },
+                    operation,
                 ),
             )
             .await;
-            if let Ok(Ok(result @ PluginProviderResult::Request { .. })) = result {
+            let accepted = match result {
+                Ok(Ok(result @ PluginProviderResult::Request { .. })) => Some(result),
+                Ok(Ok(result @ PluginProviderResult::Session { .. })) if target.session_enabled => {
+                    Some(result)
+                }
+                _ => None,
+            };
+            if let Some(result) = accepted {
                 selected = Some((
                     target,
                     result,
@@ -395,14 +426,34 @@ impl DatabasePluginProviderRelayHook {
         }
         let (selected, result, upstream_response_mode, applies_response_mode) =
             selected.ok_or(af_domain::UpstreamError::ProtocolError)?;
-        let PluginProviderResult::Request {
-            method,
-            path,
-            headers,
-            body,
-        } = result
-        else {
-            unreachable!()
+        let (method, path, headers, body) = match result {
+            PluginProviderResult::Request {
+                method,
+                path,
+                headers,
+                body,
+            } => (method, path, headers, body),
+            PluginProviderResult::Session {
+                session_id,
+                state,
+                action,
+            } => {
+                request.binding = Some(ProviderRelayBinding {
+                    plugin_id: selected.plugin_id,
+                    generation: selected.generation,
+                    capability_version: selected.capability_version,
+                });
+                request.session = Some(af_relay::ProviderRelaySession {
+                    session_id,
+                    state,
+                    action: serde_json::to_value(action)
+                        .map_err(|_| af_domain::UpstreamError::ProtocolError)?,
+                });
+                request.upstream_response_mode = af_adapter::ResponseMode::Full;
+                request.upstream_response_mode_overridden = false;
+                return Ok(request);
+            }
+            _ => return Err(af_domain::UpstreamError::ProtocolError),
         };
         let mut body = body;
         if applies_response_mode {
@@ -451,6 +502,7 @@ impl DatabasePluginProviderRelayHook {
             upstream_response_mode_overridden: applies_response_mode,
             upstream_protocol: request.upstream_protocol,
             response_body_limit: request.response_body_limit,
+            session: None,
         };
         Ok(projected)
     }
@@ -593,11 +645,26 @@ impl ProviderRelayHook for DatabasePluginProviderRelayHook {
         Box::pin(async move {
             let request = self.process_outbound(request).await?;
             let request = self.transform(request).await?;
-            let request = self.sign_request(request).await?;
+            let request = if request.session.is_some() {
+                request
+            } else {
+                self.sign_request(request).await?
+            };
             if request.upstream_response_mode_overridden {
                 validate_chat_stream_mode(&request)?;
             }
             Ok(request)
+        })
+    }
+
+    fn execute_session<'a>(
+        &'a self,
+        request: &'a ProviderRelayRequest,
+        session_context: ProviderRelaySessionContext<'a>,
+    ) -> ProviderRelaySessionFuture<'a> {
+        Box::pin(async move {
+            self.execute_provider_session(request, session_context)
+                .await
         })
     }
 
@@ -637,6 +704,7 @@ impl From<&ProviderRelayBinding> for ProviderTarget {
             upstream_response_mode: PluginProviderUpstreamResponseMode::Auto,
             models: vec![],
             channels: vec![],
+            session_enabled: false,
         }
     }
 }

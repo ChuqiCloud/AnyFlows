@@ -98,6 +98,8 @@
       "models": "限定模型",
       "modelsHint": "每行填写一个模型 ID。留空时匹配所选渠道的全部模型。",
       "priority": "优先级",
+      "sessionEnabled": "启用多步会话",
+      "sessionEnabledHint": "仅用于需要登录、轮询或多次上游请求的 Provider。普通插件保持关闭。",
       "upstreamResponseMode": "上游响应模式",
       "upstreamResponseModeHint": "自动跟随客户端。强制模式只适用于 OpenAI Chat Completions 兼容渠道；宿主会把上游结果转换回客户端请求的格式。",
       "responseModes": {

@@ -21,6 +21,7 @@ export function PluginProviderEditor({ deployment, onClose }: {
   const [upstreamResponseMode, setUpstreamResponseMode] = useState<NonNullable<PluginProviderSelectionBody['upstreamResponseMode']>>(
     deployment.providerSelection?.upstreamResponseMode ?? 'auto',
   )
+  const [sessionEnabled, setSessionEnabled] = useState(deployment.providerSelection?.sessionEnabled ?? false)
   const [search, setSearch] = useState('')
   const modelList = [...new Set(models.split('\n').map((model) => model.trim()).filter(Boolean))]
   const priorityValue = Number(priority)
@@ -57,6 +58,13 @@ export function PluginProviderEditor({ deployment, onClose }: {
           </div> : null}
           <Textarea label={t('pluginLifecycle.provider.models')} description={t('pluginLifecycle.provider.modelsHint')} value={models} onValueChange={setModels} isDisabled={save.isPending} minRows={2} />
           <Input label={t('pluginLifecycle.provider.priority')} type="number" value={priority} onValueChange={setPriority} isDisabled={save.isPending} />
+          <label className="flex items-start gap-2 rounded-md border border-divider p-3 text-sm">
+            <input type="checkbox" checked={sessionEnabled} onChange={(event) => setSessionEnabled(event.target.checked)} disabled={save.isPending} />
+            <span>
+              <span className="block font-medium">{t('pluginLifecycle.provider.sessionEnabled')}</span>
+              <span className="block text-xs text-muted-foreground">{t('pluginLifecycle.provider.sessionEnabledHint')}</span>
+            </span>
+          </label>
           <div className="grid gap-1.5">
             <label id="plugin-provider-response-mode-label" className="text-xs font-medium leading-none text-foreground">
               {t('pluginLifecycle.provider.upstreamResponseMode')}
@@ -83,7 +91,7 @@ export function PluginProviderEditor({ deployment, onClose }: {
           <Button color="primary" isLoading={save.isPending} isDisabled={stale || !priorityValid || selected.length > 128 || modelList.length > 128}
             onPress={() => save.mutate({
               pluginId: deployment.pluginId,
-              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue, upstreamResponseMode } },
+              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue, upstreamResponseMode, sessionEnabled } },
             }, { onSuccess: onClose })}>{t('pluginLifecycle.provider.save')}</Button>
         </ModalFooter>
       </ModalContent>

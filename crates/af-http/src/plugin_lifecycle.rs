@@ -435,6 +435,7 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
                             PluginProviderUpstreamResponseModeBody::Streaming
                         }
                     },
+                    session_enabled: selection.session_enabled,
                 }
             }),
             granted_capabilities: value
@@ -458,6 +459,9 @@ pub(crate) struct PluginProviderSelectionBody {
     #[serde(default)]
     #[schema(required = false)]
     upstream_response_mode: PluginProviderUpstreamResponseModeBody,
+    #[serde(default)]
+    #[schema(required = false)]
+    session_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -2238,6 +2242,7 @@ async fn configure_provider_selection(
                 PluginProviderUpstreamResponseMode::Streaming
             }
         },
+        session_enabled: request.selection.session_enabled,
     };
     let deployment = state
         .service

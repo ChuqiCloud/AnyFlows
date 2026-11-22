@@ -138,6 +138,36 @@ class PluginSdkTests(unittest.TestCase):
         self.assertEqual(response["result"]["kind"], "task")
         self.assertEqual(response["result"]["value"], task)
 
+    def test_provider_session_result_is_supported_by_the_python_sdk(self):
+        manifest = copy.deepcopy(MANIFEST)
+        manifest["capabilities"] = [{
+            "id": "provider.lifecycle", "version": 1, "access": "read", "sideEffect": "external_read",
+        }]
+        session = {
+            "kind": "session",
+            "session_id": "thread-1",
+            "state": {"phase": "polling"},
+            "action": {
+                "kind": "request", "method": "GET", "path": "/v1/status/thread-1",
+                "headers": {}, "body": {}, "stream": False,
+            },
+        }
+        plugin = Plugin(
+            manifest,
+            lambda *args: session,
+            provider_handler=lambda *args: session,
+            clock_ms=lambda: 1000,
+        )
+        response = plugin.respond({
+            **request({
+                "operation": "invoke_provider", "connectionId": "provider", "publicConfig": {},
+                "capabilityId": "provider.lifecycle", "capabilityVersion": 1,
+                "provider": {"kind": "session_start", "model": "capy-free-model", "request": {}},
+            }, manifest),
+        })
+        self.assertEqual(response["result"]["kind"], "provider")
+        self.assertEqual(response["result"]["value"], session)
+
     def test_malformed_envelopes_and_non_json_numbers_close_the_stream(self):
         envelope = request({"operation": "health"})
         envelope["deploymentGeneration"] = True

@@ -108,7 +108,8 @@ pub use rerank::{RelayRerankOutcome, RerankResponse, relay_rerank_with_report};
 pub use state_machine::{
     ProviderRelayBinding, ProviderRelayFailureAction, ProviderRelayFailureFuture,
     ProviderRelayHook, ProviderRelayRequest, ProviderRelayRequestFuture, ProviderRelayResponse,
-    ProviderRelayResponseFuture, ProviderRelayTransformFuture, RelayAttemptFailure,
+    ProviderRelayResponseFuture, ProviderRelaySession, ProviderRelaySessionContext,
+    ProviderRelaySessionFuture, ProviderRelayTransformFuture, RelayAttemptFailure,
     RelayAttemptReport, RelayCandidate, RelayCandidateRequest, RelayClientSimulationAttempt,
     RelayExecutionError, RelayExecutionPolicy, RelayRequest, RelayResponse, RelayState,
     RelayStateMachine,
