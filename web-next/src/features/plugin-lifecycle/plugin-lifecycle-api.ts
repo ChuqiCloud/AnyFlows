@@ -72,6 +72,60 @@ type PluginEventResultPage = {
   nextBeforeId: number | null
 }
 
+export type UnknownPluginTask = {
+  id: string
+  pluginId: string
+  model: string
+  state: string
+  maxUnits: number
+  failureCode: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+type UnknownPluginTaskPage = {
+  tasks: UnknownPluginTask[]
+  nextCursor: string | null
+}
+
+export function useUnknownPluginTasks() {
+  return useInfiniteQuery({
+    queryKey: [...root, 'unknown-tasks'],
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const response = await apiClient.get<UnknownPluginTaskPage>({
+        url: '/api/admin/plugins/tasks/unknown',
+        query: { cursor: pageParam, limit: 100 },
+        signal,
+        security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+      }) as unknown as { data: UnknownPluginTaskPage }
+      return response.data
+    },
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+    retry: false,
+  })
+}
+
+export function useReconcileUnknownPluginTask() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ taskId, actualUnits, reason }: { taskId: string; actualUnits: number; reason: string }) => {
+      const response = await apiClient.post<UnknownPluginTask>({
+        url: `/api/admin/plugins/tasks/${encodeURIComponent(taskId)}/reconcile`,
+        body: { actualUnits, reason },
+        security: [{ key: 'bearerAuth', scheme: 'bearer', type: 'http' }],
+      }) as unknown as { data: UnknownPluginTask }
+      return response.data
+    },
+    onSuccess: async () => {
+      await invalidate(client)
+      await client.invalidateQueries({ queryKey: [...root, 'unknown-tasks'] })
+    },
+  })
+}
+
 export function usePluginEventResults() {
   return useInfiniteQuery({
     queryKey: [...root, 'event-results'],

@@ -167,6 +167,7 @@ try {
     assert.equal(request.headers().authorization, 'Bearer ci-plugin', `${method} ${path} must use the current session`)
     if (path === '/api/admin/plugins/artifacts' && method === 'GET') return respond({ artifacts: [artifact, revoked], nextBeforeId: null })
     if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; return respond({ deployments: [deployment], nextCursor: null }) }
+    if (path === '/api/admin/plugins/tasks/unknown' && method === 'GET') return respond({ tasks: [], nextCursor: null })
     if (path === '/api/admin/plugins/events/results' && method === 'GET') return respond({ results: [{ deliveryId: 31, pluginId: 'org.example.events', eventKind: 'channel.health.changed', deploymentGeneration: 4, capabilityId: 'events.channel-health.changed.consume', capabilityVersion: 1, attemptCount: 1, status: 'delivered', completedAt: now, summary: 'Channel 12 recovered.', result: { summary: 'Channel 12 recovered.', status: 'info' } }], nextBeforeId: null })
     if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
     if (path === `/api/admin/plugins/${marketPlugin}/deployment/history` && method === 'GET') return respond([])
@@ -252,6 +253,8 @@ try {
   await page.getByRole('heading', { name: label('pluginLifecycle.title'), exact: true }).waitFor()
   const runtimePanel = page.getByRole('region', { name: label('pluginLifecycle.runtime.title') })
   await runtimePanel.getByText('CI node A', { exact: true }).first().waitFor()
+  const taskReconciliationPanel = page.getByRole('region', { name: label('pluginLifecycle.tasks.title') })
+  await taskReconciliationPanel.getByText(label('pluginLifecycle.tasks.empty'), { exact: true }).waitFor()
   await runtimePanel.getByText(label('pluginLifecycle.runtime.readyNodes').replace('{{ready}}', '1').replace('{{total}}', '3'), { exact: true }).waitFor()
   await runtimePanel.getByText(label('pluginLifecycle.runtime.states.pending'), { exact: true }).waitFor()
   await runtimePanel.getByText(label('pluginLifecycle.runtime.stale'), { exact: true }).waitFor()

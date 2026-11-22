@@ -1379,6 +1379,8 @@ impl DatabaseAdminPluginLifecycleService {
                 capability.id.as_str(),
                 capability.version,
                 input,
+                (audience != af_plugin_contract::PluginRouteAudience::Admin)
+                    .then(|| principal.user_id().get()),
                 self.storage_dispatcher.clone(),
             )
             .await;

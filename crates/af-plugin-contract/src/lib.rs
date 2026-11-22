@@ -16,6 +16,13 @@ mod proposal;
 mod provider;
 mod request_processing;
 mod routes;
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "Rust SDK 接口由外部插件 crate 调用，契约测试只负责编译该独立入口"
+)]
+#[path = "../../../tools/plugins/sdk/rust/anyflows_plugin.rs"]
+mod rust_sdk_conformance;
 mod schema;
 mod storage;
 mod task;

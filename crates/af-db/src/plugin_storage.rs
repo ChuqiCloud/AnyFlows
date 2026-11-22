@@ -3,7 +3,9 @@
 use std::time::Duration;
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set,
+    sea_query::{Condition, Expr, OnConflict},
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -12,6 +14,7 @@ use crate::{DatabasePool, entity::plugin_storage};
 
 pub const MAX_PLUGIN_STORAGE_VALUE_BYTES: usize = 64 * 1024;
 pub const MAX_PLUGIN_STORAGE_LIST_LIMIT: u64 = 100;
+const MAX_EXPIRED_PLUGIN_STORAGE_PURGE: u64 = 100;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PluginStorageRecord {
@@ -71,13 +74,20 @@ impl PluginStorageRepository {
             .one(self.pool.connection())
             .await
             .map_err(|_| PluginStorageRepositoryError::Query)?;
-        Ok(row.and_then(|row| {
-            if row.expires_at.is_some_and(|expires_at| expires_at <= now) {
-                None
-            } else {
-                Some(record(row))
-            }
-        }))
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        if row.expires_at.is_some_and(|expires_at| expires_at <= now) {
+            plugin_storage::Entity::delete_many()
+                .filter(plugin_storage::Column::PluginId.eq(plugin_id))
+                .filter(plugin_storage::Column::StorageKey.eq(key))
+                .filter(plugin_storage::Column::ExpiresAt.lte(now))
+                .exec(self.pool.connection())
+                .await
+                .map_err(|_| PluginStorageRepositoryError::Query)?;
+            return Ok(None);
+        }
+        Ok(Some(record(row)))
     }
 
     pub async fn put(
@@ -91,35 +101,28 @@ impl PluginStorageRepository {
         validate_scope(plugin_id, key)?;
         validate_value(&value, expires_at, now)?;
         let operation = async {
-            let existing =
-                plugin_storage::Entity::find_by_id((plugin_id.to_owned(), key.to_owned()))
-                    .one(self.pool.connection())
-                    .await
-                    .map_err(|_| PluginStorageRepositoryError::Query)?;
-            if existing.is_some() {
-                let model = plugin_storage::ActiveModel {
-                    plugin_id: Set(plugin_id.to_owned()),
-                    storage_key: Set(key.to_owned()),
-                    value_json: Set(value),
-                    expires_at: Set(expires_at),
-                    updated_at: Set(now),
-                };
-                model
-                    .update(self.pool.connection())
-                    .await
-                    .map_err(|_| PluginStorageRepositoryError::Query)?;
-            } else {
-                plugin_storage::ActiveModel {
-                    plugin_id: Set(plugin_id.to_owned()),
-                    storage_key: Set(key.to_owned()),
-                    value_json: Set(value),
-                    expires_at: Set(expires_at),
-                    updated_at: Set(now),
-                }
-                .insert(self.pool.connection())
-                .await
-                .map_err(|_| PluginStorageRepositoryError::Query)?;
-            }
+            plugin_storage::Entity::insert(plugin_storage::ActiveModel {
+                plugin_id: Set(plugin_id.to_owned()),
+                storage_key: Set(key.to_owned()),
+                value_json: Set(value),
+                expires_at: Set(expires_at),
+                updated_at: Set(now),
+            })
+            .on_conflict(
+                OnConflict::columns([
+                    plugin_storage::Column::PluginId,
+                    plugin_storage::Column::StorageKey,
+                ])
+                .update_columns([
+                    plugin_storage::Column::ValueJson,
+                    plugin_storage::Column::ExpiresAt,
+                    plugin_storage::Column::UpdatedAt,
+                ])
+                .to_owned(),
+            )
+            .exec_without_returning(self.pool.connection())
+            .await
+            .map_err(|_| PluginStorageRepositoryError::Query)?;
             Ok(())
         };
         timeout(self.timeout, operation)
@@ -140,6 +143,47 @@ impl PluginStorageRepository {
         Ok(result.rows_affected == 1)
     }
 
+    pub async fn purge_expired(
+        &self,
+        now: i64,
+        limit: u64,
+    ) -> Result<u64, PluginStorageRepositoryError> {
+        if now <= 0 || limit == 0 || limit > MAX_EXPIRED_PLUGIN_STORAGE_PURGE {
+            return Err(PluginStorageRepositoryError::InvalidInput);
+        }
+        let expired_keys = plugin_storage::Entity::find()
+            .select_only()
+            .column(plugin_storage::Column::PluginId)
+            .column(plugin_storage::Column::StorageKey)
+            .filter(plugin_storage::Column::ExpiresAt.lte(now))
+            .order_by_asc(plugin_storage::Column::ExpiresAt)
+            .limit(limit)
+            .into_tuple::<(String, String)>()
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| PluginStorageRepositoryError::Query)?;
+        if expired_keys.is_empty() {
+            return Ok(0);
+        }
+        let expired_key_filter =
+            expired_keys
+                .into_iter()
+                .fold(Condition::any(), |condition, (plugin_id, key)| {
+                    condition.add(
+                        Condition::all()
+                            .add(plugin_storage::Column::PluginId.eq(plugin_id))
+                            .add(plugin_storage::Column::StorageKey.eq(key)),
+                    )
+                });
+        let result = plugin_storage::Entity::delete_many()
+            .filter(expired_key_filter)
+            .filter(plugin_storage::Column::ExpiresAt.lte(now))
+            .exec(self.pool.connection())
+            .await
+            .map_err(|_| PluginStorageRepositoryError::Query)?;
+        Ok(result.rows_affected)
+    }
+
     pub async fn list(
         &self,
         plugin_id: &str,
@@ -147,7 +191,7 @@ impl PluginStorageRepository {
         limit: u64,
         now: i64,
     ) -> Result<Vec<PluginStorageRecord>, PluginStorageRepositoryError> {
-        if !valid_plugin_id(plugin_id)
+        if !valid_storage_namespace(plugin_id)
             || limit == 0
             || limit > MAX_PLUGIN_STORAGE_LIST_LIMIT
             || now <= 0
@@ -159,20 +203,32 @@ impl PluginStorageRepository {
         }
         let mut query = plugin_storage::Entity::find()
             .filter(plugin_storage::Column::PluginId.eq(plugin_id))
+            .filter(
+                Condition::any()
+                    .add(plugin_storage::Column::ExpiresAt.is_null())
+                    .add(plugin_storage::Column::ExpiresAt.gt(now)),
+            )
             .order_by_asc(plugin_storage::Column::StorageKey)
             .limit(limit);
         if let Some(prefix) = prefix {
-            query = query.filter(plugin_storage::Column::StorageKey.like(format!("{prefix}%")));
+            let prefix_expression = match self.pool.connection().get_database_backend() {
+                DatabaseBackend::MySql => {
+                    "BINARY SUBSTRING(storage_key, 1, CHAR_LENGTH(?)) = BINARY ?"
+                }
+                DatabaseBackend::Postgres => {
+                    "SUBSTRING(storage_key, 1, CHAR_LENGTH(?)) COLLATE \"C\" = ? COLLATE \"C\""
+                }
+                DatabaseBackend::Sqlite => {
+                    "SUBSTR(storage_key, 1, LENGTH(?)) COLLATE BINARY = ? COLLATE BINARY"
+                }
+            };
+            query = query.filter(Expr::cust_with_values(prefix_expression, [prefix, prefix]));
         }
         let rows = query
             .all(self.pool.connection())
             .await
             .map_err(|_| PluginStorageRepositoryError::Query)?;
-        Ok(rows
-            .into_iter()
-            .filter(|row| row.expires_at.is_none_or(|expires_at| expires_at > now))
-            .map(record)
-            .collect())
+        Ok(rows.into_iter().map(record).collect())
     }
 }
 
@@ -187,10 +243,18 @@ fn record(row: plugin_storage::Model) -> PluginStorageRecord {
 }
 
 fn validate_scope(plugin_id: &str, key: &str) -> Result<(), PluginStorageRepositoryError> {
-    if !valid_plugin_id(plugin_id) {
+    if !valid_storage_namespace(plugin_id) {
         return Err(PluginStorageRepositoryError::InvalidInput);
     }
     validate_key(key)
+}
+
+fn valid_storage_namespace(namespace: &str) -> bool {
+    valid_plugin_id(namespace)
+        || (namespace.len() == 64
+            && namespace
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
 }
 
 fn validate_key(key: &str) -> Result<(), PluginStorageRepositoryError> {

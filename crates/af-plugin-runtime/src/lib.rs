@@ -60,14 +60,17 @@ pub trait PluginProxyDispatcher: Send + Sync {
 }
 
 /// Host-owned namespace storage callback for one in-flight Sidecar call.
-/// Implementations bind the request to the plugin ID and deployment generation
-/// before touching the shared repository.
+/// Implementations bind the request to the plugin ID, deployment generation,
+/// and optional host-selected user scope before touching the shared repository.
 #[async_trait]
 pub trait PluginStorageDispatcher: Send + Sync {
     async fn dispatch(
         &self,
         request: af_plugin_contract::PluginStorageRequest,
+        owner_user_id: Option<i64>,
     ) -> af_plugin_contract::PluginStorageResponse;
+
+    async fn purge_expired(&self) {}
 }
 
 /// Reviewed connector implementation compiled into the AnyFlows host.

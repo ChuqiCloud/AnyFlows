@@ -52,7 +52,7 @@ pub struct PluginRoute {
     pub id: String,
     pub schema_version: u16,
     pub method: PluginRouteMethod,
-    /// Relative path below `/api/plugins/{plugin_id}`; query strings are not allowed.
+    /// Logical path for documentation and client generation. Host HTTP endpoints use `id`.
     pub path: String,
     pub audience: PluginRouteAudience,
     pub capability_id: CapabilityId,

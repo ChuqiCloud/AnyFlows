@@ -33478,6 +33478,198 @@
         ]
       }
     },
+    "/api/admin/plugins/tasks/unknown": {
+      "get": {
+        "tags": [
+          "插件任务"
+        ],
+        "summary": "读取需要人工核对上游状态的插件任务",
+        "operationId": "listAdminUnknownPluginTasks",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "未知任务及分页游标",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:list_admin_unknown_plugin_tasks:execute"
+        ]
+      }
+    },
+    "/api/admin/plugins/tasks/{task_id}/reconcile": {
+      "post": {
+        "tags": [
+          "插件任务"
+        ],
+        "summary": "依据上游核对结果结算未知插件任务并释放剩余额度",
+        "description": "管理员必须先在上游确认本次任务的实际计费单位。填 0 表示上游确认未执行。该操作会写入管理员、原因和结算额度审计信息。",
+        "operationId": "reconcileAdminUnknownPluginTask",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPluginTaskReconciliationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "任务已结算",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "实际单位或原因无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "插件任务不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "任务不再处于未知状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "结算或审计记录失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:reconcile_admin_unknown_plugin_task:execute"
+        ]
+      }
+    },
     "/api/admin/plugins/{plugin_id}/routes/{route_id}": {
       "get": {
         "tags": [
@@ -45708,6 +45900,46 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminPluginTaskListQuery": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminPluginTaskReconciliationRequest": {
+        "type": "object",
+        "required": [
+          "actualUnits",
+          "reason"
+        ],
+        "properties": {
+          "actualUnits": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
           }
         },
         "additionalProperties": false

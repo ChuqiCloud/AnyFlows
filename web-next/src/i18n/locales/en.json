@@ -106,7 +106,7 @@
     "eyebrow": "PLUGINS",
     "title": "Plugin management",
     "subtitle": "Upload a plugin package to install and enable it, then manage configuration, disable it, or roll back a version.",
-    "trustWarning": "Plugins run under the AnyFlows service account. Install only plugins you trust.",
+    "trustWarning": "The default auto policy does not isolate file or network access. Plugins generally run with the AnyFlows service account's permissions. Install only reviewed plugins.",
     "advanced": "Advanced: manual registration and deployment",
     "signatureDetails": "Publisher signature (optional)",
     "signatureHint": "Your plugin does not need a signature. A matching configured publisher key verifies its signature; other packages can still be installed by an administrator.",
@@ -274,6 +274,23 @@
         "job_object": "Windows Job Object",
         "unknown": "Not reported"
       }
+    },
+    "tasks": {
+      "title": "Plugin tasks needing review",
+      "description": "Tasks with uncertain outcomes keep retrying with the same idempotency key. Settle one only after checking its actual upstream usage.",
+      "loadError": "Could not load tasks that need review.",
+      "empty": "No tasks need review.",
+      "unknownStatus": "Upstream submission outcome is unknown",
+      "review": "Review and settle",
+      "actualUnits": "Actual upstream units",
+      "reason": "Reconciliation reason",
+      "settle": "Continue to settlement",
+      "confirmTitle": "Confirm task settlement",
+      "confirmDescription": "Check the upstream task status and usage first. Enter 0 only when the provider confirms that it did not execute. AnyFlows will settle this usage and release the remaining reservation.",
+      "actualUnitsValue": "Actual units: {{count}}",
+      "confirm": "Confirm settlement",
+      "reconcileError": "Settlement failed. Refresh the task state before retrying.",
+      "more": "Load more tasks"
     },
     "removal": {
       "uninstall": "Uninstall",

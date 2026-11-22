@@ -34,6 +34,29 @@ fn plugin_gateway_operations_accept_model_keys_only() {
 }
 
 #[test]
+fn plugin_task_reconciliation_is_admin_only_and_uses_registered_operations() {
+    for (method, path, operation_id) in [
+        (
+            "GET",
+            "/api/admin/plugins/tasks/unknown",
+            "list_admin_unknown_plugin_tasks",
+        ),
+        (
+            "POST",
+            "/api/admin/plugins/tasks/{task_id}/reconcile",
+            "reconcile_admin_unknown_plugin_task",
+        ),
+    ] {
+        let route = policy(method, path).expect("admin task route has a PAT policy");
+        assert!(route.admin_only && !route.session_only);
+        assert_eq!(
+            route.required_scopes,
+            [format!("admin:{operation_id}:execute")]
+        );
+    }
+}
+
+#[test]
 fn personal_access_token_policies_cover_actual_management_router_registrations() {
     let raw = serde_json::to_value(crate::openapi::raw_openapi_document()).unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

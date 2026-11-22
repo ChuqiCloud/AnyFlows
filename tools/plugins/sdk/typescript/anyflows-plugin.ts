@@ -2,13 +2,24 @@
  * this SDK wraps task/provider/credential results using the correct envelope. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type ObjectValue = { [key: string]: Json };
-export type PluginHandler = (operation: ObjectValue) => Promise<Json> | Json;
+export type PluginHandler = (operation: ObjectValue, context: PluginInvocationContext) => Promise<Json> | Json;
+export type PluginOutcome = 'not_applied' | 'applied' | 'unknown';
 const MAX_FRAME = 1024 * 1024;
 const ERRORS = new Set(['invalid_configuration','unsupported','authentication_required','forbidden','rate_limited','temporarily_unavailable','conflict','upstream_failure','partial_success','outcome_unknown','invalid_response']);
+const OUTCOMES = new Set<PluginOutcome>(['not_applied','applied','unknown']);
 const RESULTS: Record<string,string> = {invoke_capability:'capability',plugin_route:'capability',invoke_task:'task',invoke_provider:'provider',invoke_credential:'credential'};
 export class PluginError extends Error {
   code: string;
-  constructor(code: string) { super(code); this.code = ERRORS.has(code) ? code : 'invalid_response'; }
+  outcome?: PluginOutcome;
+  constructor(code: string, outcome?: PluginOutcome) {
+    super(code);
+    this.code = ERRORS.has(code) ? code : 'invalid_response';
+    this.outcome = outcome && OUTCOMES.has(outcome) ? outcome : undefined;
+  }
+}
+export class PluginInvocationContext {
+  readonly signal: AbortSignal;
+  constructor(signal: AbortSignal) { this.signal = signal; }
 }
 function object(value: Json | undefined): value is ObjectValue { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 export class AnyFlowsPlugin {
@@ -21,10 +32,11 @@ export class AnyFlowsPlugin {
         typeof frame.artifactSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(frame.artifactSha256) ||
         !Number.isSafeInteger(frame.deploymentGeneration) || Number(frame.deploymentGeneration) < 1 ||
         typeof frame.requestId !== 'string' || !frame.requestId.trim() || Buffer.byteLength(frame.requestId) > 128 ||
-        !Number.isSafeInteger(frame.deadlineUnixMs) || !object(operation) || typeof operation.operation !== 'string') throw new Error('invalid host envelope');
+        !Number.isSafeInteger(frame.deadlineUnixMs) || Number(frame.deadlineUnixMs) < 1 || !object(operation) || typeof operation.operation !== 'string') throw new Error('invalid host envelope');
     const response: ObjectValue = {};
     for (const key of ['protocolVersion','pluginId','pluginVersion','artifactSha256','deploymentGeneration','requestId']) response[key] = frame[key];
     let result: ObjectValue;
+    let handlerStarted = false;
     try {
       if (Number(frame.deadlineUnixMs) <= Date.now()) throw new PluginError('temporarily_unavailable');
       const kind = operation.operation;
@@ -35,13 +47,36 @@ export class AnyFlowsPlugin {
         if (!outputKind) throw new PluginError('unsupported');
         if (typeof operation.connectionId !== 'string' || !object(operation.publicConfig) || typeof operation.capabilityId !== 'string' || !Number.isSafeInteger(operation.capabilityVersion)) throw new PluginError('invalid_configuration');
         let timer: ReturnType<typeof setTimeout> | undefined;
+        const controller = new AbortController();
         let value: Json;
         try {
-          value = await Promise.race([Promise.resolve(this.handler(operation)),new Promise<Json>((_,reject) => { timer = setTimeout(() => reject(new PluginError('outcome_unknown')),Math.min(Number(frame.deadlineUnixMs)-Date.now(),300_000)); })]);
+          handlerStarted = true;
+          value = await Promise.race([
+            Promise.resolve(this.handler(operation, new PluginInvocationContext(controller.signal))),
+            new Promise<Json>((_, reject) => {
+              timer = setTimeout(() => {
+                controller.abort();
+                reject(new PluginError('outcome_unknown', 'unknown'));
+              }, Math.min(Number(frame.deadlineUnixMs) - Date.now(), 300_000));
+            }),
+          ]);
+          if (Date.now() >= Number(frame.deadlineUnixMs)) {
+            throw new PluginError('outcome_unknown', 'unknown');
+          }
         } finally { if (timer) clearTimeout(timer); }
         result = {kind:outputKind,value:outputKind === 'capability' ? {output:value} : value};
       }
-    } catch (error) { result = {kind:'error',value:{code:error instanceof PluginError ? error.code : 'upstream_failure',outcome:'unknown'}}; }
+    } catch (error) {
+      result = {
+        kind: 'error',
+        value: {
+          code: error instanceof PluginError ? error.code : 'upstream_failure',
+          outcome: error instanceof PluginError
+            ? error.outcome ?? (handlerStarted ? 'unknown' : 'not_applied')
+            : 'unknown',
+        },
+      };
+    }
     response.result = result;
     if (Buffer.byteLength(JSON.stringify(response))+1 > MAX_FRAME) throw new Error('response frame too large');
     return response;

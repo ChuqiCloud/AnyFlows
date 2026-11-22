@@ -267,6 +267,8 @@ mod plugin_event_delivery;
 mod plugin_event_delivery_tests;
 mod plugin_host;
 mod plugin_storage;
+#[cfg(test)]
+mod plugin_storage_tests;
 pub use plugin_action_proposals::{
     PluginActionProposalCreate, PluginActionProposalRecord, PluginActionProposalRepository,
     PluginActionProposalRepositoryError, PluginActionProposalStatus,

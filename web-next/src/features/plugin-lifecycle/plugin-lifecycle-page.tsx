@@ -12,6 +12,7 @@ import { PluginInstallPanel } from './plugin-install-panel'
 import { PluginMarketPanel } from './plugin-market-panel'
 import { PluginProviderEditor } from './plugin-provider-editor'
 import { PluginRuntimePanel } from './plugin-runtime-panel'
+import { PluginTaskReconciliationPanel } from './plugin-task-reconciliation-panel'
 import { hasRenderablePluginUiViews, PluginUiViewsRenderer } from './plugin-ui-views'
 import { pluginPages } from './plugin-pages'
 import {
@@ -255,6 +256,7 @@ export function PluginLifecyclePage() {
     {uninstallNotice !== undefined ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.accepted', { count: uninstallNotice })}</p> : null}
     {cleanupNotice ? <p role="status" className="rounded-lg border border-[var(--hairline)] p-3 text-sm text-muted-foreground">{t('pluginLifecycle.removal.cleaned')}</p> : null}
     <PluginRuntimePanel deployments={deploymentList} />
+    <PluginTaskReconciliationPanel />
     <PluginEventResultsPanel />
 
     <details className="rounded-xl border border-[var(--hairline)] bg-card">
