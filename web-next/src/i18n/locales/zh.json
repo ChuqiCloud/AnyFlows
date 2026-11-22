@@ -98,6 +98,13 @@
       "models": "限定模型",
       "modelsHint": "每行填写一个模型 ID。留空时匹配所选渠道的全部模型。",
       "priority": "优先级",
+      "upstreamResponseMode": "上游响应模式",
+      "upstreamResponseModeHint": "自动跟随客户端。强制模式只适用于 OpenAI Chat Completions 兼容渠道；宿主会把上游结果转换回客户端请求的格式。",
+      "responseModes": {
+        "auto": "自动跟随客户端",
+        "nonStreaming": "强制非流式",
+        "streaming": "强制流式"
+      },
       "bound": "已绑定 {{count}} 个渠道",
       "conflict": "部署已更新。请关闭窗口并重新打开。",
       "saveError": "保存失败，请检查渠道绑定和插件状态。",

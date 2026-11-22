@@ -348,9 +348,11 @@ try {
   await providerDialog.getByRole('checkbox', { name: 'Fixture upstream · #12' }).check()
   await providerDialog.getByRole('textbox', { name: label('pluginLifecycle.provider.models'), exact: true }).fill('fixture-text')
   await providerDialog.getByRole('spinbutton', { name: label('pluginLifecycle.provider.priority'), exact: true }).fill('4')
+  await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.upstreamResponseMode'), exact: true }).click()
+  await page.getByText(label('pluginLifecycle.provider.responseModes.nonStreaming'), { exact: true }).last().click()
   await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.save'), exact: true }).click()
   await providerDialog.waitFor({ state: 'hidden' })
-  assert.deepEqual(providerSelections, [{channelIds: [12], models: ['fixture-text'], priority: 4}])
+  assert.deepEqual(providerSelections, [{channelIds: [12], models: ['fixture-text'], priority: 4, upstreamResponseMode: 'non_streaming'}])
   await page.getByText(label('pluginLifecycle.provider.bound').replace('{{count}}', '1'), { exact: true }).waitFor()
 
   await page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }).click()

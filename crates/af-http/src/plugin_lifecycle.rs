@@ -12,7 +12,8 @@ use af_admin::{
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
     PluginMarketInstallRequest, PluginMarketInstallSource, PluginPackageUpload,
-    PluginProviderSelection, SessionAuthentication, SessionAuthenticator,
+    PluginProviderSelection, PluginProviderUpstreamResponseMode, SessionAuthentication,
+    SessionAuthenticator,
 };
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
@@ -423,6 +424,17 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
                     channel_ids: selection.channel_ids.clone(),
                     models: selection.models.clone(),
                     priority: selection.priority,
+                    upstream_response_mode: match selection.upstream_response_mode {
+                        PluginProviderUpstreamResponseMode::Auto => {
+                            PluginProviderUpstreamResponseModeBody::Auto
+                        }
+                        PluginProviderUpstreamResponseMode::NonStreaming => {
+                            PluginProviderUpstreamResponseModeBody::NonStreaming
+                        }
+                        PluginProviderUpstreamResponseMode::Streaming => {
+                            PluginProviderUpstreamResponseModeBody::Streaming
+                        }
+                    },
                 }
             }),
             granted_capabilities: value
@@ -443,6 +455,18 @@ pub(crate) struct PluginProviderSelectionBody {
     channel_ids: Vec<i64>,
     models: Vec<String>,
     priority: i32,
+    #[serde(default)]
+    #[schema(required = false)]
+    upstream_response_mode: PluginProviderUpstreamResponseModeBody,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+enum PluginProviderUpstreamResponseModeBody {
+    #[default]
+    Auto,
+    NonStreaming,
+    Streaming,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -2203,6 +2227,17 @@ async fn configure_provider_selection(
         channel_ids: request.selection.channel_ids,
         models: request.selection.models,
         priority: request.selection.priority,
+        upstream_response_mode: match request.selection.upstream_response_mode {
+            PluginProviderUpstreamResponseModeBody::Auto => {
+                PluginProviderUpstreamResponseMode::Auto
+            }
+            PluginProviderUpstreamResponseModeBody::NonStreaming => {
+                PluginProviderUpstreamResponseMode::NonStreaming
+            }
+            PluginProviderUpstreamResponseModeBody::Streaming => {
+                PluginProviderUpstreamResponseMode::Streaming
+            }
+        },
     };
     let deployment = state
         .service

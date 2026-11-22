@@ -576,17 +576,20 @@ python tools/plugins/generate-protocol-sdk.py
 
 将路由的 `audience` 设为 `model_key`，可通过 `/v1/plugins/{plugin_id}/{route_id}` 或 `/api/plugins/{plugin_id}/routes/{route_id}` 调用。两条路径和下文的任务接口都使用模型调用 Key。控制台和管理 API 使用会话或相应权限的 PAT。宿主负责校验路由的输入、输出、授权和超时。
 
-管理员可在「插件管理」的部署卡片中打开「Provider 渠道绑定」。选择渠道后，可再限定模型并设置优先级。对应的部署配置如下。
+管理员可在「插件管理」的部署卡片中打开「Provider 渠道绑定」。选择渠道后，可再限定模型、设置优先级和上游响应模式。`auto` 沿用客户端模式；`non_streaming` 和 `streaming` 只适用于 OpenAI Chat Completions 兼容渠道。强制模式会在调用插件前设置请求中的 `stream` 字段，并由宿主在 Relay 内转换响应格式，因此客户端的流式选择、用量结算和响应格式保持一致。其他协议及非对话操作继续使用客户端模式。
 
 ```json
 {
   "providerSelection": {
     "priority": 100,
+    "upstreamResponseMode": "non_streaming",
     "models": ["vendor-model"],
     "channelIds": [12, 18]
   }
 }
 ```
+
+Provider 插件会在 `request` 操作中看到宿主设置后的请求正文。例如，绑定为 `non_streaming` 时，插件收到的 `request.stream` 为 `false`，且不会收到只适用于流式响应的 `stream_options`。插件应按这个字段选择上游请求方式，不要再自行覆盖 `stream`。旧部署未保存该字段时按 `auto` 处理。
 
 同一渠道和模型有多个插件时，宿主按 `priority` 降序、插件 ID 升序选择。模型留空表示匹配所选渠道上的全部模型。清空全部渠道并保存会移除该部署的绑定。
 

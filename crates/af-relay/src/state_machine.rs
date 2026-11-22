@@ -557,7 +557,14 @@ pub struct ProviderRelayRequest {
     pub target: String,
     pub headers: HeaderMap,
     pub body: Option<Bytes>,
+    /// Response format requested by the client and ultimately delivered by Relay.
     pub response_mode: ResponseMode,
+    /// Response format requested from the upstream provider after plugin policy.
+    pub upstream_response_mode: ResponseMode,
+    /// Whether an explicit binding mode must be preserved through signing.
+    pub upstream_response_mode_overridden: bool,
+    /// Protocol used by the selected Relay adapter.
+    pub upstream_protocol: Protocol,
     pub response_body_limit: usize,
 }
 
@@ -1362,6 +1369,9 @@ impl RelayStateMachine {
                 headers,
                 body: outbound_body,
                 response_mode: request.response_mode,
+                upstream_response_mode: request.response_mode,
+                upstream_response_mode_overridden: false,
+                upstream_protocol: candidate.adaptor.default_protocol(),
                 response_body_limit: request.response_body_limit,
             };
             if let Some(hook) = self.provider_hook.as_ref() {
@@ -1389,7 +1399,7 @@ impl RelayStateMachine {
                 upstream_request.with_response_body_limit(provider_request.response_body_limit)
             })
             .map(|upstream_request| {
-                upstream_request.with_response_mode(provider_request.response_mode)
+                upstream_request.with_response_mode(provider_request.upstream_response_mode)
             }) {
                 Ok(request) => request,
                 Err(error) => {

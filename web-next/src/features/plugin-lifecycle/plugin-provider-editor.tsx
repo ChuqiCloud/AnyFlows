@@ -1,10 +1,10 @@
-import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Textarea } from '@heroui/react'
+import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Select, SelectItem, Textarea } from '@heroui/react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdminChannels } from '@/features/channels/channel-api'
 import { ApiError } from '@/lib/api'
-import type { PluginDeploymentResponse } from '@/lib/api/generated/types.gen'
+import type { PluginDeploymentResponse, PluginProviderSelectionBody } from '@/lib/api/generated/types.gen'
 import { useConfigurePluginProvider } from './plugin-lifecycle-api'
 
 export function PluginProviderEditor({ deployment, onClose }: {
@@ -18,6 +18,9 @@ export function PluginProviderEditor({ deployment, onClose }: {
   const [selected, setSelected] = useState(deployment.providerSelection?.channelIds ?? [])
   const [models, setModels] = useState(deployment.providerSelection?.models.join('\n') ?? '')
   const [priority, setPriority] = useState(String(deployment.providerSelection?.priority ?? 0))
+  const [upstreamResponseMode, setUpstreamResponseMode] = useState<NonNullable<PluginProviderSelectionBody['upstreamResponseMode']>>(
+    deployment.providerSelection?.upstreamResponseMode ?? 'auto',
+  )
   const [search, setSearch] = useState('')
   const modelList = [...new Set(models.split('\n').map((model) => model.trim()).filter(Boolean))]
   const priorityValue = Number(priority)
@@ -54,6 +57,25 @@ export function PluginProviderEditor({ deployment, onClose }: {
           </div> : null}
           <Textarea label={t('pluginLifecycle.provider.models')} description={t('pluginLifecycle.provider.modelsHint')} value={models} onValueChange={setModels} isDisabled={save.isPending} minRows={2} />
           <Input label={t('pluginLifecycle.provider.priority')} type="number" value={priority} onValueChange={setPriority} isDisabled={save.isPending} />
+          <div className="grid gap-1.5">
+            <label id="plugin-provider-response-mode-label" className="text-xs font-medium leading-none text-foreground">
+              {t('pluginLifecycle.provider.upstreamResponseMode')}
+            </label>
+            <Select
+              aria-labelledby="plugin-provider-response-mode-label"
+              isDisabled={save.isPending}
+              selectedKeys={[upstreamResponseMode]}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0]
+                if (value === 'auto' || value === 'non_streaming' || value === 'streaming') setUpstreamResponseMode(value)
+              }}
+            >
+              <SelectItem key="auto">{t('pluginLifecycle.provider.responseModes.auto')}</SelectItem>
+              <SelectItem key="non_streaming">{t('pluginLifecycle.provider.responseModes.nonStreaming')}</SelectItem>
+              <SelectItem key="streaming">{t('pluginLifecycle.provider.responseModes.streaming')}</SelectItem>
+            </Select>
+            <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('pluginLifecycle.provider.upstreamResponseModeHint')}</p>
+          </div>
           {stale || save.isError ? <p role="alert" className="text-sm text-danger">{t(stale ? 'pluginLifecycle.provider.conflict' : 'pluginLifecycle.provider.saveError')}</p> : null}
         </ModalBody>
         <ModalFooter>
@@ -61,7 +83,7 @@ export function PluginProviderEditor({ deployment, onClose }: {
           <Button color="primary" isLoading={save.isPending} isDisabled={stale || !priorityValid || selected.length > 128 || modelList.length > 128}
             onPress={() => save.mutate({
               pluginId: deployment.pluginId,
-              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue } },
+              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue, upstreamResponseMode } },
             }, { onSuccess: onClose })}>{t('pluginLifecycle.provider.save')}</Button>
         </ModalFooter>
       </ModalContent>
