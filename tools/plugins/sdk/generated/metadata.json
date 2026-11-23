@@ -17,7 +17,7 @@
     "invoke_credential": "credential"
   },
   "frameLimitBytes": 1048576,
-  "schemaSha256": "754da81ae3201dbb1fc5e3514645219479d3575ab7ce0f3581c5e975c9db72d3",
+  "schemaSha256": "caf4ab4b2ecc50d1155ed86a4a758455c19f6a5fcdb93aadf879dbe2602fdb97",
   "sdkSources": {
     "typescript": "typescript/anyflows-plugin.ts",
     "go": "go/anyflows_plugin.go",

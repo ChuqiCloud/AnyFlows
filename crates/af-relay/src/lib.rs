@@ -106,13 +106,13 @@ pub use openai_speech::{
 };
 pub use rerank::{RelayRerankOutcome, RerankResponse, relay_rerank_with_report};
 pub use state_machine::{
-    ProviderRelayBinding, ProviderRelayFailureAction, ProviderRelayFailureFuture,
-    ProviderRelayHook, ProviderRelayRequest, ProviderRelayRequestFuture, ProviderRelayResponse,
-    ProviderRelayResponseFuture, ProviderRelaySession, ProviderRelaySessionContext,
-    ProviderRelaySessionFuture, ProviderRelayTransformFuture, RelayAttemptFailure,
-    RelayAttemptReport, RelayCandidate, RelayCandidateRequest, RelayClientSimulationAttempt,
-    RelayExecutionError, RelayExecutionPolicy, RelayRequest, RelayResponse, RelayState,
-    RelayStateMachine,
+    ProviderRelayBinding, ProviderRelayEndpoint, ProviderRelayFailureAction,
+    ProviderRelayFailureFuture, ProviderRelayHook, ProviderRelayRequest,
+    ProviderRelayRequestFuture, ProviderRelayResponse, ProviderRelayResponseFuture,
+    ProviderRelaySession, ProviderRelaySessionContext, ProviderRelaySessionFuture,
+    ProviderRelayTransformFuture, RelayAttemptFailure, RelayAttemptReport, RelayCandidate,
+    RelayCandidateRequest, RelayClientSimulationAttempt, RelayExecutionError, RelayExecutionPolicy,
+    RelayRequest, RelayResponse, RelayState, RelayStateMachine,
 };
 pub use stream_delivery::{StreamDeliveryHook, StreamDeliveryOutcome, with_delivery_completion};
 pub use tool_conversation::{

@@ -23,10 +23,10 @@ use af_db::{
 use af_domain::{Operation, Protocol};
 use af_http::{ChatService, ChatServiceFuture};
 use af_plugin_contract::{
-    PROVIDER_LIFECYCLE_CAPABILITY, PluginManifest, PluginProviderFailureClass,
-    PluginProviderOperation, PluginProviderResult, REQUEST_PROCESSING_CAPABILITY,
-    RequestProcessingAction, RequestProcessingInput, RequestProcessingOutput,
-    RequestProcessingStage,
+    MAX_PROVIDER_SESSION_VALUE_BYTES, PROVIDER_LIFECYCLE_CAPABILITY, PluginManifest,
+    PluginProviderFailureClass, PluginProviderOperation, PluginProviderResult,
+    REQUEST_PROCESSING_CAPABILITY, RequestProcessingAction, RequestProcessingInput,
+    RequestProcessingOutput, RequestProcessingStage,
 };
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::RelayDiagnosticInput;
@@ -192,7 +192,7 @@ struct ProviderTarget {
     channels: Vec<i64>,
     session_enabled: bool,
     session_timeout_ms: u32,
-    websocket_endpoints: std::collections::BTreeMap<String, String>,
+    endpoints: std::collections::BTreeMap<String, af_relay::ProviderRelayEndpoint>,
 }
 
 /// Connects the versioned Provider adapter to the actual Relay candidate
@@ -310,17 +310,55 @@ impl DatabasePluginProviderRelayHook {
                         .and_then(|value| u32::try_from(value).ok())
                         .filter(|value| (1_000..=360_000).contains(value))
                         .unwrap_or(30_000);
-                    let websocket_endpoints = selection
-                        .and_then(|value| value.get("webSocketEndpoints"))
-                        .or_else(|| selection.and_then(|value| value.get("websocketEndpoints")))
+                    let legacy_endpoints =
+                        selection.is_some_and(|value| value.get("endpoints").is_none());
+                    let endpoints = selection
+                        .and_then(|value| {
+                            value
+                                .get("endpoints")
+                                .or_else(|| value.get("webSocketEndpoints"))
+                                .or_else(|| value.get("websocketEndpoints"))
+                        })
                         .and_then(Value::as_array)
                         .map(|endpoints| {
                             endpoints
                                 .iter()
                                 .filter_map(|endpoint| {
+                                    let allowed_paths = endpoint
+                                        .get("allowedPaths")
+                                        .and_then(Value::as_array)
+                                        .map(|items| {
+                                            items
+                                                .iter()
+                                                .filter_map(Value::as_str)
+                                                .map(str::to_owned)
+                                                .collect()
+                                        })
+                                        .unwrap_or_else(|| {
+                                            if legacy_endpoints {
+                                                vec!["/".to_owned()]
+                                            } else {
+                                                Vec::new()
+                                            }
+                                        });
                                     Some((
                                         endpoint.get("id")?.as_str()?.to_owned(),
-                                        endpoint.get("url")?.as_str()?.to_owned(),
+                                        af_relay::ProviderRelayEndpoint {
+                                            url: endpoint.get("url")?.as_str()?.to_owned(),
+                                            allowed_paths,
+                                            allowed_methods: endpoint
+                                                .get("allowedMethods")
+                                                .and_then(Value::as_array)
+                                                .into_iter()
+                                                .flatten()
+                                                .filter_map(Value::as_str)
+                                                .map(str::to_owned)
+                                                .collect(),
+                                            websocket_enabled: endpoint
+                                                .get("websocketEnabled")
+                                                .and_then(Value::as_bool)
+                                                .unwrap_or(legacy_endpoints),
+                                        },
                                     ))
                                 })
                                 .collect()
@@ -336,7 +374,7 @@ impl DatabasePluginProviderRelayHook {
                         channels,
                         session_enabled,
                         session_timeout_ms,
-                        websocket_endpoints,
+                        endpoints,
                     });
                 }
             }
@@ -456,9 +494,14 @@ impl DatabasePluginProviderRelayHook {
             PluginProviderResult::Request {
                 method,
                 path,
+                endpoint_id: None,
                 headers,
                 body,
             } => (method, path, headers, body),
+            PluginProviderResult::Request {
+                endpoint_id: Some(_),
+                ..
+            } => return Err(af_domain::UpstreamError::ProtocolError),
             PluginProviderResult::Session {
                 session_id,
                 state,
@@ -475,7 +518,7 @@ impl DatabasePluginProviderRelayHook {
                     action: serde_json::to_value(action)
                         .map_err(|_| af_domain::UpstreamError::ProtocolError)?,
                     timeout_ms: selected.session_timeout_ms,
-                    websocket_endpoints: selected.websocket_endpoints,
+                    endpoints: selected.endpoints,
                 });
                 request.upstream_response_mode = af_adapter::ResponseMode::Full;
                 request.upstream_response_mode_overridden = false;
@@ -538,6 +581,7 @@ impl DatabasePluginProviderRelayHook {
     async fn sign_request(
         &self,
         mut projected: ProviderRelayRequest,
+        endpoint_id: Option<&str>,
     ) -> Result<ProviderRelayRequest, af_domain::UpstreamError> {
         let url =
             Url::parse(&projected.target).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
@@ -561,6 +605,7 @@ impl DatabasePluginProviderRelayHook {
             .sign_bound_plugin_request(
                 channel.get(),
                 credential,
+                endpoint_id,
                 projected.method.as_str(),
                 &sign_path,
                 sign_body,
@@ -587,6 +632,15 @@ impl DatabasePluginProviderRelayHook {
                         .map_err(|_| af_domain::UpstreamError::ProtocolError)?,
                 ));
             }
+        }
+        if projected.target.len() > 8_192
+            || projected.headers.len() > 128
+            || projected
+                .body
+                .as_ref()
+                .is_some_and(|body| body.len() > MAX_PROVIDER_SESSION_VALUE_BYTES)
+        {
+            return Err(af_domain::UpstreamError::ProtocolError);
         }
         Ok(projected)
     }
@@ -676,7 +730,7 @@ impl ProviderRelayHook for DatabasePluginProviderRelayHook {
             let request = if request.session.is_some() {
                 request
             } else {
-                self.sign_request(request).await?
+                self.sign_request(request, None).await?
             };
             if request.upstream_response_mode_overridden {
                 validate_chat_stream_mode(&request)?;
@@ -734,7 +788,7 @@ impl From<&ProviderRelayBinding> for ProviderTarget {
             channels: vec![],
             session_enabled: false,
             session_timeout_ms: 30_000,
-            websocket_endpoints: std::collections::BTreeMap::new(),
+            endpoints: std::collections::BTreeMap::new(),
         }
     }
 }

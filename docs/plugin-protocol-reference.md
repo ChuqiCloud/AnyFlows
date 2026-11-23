@@ -57,6 +57,7 @@ example.afplugin
 | --- | --- |
 | `pluginId` | 唯一 ID，最多 128 字节，至少两段。升级时保持不变。 |
 | `displayName` | 控制台显示名称，最多 128 字节。 |
+| `description` | 可选中英文简介；宿主会在已安装插件卡片中显示。内容受 `PluginUiText` 纯文本规则限制。 |
 | `pluginVersion` | 语义化版本。代码、清单或资源变化后递增。 |
 | `contractRange` | 支持的协议版本范围。当前必须包含 `1.0`。 |
 | `capabilities` | 能力 ID、版本、访问类型、副作用和输入输出 Schema。普通插件使用 `read` + `none`。 |
@@ -180,6 +181,7 @@ plugin_isolation = "auto"
 | `POST /{plugin_id}/capabilities/{capability_id}/invoke` | 通过宿主通用入口调用已授权、带 Schema 的只读能力。写能力只能从页面动作的提案确认流程进入。 |
 | `GET|POST|PUT /{plugin_id}/routes/{route_id}` | 调用清单中声明的管理员路由；宿主按路由方法、能力授权、输入输出 Schema 和部署代次校验。 |
 | `POST /{plugin_id}/deployment` | 部署指定制品、配置和能力授权。 |
+| `PUT /{plugin_id}/configuration` | 更新插件公开配置，保留当前能力授权；配置 Schema 校验通过后创建新的部署代次。 |
 | `GET /{plugin_id}/deployment/history` | 查看部署历史。 |
 | `POST /{plugin_id}/disable` | 停用部署。 |
 | `POST /{plugin_id}/rollback` | 回滚到历史部署。 |
@@ -192,4 +194,4 @@ plugin_isolation = "auto"
 常见响应：`422 / plugin_lifecycle_capability_review_required` 表示包已保存但还要授权能力；`409 / plugin_lifecycle_conflict` 表示代次或当前状态发生冲突，应先刷新状态。完整参数以 [OpenAPI 文档](../web-next/openapi/openapi.json) 为准。
 ## 数据面扩展契约
 
-`invoke_task`、`provider.request.transform`、Provider 生命周期操作和 `request.processing.read` 已纳入 v1 契约。任务插件的状态、进度、失败码和幂等键由宿主校验；终态 `result` 可返回大小受限的结果文件和报告，文件由宿主保存并生成下载引用，插件不能指定宿主路径。任务取消可能因恢复重试而重复发送，插件应将同一 `taskId` 的重复取消视为幂等操作。状态查询、结果读取和取消连续失败八次后，任务会进入管理员核对队列。Provider 插件不能选择上游主机、读取认证、修改模型计费字段或返回钱包事实。生命周期结果覆盖模型发现、受限请求构造、响应投影、失败分类和重试建议，宿主保留最终发送、路由、重试和结算权。Provider 渠道绑定可启用 `sessionEnabled`，支持受限的多步 HTTP 请求和 REST 轮询；宿主限制总时长、动作次数、Header、路径和 JSON 体积。会话步骤使用完整响应缓冲，通用 WebSocket 事件直通不属于当前契约。实时模型流量中，Chat 的 `request` 阶段已接入同步处理，`ingress` 继续提供脱敏观察；插件可在安全路径上修改模型或返回拒绝，超时和运行时错误按 fail-open 继续模型请求。Provider 请求转换已挂到 Relay 候选发送前，响应和失败分类在候选完成后回调。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。
+`invoke_task`、`provider.request.transform`、Provider 生命周期操作和 `request.processing.read` 已纳入 v1 契约。任务插件的状态、进度、失败码和幂等键由宿主校验；终态 `result` 可返回大小受限的结果文件和报告，文件由宿主保存并生成下载引用，插件不能指定宿主路径。任务取消可能因恢复重试而重复发送，插件应将同一 `taskId` 的重复取消视为幂等操作。状态查询、结果读取和取消连续失败八次后，任务会进入管理员核对队列。Provider 插件不能选择未授权上游主机、读取凭据、修改模型计费字段或返回钱包事实。Provider 渠道绑定可为 session 授予 HTTPS/WSS endpoint、路径前缀、HTTP 方法和 WebSocket 范围；宿主在发送前检查原始请求与适配器处理后的最终请求，并通过受控网络栈执行。凭据插件可为 WebSocket 认证生成私密应用层帧，帧只由宿主发送，不返回 Provider。Provider 可用有界批量接收读取多帧；第一版继续由插件缓冲并以 `complete` 返回，不提供通用下游流式桥接。宿主限制总时长、动作次数、Header、帧数、消息和 JSON 体积。实时模型流量中，Chat 的 `request` 阶段已接入同步处理，`ingress` 继续提供脱敏观察；插件可在安全路径上修改模型或返回拒绝，超时和运行时错误按 fail-open 继续模型请求。Provider 请求转换已挂到 Relay 候选发送前，响应和失败分类在候选完成后回调。插件运行时仍不能直接访问数据库、钱包、用户会话或持久化任务状态。

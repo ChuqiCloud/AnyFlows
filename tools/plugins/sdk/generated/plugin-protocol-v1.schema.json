@@ -1153,6 +1153,9 @@
         "contractRange": {
           "$ref": "#/$defs/ContractVersionRange"
         },
+        "description": {
+          "$ref": "#/$defs/PluginUiText"
+        },
         "displayName": {
           "maxLength": 128,
           "type": "string"
@@ -1750,26 +1753,26 @@
             "value": {
               "additionalProperties": false,
               "properties": {
-                "output": {},
                 "files": {
-                  "type": "array",
-                  "maxItems": 64,
                   "items": {
                     "type": "object"
-                  }
+                  },
+                  "maxItems": 64,
+                  "type": "array"
                 },
+                "output": {},
                 "report": {
                   "type": [
                     "object",
                     "null"
                   ]
                 },
-                "usage": {},
                 "task_id": {
                   "maxLength": 512,
                   "minLength": 1,
                   "type": "string"
-                }
+                },
+                "usage": {}
               },
               "required": [
                 "task_id",

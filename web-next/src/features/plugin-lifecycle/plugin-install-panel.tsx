@@ -1,4 +1,4 @@
-import { Button, Card, CardBody, CardHeader, Input, Textarea } from '@heroui/react'
+import { Button, Card, CardBody, CardHeader, Input } from '@heroui/react'
 import { Check, GitBranch, Store, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -52,10 +52,9 @@ export function PluginInstallPanel({ disabled = false, onInstallingChange }: {
   const [packageFile, setPackageFile] = useState<File>()
   const [repository, setRepository] = useState('')
   const [assetName, setAssetName] = useState('')
-  const [config, setConfig] = useState('')
   const [fileInputVersion, setFileInputVersion] = useState(0)
   const [marketInstalling, setMarketInstalling] = useState(false)
-  const [validationError, setValidationError] = useState<'packageType' | 'configJson' | 'repositoryUrl'>()
+  const [validationError, setValidationError] = useState<'packageType' | 'repositoryUrl'>()
   const installing = install.isPending || marketInstalling
   const busy = disabled || installing
 
@@ -77,29 +76,16 @@ export function PluginInstallPanel({ disabled = false, onInstallingChange }: {
       return
     }
 
-    let parsedConfig: Record<string, unknown> | undefined
-    if (config.trim()) {
-      try {
-        const parsed: unknown = JSON.parse(config)
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error()
-        parsedConfig = parsed as Record<string, unknown>
-      } catch {
-        setValidationError('configJson')
-        return
-      }
-    }
-
     setValidationError(undefined)
     const selected = source === 'package' && packageFile
       ? { packageFile }
       : { repository: repository.trim(), assetName: assetName.trim() || undefined }
-    install.mutate({ source: selected, config: parsedConfig }, {
+    install.mutate({ source: selected }, {
       onSuccess: () => {
         if (source === 'package') {
           setPackageFile(undefined)
           setFileInputVersion((version) => version + 1)
         }
-        setConfig('')
       },
     })
   }
@@ -152,6 +138,7 @@ export function PluginInstallPanel({ disabled = false, onInstallingChange }: {
               }} />
               <span className="text-xs font-normal text-muted-foreground">{t('pluginLifecycle.install.packageHint')}</span>
             </label>
+            {validationError === 'packageType' ? <p role="alert" className="mt-2 text-sm text-danger">{validationText}</p> : null}
           </div>
           {source === 'repository' ? (
             <Input label={t('pluginLifecycle.install.repository')} type="url" placeholder="https://github.com/owner/plugin"
@@ -161,24 +148,14 @@ export function PluginInstallPanel({ disabled = false, onInstallingChange }: {
               onValueChange={(value) => { setRepository(value); clearFeedback() }} />
           ) : null}
 
-          <details className="text-sm">
-            <summary className="cursor-pointer font-medium">{t('pluginLifecycle.install.configure')}</summary>
-            <div className="grid gap-3 pt-3">
-              {source === 'repository' ? <Input label={t('pluginLifecycle.install.assetName')}
-                description={t('pluginLifecycle.install.assetNameHint')} maxLength={255} value={assetName}
-                isDisabled={busy} onValueChange={(value) => { setAssetName(value); clearFeedback() }} /> : null}
-              <Textarea label={t('pluginLifecycle.fields.config')} placeholder="{}"
-                description={t('pluginLifecycle.configHint')}
-                minRows={3} value={config} onValueChange={(value) => { setConfig(value); clearFeedback() }}
-                isDisabled={busy} isInvalid={validationError === 'configJson'} classNames={{ input: 'font-mono text-xs' }} />
-            </div>
-          </details>
-          {validationText && validationError !== 'repositoryUrl' ? <p role="alert" className="text-sm text-danger">{validationText}</p> : null}
+          {source === 'repository' ? <Input label={t('pluginLifecycle.install.assetName')}
+            description={t('pluginLifecycle.install.assetNameHint')} maxLength={255} value={assetName}
+            isDisabled={busy} onValueChange={(value) => { setAssetName(value); clearFeedback() }} /> : null}
           {install.isError ? <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">{t('pluginLifecycle.install.errors.' + errorKey)}</p> : null}
           {install.isSuccess ? <p role="status" className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm text-success">
             <Check size={16} className="shrink-0" aria-hidden="true" />
             <span className="break-all">
-              {t('pluginLifecycle.install.success', { plugin: install.data.pluginId, version: install.data.artifact.pluginVersion })}
+              {t(install.data.needsConfiguration ? 'pluginLifecycle.install.successNeedsConfiguration' : 'pluginLifecycle.install.success', { plugin: install.data.pluginId, version: install.data.artifact.pluginVersion })}
             </span>
           </p> : null}
           <div className="flex flex-wrap items-center justify-between gap-3">

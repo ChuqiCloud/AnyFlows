@@ -32,5 +32,5 @@ pub use reqwest::Body;
 pub use transport::{HttpBodyStream, HttpResponse, PooledClient, PooledClientIdentity};
 pub use websocket::{
     MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES, WebSocketConnection, WebSocketFrame,
-    WebSocketTransportError,
+    WebSocketReceiveBatch, WebSocketTransportError,
 };

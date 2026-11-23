@@ -1,11 +1,87 @@
-import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Select, SelectItem, Textarea } from '@heroui/react'
-import { useState } from 'react'
+import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Select, SelectItem } from '@heroui/react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAdminChannels } from '@/features/channels/channel-api'
 import { ApiError } from '@/lib/api'
 import type { PluginDeploymentResponse, PluginProviderSelectionBody } from '@/lib/api/generated/types.gen'
 import { useConfigurePluginProvider } from './plugin-lifecycle-api'
+
+type ProviderEndpointGrant = {
+  id: string
+  url: string
+  allowedPaths: string[]
+  allowedMethods: string[]
+  websocketEnabled: boolean
+}
+
+const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+const byteLength = (value: string) => new TextEncoder().encode(value).length
+
+function validPath(path: string) {
+  return byteLength(path) <= 2048 && path.startsWith('/') && !path.startsWith('//')
+    && !/[?#\\%\s\p{Cc}]/u.test(path)
+    && !path.split('/').some((segment) => segment === '.' || segment === '..')
+}
+
+function validOrigin(value: string) {
+  try {
+    const url = new URL(value)
+    const ipAddress = /^\[.*\]$/.test(url.hostname) || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(url.hostname)
+    return (url.protocol === 'https:' || url.protocol === 'wss:') && !ipAddress
+      && !url.username && !url.password && !/[?#]/.test(value)
+      && (url.pathname === '/' || url.pathname === '') && url.port !== '0'
+  } catch {
+    return false
+  }
+}
+
+function websocketOnly(url: string) {
+  return /^wss:/i.test(url.trim())
+}
+
+function ListField({ label, addLabel, removeLabel, hint, invalidMessage, max, validate, values, onChange, disabled }: {
+  label: string
+  addLabel: string
+  removeLabel: (value: string) => string
+  hint?: string
+  invalidMessage: string
+  max: number
+  validate: (value: string) => boolean
+  values: string[]
+  onChange: (values: string[]) => void
+  disabled: boolean
+}) {
+  const [draft, setDraft] = useState('')
+  const value = draft.trim()
+  const invalid = Boolean(value && (!validate(value) || values.includes(value)))
+  const add = () => {
+    if (disabled || !value || invalid || values.length >= max) return
+    onChange([...values, value])
+    setDraft('')
+  }
+
+  return <fieldset className="grid min-w-0 gap-2" disabled={disabled}>
+    <div className="flex items-start gap-2">
+      <Input label={label} value={draft} onValueChange={setDraft} description={hint}
+        isInvalid={invalid} errorMessage={invalid ? invalidMessage : undefined}
+        isDisabled={disabled || values.length >= max} onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+            event.preventDefault()
+            add()
+          }
+        }} />
+      <Button className="mt-2 shrink-0" size="sm" variant="bordered" isDisabled={disabled || !value || invalid || values.length >= max} onPress={add}>{addLabel}</Button>
+    </div>
+    {values.length > 0 ? <div className="flex flex-wrap gap-1">
+      {values.map((item, index) => <button type="button" key={`${item}:${index}`}
+        className="max-w-full break-all rounded-md border border-divider px-2 py-1 text-xs"
+        aria-label={removeLabel(item)} onClick={() => onChange(values.filter((_, position) => position !== index))}>
+        {item} ×
+      </button>)}
+    </div> : null}
+  </fieldset>
+}
 
 export function PluginProviderEditor({ deployment, onClose }: {
   deployment: PluginDeploymentResponse
@@ -16,42 +92,39 @@ export function PluginProviderEditor({ deployment, onClose }: {
   const save = useConfigurePluginProvider()
   const [generation] = useState(deployment.generation)
   const [selected, setSelected] = useState(deployment.providerSelection?.channelIds ?? [])
-  const [models, setModels] = useState(deployment.providerSelection?.models.join('\n') ?? '')
+  const [models, setModels] = useState(deployment.providerSelection?.models ?? [])
   const [priority, setPriority] = useState(String(deployment.providerSelection?.priority ?? 0))
   const [upstreamResponseMode, setUpstreamResponseMode] = useState<NonNullable<PluginProviderSelectionBody['upstreamResponseMode']>>(
     deployment.providerSelection?.upstreamResponseMode ?? 'auto',
   )
   const [sessionEnabled, setSessionEnabled] = useState(deployment.providerSelection?.sessionEnabled ?? false)
   const [sessionTimeoutMs, setSessionTimeoutMs] = useState(String(deployment.providerSelection?.sessionTimeoutMs ?? 30_000))
-  const [webSocketEndpoints, setWebSocketEndpoints] = useState(deployment.providerSelection?.webSocketEndpoints?.map((endpoint) => `${endpoint.id}=${endpoint.url}`).join('\n') ?? '')
+  const [endpoints, setEndpoints] = useState(() => (deployment.providerSelection?.endpoints ?? []).map((endpoint, key) => ({
+    key,
+    id: endpoint.id,
+    url: endpoint.url,
+    allowedPaths: endpoint.allowedPaths ?? ['/'],
+    allowedMethods: endpoint.allowedMethods ?? [],
+    websocketEnabled: endpoint.websocketEnabled ?? websocketOnly(endpoint.url),
+  })))
+  const nextEndpointKey = useRef(endpoints.length)
+  const changeEndpoint = (key: number, changes: Partial<ProviderEndpointGrant>) =>
+    setEndpoints((current) => current.map((endpoint) => endpoint.key === key ? { ...endpoint, ...changes } : endpoint))
   const [search, setSearch] = useState('')
-  const modelList = [...new Set(models.split('\n').map((model) => model.trim()).filter(Boolean))]
   const priorityValue = Number(priority)
   const sessionTimeoutValue = Number(sessionTimeoutMs)
   const sessionTimeoutValid = /^\d+$/.test(sessionTimeoutMs) && sessionTimeoutValue >= 1_000 && sessionTimeoutValue <= 360_000
-  const endpointLines = webSocketEndpoints.split('\n').map((line) => line.trim()).filter(Boolean)
-  const parsedEndpoints = endpointLines.map((line) => {
-    const separator = line.indexOf('=')
-    return separator > 0 && line.indexOf('=', separator + 1) < 0
-      ? { id: line.slice(0, separator).trim(), url: line.slice(separator + 1).trim() }
-      : null
-  })
-  const endpointList = parsedEndpoints.filter((endpoint): endpoint is { id: string; url: string } => Boolean(endpoint))
+  const endpointList: ProviderEndpointGrant[] = endpoints.map(({ id, url, allowedPaths, allowedMethods, websocketEnabled }) => ({
+    id: id.trim(), url: url.trim(), allowedPaths,
+    allowedMethods: websocketOnly(url) ? [] : allowedMethods,
+    websocketEnabled: websocketOnly(url) || websocketEnabled,
+  }))
   const endpointIds = endpointList.map((endpoint) => endpoint.id)
-  const webSocketEndpointsValid = !sessionEnabled || (endpointLines.length <= 16
-    && parsedEndpoints.length === endpointList.length
-    && endpointList.every(({ id, url }) => {
-      if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(id)) return false
-      try {
-        const parsed = new URL(url)
-        const isIpAddress = /^\[.*\]$/.test(parsed.hostname) || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(parsed.hostname)
-        return parsed.protocol === 'wss:' && !isIpAddress && !parsed.username && !parsed.password
-          && !parsed.search && !parsed.hash && (parsed.pathname === '/' || parsed.pathname === '')
-          && parsed.port !== '0'
-      } catch {
-        return false
-      }
-    })
+  const endpointGrantsValid = !sessionEnabled || (endpointList.length <= 16
+    && endpointList.every(({ id, url, allowedPaths, allowedMethods, websocketEnabled }) =>
+      /^[a-z][a-z0-9_.-]{0,63}$/.test(id) && validOrigin(url)
+      && allowedPaths.length > 0 && allowedPaths.length <= 64 && allowedPaths.every(validPath)
+      && (allowedMethods.length > 0 || websocketEnabled))
     && new Set(endpointIds).size === endpointIds.length)
   const priorityValid = /^-?\d+$/.test(priority) && priorityValue >= -2147483648 && priorityValue <= 2147483647
   const stale = generation !== deployment.generation || (save.error instanceof ApiError && save.error.status === 409)
@@ -84,7 +157,11 @@ export function PluginProviderEditor({ deployment, onClose }: {
           {selected.length ? <div className="flex flex-wrap gap-1 text-xs">
             {selected.map((id) => <button type="button" key={id} disabled={save.isPending} className="rounded-md border border-divider px-2 py-1" aria-label={t('pluginLifecycle.provider.removeChannel', { id })} onClick={() => toggle(id)}>{name(id) ?? `#${id}`} ×</button>)}
           </div> : null}
-          <Textarea label={t('pluginLifecycle.provider.models')} description={t('pluginLifecycle.provider.modelsHint')} value={models} onValueChange={setModels} isDisabled={save.isPending} minRows={2} />
+          <ListField label={t('pluginLifecycle.provider.models')} hint={t('pluginLifecycle.provider.modelsHint')}
+            addLabel={t('pluginLifecycle.provider.addModel')} removeLabel={(model) => t('pluginLifecycle.provider.removeModel', { model })}
+            invalidMessage={t('pluginLifecycle.provider.modelInvalid')} max={128}
+            validate={(model) => byteLength(model) <= 255 && !/\p{Cc}/u.test(model)}
+            values={models} onChange={setModels} disabled={save.isPending} />
           <Input label={t('pluginLifecycle.provider.priority')} type="number" value={priority} onValueChange={setPriority} isDisabled={save.isPending} />
           <label className="flex items-start gap-2 rounded-md border border-divider p-3 text-sm">
             <input type="checkbox" checked={sessionEnabled} onChange={(event) => setSessionEnabled(event.target.checked)} disabled={save.isPending} />
@@ -95,8 +172,48 @@ export function PluginProviderEditor({ deployment, onClose }: {
           </label>
           {sessionEnabled ? <>
             <Input label={t('pluginLifecycle.provider.sessionTimeout')} type="number" value={sessionTimeoutMs} onValueChange={setSessionTimeoutMs} isDisabled={save.isPending} />
-            <Textarea label={t('pluginLifecycle.provider.webSocketEndpoints')} description={t('pluginLifecycle.provider.webSocketEndpointsHint')} value={webSocketEndpoints} onValueChange={setWebSocketEndpoints} isDisabled={save.isPending} minRows={2} />
-            {!webSocketEndpointsValid ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.provider.webSocketEndpointsInvalid')}</p> : null}
+            <section aria-label={t('pluginLifecycle.provider.endpointGrants')} className="grid gap-3">
+              <div>
+                <h3 className="text-sm font-medium">{t('pluginLifecycle.provider.endpointGrants')}</h3>
+                <p className="text-xs text-muted-foreground">{t('pluginLifecycle.provider.endpointGrantsHint')}</p>
+              </div>
+              {endpoints.map((endpoint, index) => <fieldset key={endpoint.key} disabled={save.isPending} className="grid gap-3 rounded-lg border border-divider p-3">
+                <legend className="px-1 text-sm">{t('pluginLifecycle.provider.endpointNumber', { number: index + 1 })}</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input label={t('pluginLifecycle.provider.endpointId')} value={endpoint.id} maxLength={64} isDisabled={save.isPending}
+                    onValueChange={(id) => changeEndpoint(endpoint.key, { id })} />
+                  <Input label={t('pluginLifecycle.provider.endpointUrl')} type="url" placeholder="https://api.example.com" value={endpoint.url} isDisabled={save.isPending}
+                    onValueChange={(url) => changeEndpoint(endpoint.key, { url })} />
+                </div>
+                <ListField label={t('pluginLifecycle.provider.endpointPath')} hint={t('pluginLifecycle.provider.endpointPathHint')}
+                  addLabel={t('pluginLifecycle.provider.addPath')} removeLabel={(path) => t('pluginLifecycle.provider.removePath', { path })}
+                  invalidMessage={t('pluginLifecycle.provider.pathInvalid')} max={64} validate={validPath}
+                  values={endpoint.allowedPaths} onChange={(allowedPaths) => changeEndpoint(endpoint.key, { allowedPaths })} disabled={save.isPending} />
+                {websocketOnly(endpoint.url) ? null : <fieldset className="grid gap-2">
+                  <legend className="text-xs font-medium">{t('pluginLifecycle.provider.httpMethods')}</legend>
+                  <div className="flex flex-wrap gap-3">
+                    {httpMethods.map((method) => <label key={method} className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" checked={endpoint.allowedMethods.includes(method)} onChange={(event) => changeEndpoint(endpoint.key, {
+                        allowedMethods: event.target.checked ? [...endpoint.allowedMethods, method] : endpoint.allowedMethods.filter((value) => value !== method),
+                      })} />{method}
+                    </label>)}
+                  </div>
+                </fieldset>}
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={websocketOnly(endpoint.url) || endpoint.websocketEnabled} disabled={websocketOnly(endpoint.url)}
+                    onChange={(event) => changeEndpoint(endpoint.key, { websocketEnabled: event.target.checked })} />
+                  {t('pluginLifecycle.provider.allowWebsocket')}
+                </label>
+                <Button size="sm" variant="light" color="danger" className="justify-self-end" isDisabled={save.isPending}
+                  onPress={() => setEndpoints((current) => current.filter(({ key }) => key !== endpoint.key))}>{t('pluginLifecycle.provider.removeEndpoint')}</Button>
+              </fieldset>)}
+              <Button size="sm" variant="bordered" className="justify-self-start" isDisabled={save.isPending || endpoints.length >= 16}
+                onPress={() => {
+                  const key = nextEndpointKey.current++
+                  setEndpoints((current) => [...current, { key, id: '', url: '', allowedPaths: [], allowedMethods: [], websocketEnabled: false }])
+                }}>{t('pluginLifecycle.provider.addEndpoint')}</Button>
+            </section>
+            {!endpointGrantsValid ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.provider.endpointGrantsInvalid')}</p> : null}
           </> : null}
           <div className="grid gap-1.5">
             <label id="plugin-provider-response-mode-label" className="text-xs font-medium leading-none text-foreground">
@@ -121,10 +238,10 @@ export function PluginProviderEditor({ deployment, onClose }: {
         </ModalBody>
         <ModalFooter>
           <Button variant="light" onPress={onClose} isDisabled={save.isPending}>{t('pluginLifecycle.cancel')}</Button>
-          <Button color="primary" isLoading={save.isPending} isDisabled={stale || !priorityValid || !sessionTimeoutValid || !webSocketEndpointsValid || selected.length > 128 || modelList.length > 128 || endpointList.length > 16}
+          <Button color="primary" isLoading={save.isPending} isDisabled={stale || !priorityValid || !sessionTimeoutValid || !endpointGrantsValid || selected.length > 128 || models.length > 128}
             onPress={() => save.mutate({
               pluginId: deployment.pluginId,
-              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue, upstreamResponseMode, sessionEnabled, sessionTimeoutMs: sessionTimeoutValue, webSocketEndpoints: sessionEnabled ? endpointList : [] } },
+              body: { expected_generation: generation, selection: { channelIds: selected, models, priority: priorityValue, upstreamResponseMode, sessionEnabled, sessionTimeoutMs: sessionTimeoutValue, endpoints: sessionEnabled ? endpointList : [] } },
             }, { onSuccess: onClose })}>{t('pluginLifecycle.provider.save')}</Button>
         </ModalFooter>
       </ModalContent>

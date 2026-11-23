@@ -962,14 +962,18 @@ mod tests {
             process::{Command, Stdio},
         };
 
-        let sdk = include_str!("../../../tools/plugins/sdk/python/anyflows_plugin.py");
         let manifest = include_str!("../../../tools/plugins/examples/catalog/manifest.json");
-        let code = format!(
-            "{sdk}\nmanifest = json.loads(sys.argv[1])\nrequest = json.load(sys.stdin)\nplugin = Plugin(manifest, lambda *args: {{'models': [], 'nextCursor': None}}, clock_ms=lambda: 1000)\nprint(json.dumps(plugin.respond(request), allow_nan=False))\n"
-        );
+        let sdk_directory =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/plugins/sdk/python");
+        let code = "import json, sys\nsys.path.insert(0, sys.argv[1])\nfrom anyflows_plugin import Plugin\nmanifest = json.loads(sys.argv[2])\nrequest = json.load(sys.stdin)\nplugin = Plugin(manifest, lambda *args: {'models': [], 'nextCursor': None}, clock_ms=lambda: 1000)\nprint(json.dumps(plugin.respond(request), allow_nan=False))\n";
         let python = if cfg!(windows) { "python" } else { "python3" };
         let mut child = Command::new(python)
-            .args(["-c", &code, manifest])
+            .args([
+                "-c",
+                code,
+                sdk_directory.to_str().expect("SDK path is valid UTF-8"),
+                manifest,
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

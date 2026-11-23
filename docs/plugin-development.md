@@ -40,7 +40,7 @@ Content-Type: application/json
 
 部署必须已启用、制品已批准、该能力版本已授权；宿主会再次校验 Schema、输入输出大小和部署代次。此接口只执行无副作用的只读能力，不替代外部读取、写入、任务提交或业务动作的专用宿主入口。
 
-自定义能力的输入和输出不限于对象，也可以是数组、字符串、数字、布尔值或 `null`，具体由各自的 Schema 决定。请求外层仍是上例的对象；把所需 JSON 值放在 `input` 字段中。管理页面对对象 Schema 提供字段编辑器，其他类型使用 JSON 输入框；对象编辑器中的“高级 JSON 配置”也可以编辑完整输入。
+自定义能力的输入和输出不限于对象，也可以是数组、字符串、数字、布尔值或 `null`，具体由各自的 Schema 决定。调用 API 时，把所需值放在上例的 `input` 字段中。控制台按 Schema 显示表单。需要在页面上填写的输入，请使用控制台支持的字段类型。
 
 固定业务页面仍只支持清单声明的宿主渲染视图。需要新业务页面、用户操作或可改变平台状态的功能时，宿主仍需提供对应的数据投影、权限边界和动作确认流程。
 
@@ -278,6 +278,7 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
   "manifest": {
     "pluginId": "org.example.catalog",
     "displayName": "Example catalog",
+    "description": {"zh": "搜索和浏览模型目录。", "en": "Search and browse the model catalogue."},
     "pluginVersion": "1.0.0",
     "contractRange": {
       "minimum": {"major": 1, "minor": 0},
@@ -312,6 +313,8 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | --- | --- |
 | `pluginId` | 插件唯一 ID。升级时不能改变。 |
 | `displayName` | 控制台显示名称。 |
+| `description` | 已安装插件卡片显示的中英文简介；遵守 `PluginUiText` 的纯文本限制。 |
+| `description` | 插件卡片中的简介，可用纯文本或 `{"zh":"...","en":"..."}`。最多 512 字符；不接受 HTML、链接或控制字符。 |
 | `pluginVersion` | 插件版本。代码或清单变化后递增。 |
 | `capabilities` | 插件需要的固定能力。通用能力使用 `access: read` 和 `sideEffect: none`。 |
 | `authenticationModes` | 无凭据插件使用 `["none"]`。这不会授予用户会话或密钥。 |
@@ -322,9 +325,67 @@ python tools/plugins/package-plugin.py my-merchant-review my-merchant-review/man
 | `uiPages` | 插件管理页中的管理员扩展页入口，最多 32 项。页面本身绑定只读能力；页面动作可另外绑定具备幂等语义的写能力。 |
 | `routes` | 插件自己的声明式 HTTP 入口，统一挂在 `/api/plugins/{plugin_id}` 下，最多 64 条；每条路由绑定一个已声明能力。 |
 
+管理页根据 `configSchema` 显示文本、数字、开关、枚举、嵌套对象和数组字段。点击插件卡片上的「配置」即可读取和修改公开设置。保存会保留已有能力授权并让各节点重新加载插件。开发插件时，请用可渲染的类型声明必填设置。
+
+表单只使用宿主提供的控件。插件不能上传 HTML、JavaScript 或自定义组件。可选的界面提示字段：
+
+| Schema 扩展 | 作用 |
+| --- | --- |
+| `x-ui-group` | 将字段放入一个小组；可写普通文本，或 `{"zh":"连接","en":"Connection"}`。 |
+| `x-ui-order` | 同一层级内的显示顺序，数值越小越靠前。 |
+| `x-ui-visible-when` | 按同级字段控制显示，例如 `{"field":"mode","equals":"advanced"}`；支持 `notEquals`。隐藏值会保留。 |
+| `x-ui-label`、`x-ui-description` | 中英文界面标签和说明；使用对象格式，如 `{"zh":"区域","en":"Region"}`。 |
+| `x-ui-placeholder` | 输入框占位说明，可写中英文对象。 |
+| `x-ui-enum-labels` | 与 `enum` 同顺序的选项名称，可写中英文对象数组。 |
+
+Schema 仍须是有效的 JSON Schema；扩展只影响页面呈现，不改变服务端校验。例如：
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "mode": { "type": "string", "enum": ["simple", "advanced"], "default": "simple" },
+    "region": {
+      "type": "string",
+      "title": "Region",
+      "x-ui-label": { "zh": "区域", "en": "Region" },
+      "enum": ["us", "eu"],
+      "x-ui-group": { "zh": "连接", "en": "Connection" },
+      "x-ui-order": 10,
+      "x-ui-enum-labels": [
+        { "zh": "美国", "en": "United States" },
+        { "zh": "欧洲", "en": "Europe" }
+      ]
+    },
+    "endpoint": {
+      "type": "string",
+      "format": "uri",
+      "x-ui-group": { "zh": "连接", "en": "Connection" },
+      "x-ui-visible-when": { "field": "mode", "equals": "advanced" }
+    },
+    "headers": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": ["name", "value"],
+        "properties": {
+          "name": { "type": "string" },
+          "value": { "type": "string", "format": "textarea" }
+        }
+      }
+    }
+  },
+  "required": ["mode", "region"]
+}
+```
+
+不要把密码、API Key、令牌、Cookie 等放入 `configSchema` 或公开配置。密钥应使用 `credential.lifecycle`，由宿主加密保存和注入。
+
 `uiViews` 只能使用宿主组件：`text`、`badge`、`metric`、`table`、`list`、`notice`、`progress` 和 `info_card`。固定槽位是 `plugin_management`、`channel_monitor`、`channel_model_mapping`、`merchant_service` 和 `external_account`。不能放 HTML、CSS、脚本、链接或按钮。`list` 最多 16 项，`notice` 使用 `tone` 标记提示级别，`progress` 使用 0–100 的 `percent`。需要更复杂的页面时，把数据拆成多个视图和组件组合，不要把前端代码塞进插件包。
 
-`uiPages` 用来给插件自己的只读能力提供独立管理页面。宿主使用固定路由和现有 JSON 输入、输出控件；页面只在管理员的插件管理流程中显示。被绑定的能力必须声明为 `read` + `none`，并在当前部署中明确授权。页面输入会按该能力的 `inputSchema` 校验，未填写 `input` 时默认发送 `{}`。例如，模型目录示例可以声明：
+`uiPages` 为插件的只读能力提供独立页面。管理员从插件管理打开页面，宿主按能力的 `inputSchema` 显示表单，并用固定组件展示结果。被绑定的能力必须声明为 `read` + `none`，并在当前部署中明确授权。清单省略 `input` 时，表单的初始值为 `{}`。例如，模型目录示例可以声明：
 
 ```json
 {
@@ -522,7 +583,7 @@ JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或�
 
 ### 凭据生命周期
 
-需要登录外部平台的插件声明 `credential.lifecycle` 能力。宿主按当前凭据调用 `login`、`refresh`、`revoke`、`sign` 和 `balance` 操作。插件收到的是脱敏的操作参数，不会收到其他用户的凭据、钱包或会话。登录结果可以是授权地址和短期 state；刷新和撤销必须幂等；签名结果只能包含受限 Header、Query 和 Body，不能覆盖 `Authorization`、`Host`、`Cookie` 等宿主保护字段；余额只返回快照，不得修改 AnyFlows 钱包。
+需要登录外部平台的插件声明 `credential.lifecycle` 能力。宿主按当前凭据调用 `login`、`refresh`、`revoke`、`sign`、`web_socket_auth` 和 `balance` 操作。插件收到的是脱敏的操作参数，不会收到其他用户的凭据、钱包或会话。登录结果可以是授权地址和短期 state；刷新和撤销必须幂等；签名结果只能包含受限 Header、Query 和 Body，不能覆盖 `Host`、`Cookie` 等宿主保护字段。模型渠道的认证 Header 由凭据插件生成；向额外 endpoint 发送时，宿主只带该 endpoint 专用签名结果，不带原模型渠道的认证 Header。余额只返回快照，不得修改 AnyFlows 钱包。
 
 ### 普通用户路由
 
@@ -542,12 +603,12 @@ JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或�
 
 1. `session_start` 返回 `session`，初始动作可以是 `request`、`web_socket_connect` 或 `complete`。
 2. 宿主执行动作，再把结果交给 `session_step`。HTTP 响应使用 `{status, body}`；WebSocket 事件使用 `{kind: "websocket", event: {...}}`。
-3. `session_step` 可返回 `request`、`web_socket_connect`、`web_socket_send_text`、`web_socket_send_binary`、`web_socket_receive`、`web_socket_close`、`wait`、`complete` 或 `abort`。插件用 `state` 保存上游任务 ID、阶段和解析游标。
-4. `web_socket_connect` 只引用管理员为当前 Provider 绑定配置的 endpoint ID，并提交相对路径。宿主负责凭据、签名、TLS、代理、DNS 和 SSRF 检查；插件不能提供完整 URL，也不能覆盖握手、认证或代理 Header。一个会话可以在 WebSocket 和 HTTP 请求之间切换。
-5. `web_socket_receive` 等待指定时长，收到文本、二进制、Ping、Pong 或关闭事件后进入下一步；单次等待到时会返回 `event.type: "timeout"`，会话总时限到期则失败。`complete` 返回统一 JSON 响应；`abort` 结束本次候选并进入 Relay 故障分类。
-6. `session_close` 在成功、失败、超时或中止后调用。宿主先关闭仍打开的 WebSocket，再调用插件清理；插件可以返回一个普通 `request`，让宿主再发送一次同渠道的清理请求。清理失败不会覆盖已确定的请求结果。客户端直接取消时，宿主会尽力关闭连接并调用 `session_close`，但不会等待清理结果。
+3. `session_step` 可返回 `request`、`web_socket_connect`、`web_socket_send_text`、`web_socket_send_binary`、`web_socket_receive`、`web_socket_receive_batch`、`web_socket_authenticate`、`web_socket_close`、`wait`、`complete` 或 `abort`。插件用 `state` 保存上游任务 ID、阶段和解析游标。
+4. `request` 和 `web_socket_connect` 只引用管理员为当前 Provider 绑定配置的 endpoint ID，并提交相对路径。HTTPS endpoint 还会校验方法；两种 endpoint 都会校验路径前缀和最终网络目标。宿主通过受控网络栈处理 TLS、代理、DNS 和 SSRF；插件不能提供完整 URL，也不能覆盖握手或代理 Header。一个会话可以在 WebSocket 和 HTTP 请求之间切换。
+5. `web_socket_receive` 等待一条消息；`web_socket_receive_batch` 最多返回 16 条，消息大小和单批负载均有限制。超出本批负载的帧保留给后续读取。单次等待到时会返回 `timeout`，会话总时限到期则失败。`complete` 返回统一 JSON 响应；`abort` 结束本次候选并进入 Relay 故障分类。
+6. `session_close` 在成功、失败、超时或中止后调用。宿主先关闭仍打开的 WebSocket，再调用插件清理；插件可以返回一个 `request`，让宿主再发送一次清理请求。省略 `endpoint_id` 时使用原渠道上游；提供 `endpoint_id` 时使用该 Provider 绑定中授权的 HTTPS endpoint、方法和路径。清理失败不会覆盖已确定的请求结果。客户端直接取消时，宿主会尽力关闭连接并调用 `session_close`，但不会等待清理结果。
 
-会话总时限默认为 30 秒，可在渠道绑定中设置为 1 至 360 秒；每轮最多执行 128 个动作。每个状态、响应和结果最多 256 KiB，每个 WebSocket 消息最多 128 KiB，请求 Header 最多 64 个，路径最多 2048 字节并必须以单个 `/` 开头。二进制帧使用标准 Base64。HTTP 会话步骤使用完整响应缓冲，适合短请求和轮询；长期事件流应使用 WebSocket 动作。最终结果只在 `complete` 后交给 Relay，不会把中间帧作为客户端输出。
+会话总时限默认为 30 秒，可在渠道绑定中设置为 1 至 360 秒；每轮最多执行 128 个动作。每个状态、响应和结果最多 256 KiB，每个 WebSocket 消息最多 128 KiB，请求 Header 最多 64 个，路径最多 2048 字节并必须以单个 `/` 开头。二进制帧使用标准 Base64。HTTP 会话步骤使用完整响应缓冲，适合短请求和轮询；长期事件流可由插件通过 WebSocket 批量读取并自行缓冲。第一版不提供通用下游流式桥接，最终结果只在 `complete` 后交给 Relay，不会把中间帧作为客户端输出。
 
 WebSocket 动作字段：
 
@@ -557,11 +618,15 @@ WebSocket 动作字段：
 | `web_socket_send_text` | `text` | `sent`，包含帧类型和字节数 |
 | `web_socket_send_binary` | `data_base64` | `sent`，包含帧类型 |
 | `web_socket_receive` | `timeout_ms`，范围 1–30000 | `message`、`ping`、`pong`、`closed` 或 `timeout` |
+| `web_socket_receive_batch` | `timeout_ms`、`max_messages`（1–16） | 一次返回多条 `frames`，带 `closed`、`timed_out`、`more_pending` |
+| `web_socket_authenticate` | 凭据插件需要的公开 challenge/context | `authenticated`；认证帧由宿主发送，不会返回 Provider 插件 |
 | `web_socket_close` | 无 | `closed` |
 
 连接失败会返回 `error` 事件和稳定错误码。握手成功前的网络错误会带 `retryable`，插件可在安全时切换到 HTTP；策略阻止会返回 `retryable: false`。发送或接收阶段的错误会带 `outcome_unknown: true`，表示上游可能已收到请求，插件不要直接重放生成请求，应先查询任务状态或依据已收事件完成结果。
 
 每一步完成后，插件都会收到该事件，再决定继续收发、改用 HTTP、等待或完成响应。二进制入站事件使用 `data_base64`；文本超出 JSON 字符串容量时也会带 `encoding: "base64"`。
+
+`request` 选择 `endpoint_id` 后使用管理员授权的 HTTPS 端点。端点 ID、HTTP 方法和路径前缀必须匹配；显式 endpoint 请求可以携带 `Authorization` 与 `Cookie`，供用户配置的独立上游会话使用。不带 `endpoint_id` 的旧式相对请求仍仅限已选渠道的上游主机，且不能覆盖这两种认证头。
 
 部署配置示例：
 
@@ -573,8 +638,21 @@ WebSocket 动作字段：
     "priority": 100,
     "sessionEnabled": true,
     "sessionTimeoutMs": 60000,
-    "webSocketEndpoints": [
-      { "id": "capy-realtime", "url": "wss://realtime.example.invalid:8443" }
+    "endpoints": [
+      {
+        "id": "capy-api",
+        "url": "https://api.example.invalid",
+        "allowedPaths": ["/v1", "/oauth"],
+        "allowedMethods": ["GET", "POST"],
+        "websocketEnabled": false
+      },
+      {
+        "id": "capy-realtime",
+        "url": "wss://realtime.example.invalid:8443",
+        "allowedPaths": ["/realtime"],
+        "allowedMethods": [],
+        "websocketEnabled": true
+      }
     ],
     "upstreamResponseMode": "non_streaming"
   }
@@ -591,7 +669,7 @@ WebSocket 连接动作示例：
   "action": {
     "kind": "web_socket_connect",
     "endpoint_id": "capy-realtime",
-    "path": "/v1/events?thread=thread-123",
+    "path": "/realtime/v1/events?thread=thread-123",
     "headers": { "x-client-version": "1" }
   }
 }
@@ -612,6 +690,41 @@ WebSocket 连接动作示例：
 
 插件可继续返回 `web_socket_receive` 读取下一帧，或返回 `web_socket_close` 关闭连接。上游输出结束后，插件应把事件整理为 Provider 的标准响应，再返回 `complete`。
 
+应用层认证动作示例：
+
+```json
+{
+  "kind": "web_socket_authenticate",
+  "request": { "challenge": { "nonce": "upstream-challenge" } }
+}
+```
+
+认证帧由绑定该渠道凭据的 `credential.lifecycle` 插件生成。Provider 在收到公开 challenge 后返回 `web_socket_authenticate`，宿主将 endpoint ID、连接路径及 challenge 交给凭据插件，再通过已打开的 WebSocket 发送其返回的帧。私密认证帧不会进入 Provider 的 `session_step` 输入、结果或管理 API。凭据插件不得更改连接目标。
+
+凭据插件的认证输入和返回结果形如：
+
+```json
+{
+  "kind": "web_socket_auth",
+  "request": {
+    "endpoint_id": "capy-realtime",
+    "path": "/realtime",
+    "challenge": { "nonce": "upstream-challenge" }
+  }
+}
+```
+
+```json
+{
+  "kind": "web_socket_auth",
+  "frames": [
+    { "kind": "text", "text": "{\"type\":\"authenticate\",\"token\":\"<由凭据适配器生成>\"}" }
+  ]
+}
+```
+
+`web_socket_receive_batch` 最多一次读取 16 条消息，每帧不超过 128 KiB，单批负载不超过 128 KiB。批次中的文本和二进制内容都用 `data_base64`，避免多条文本转义后超过会话大小限制。超出批次负载的下一帧会留在宿主连接队列，供后续批次读取。`more_pending` 表示本批达到帧数或负载预算；它提示插件可以继续读取，不保证此时已有下一帧排队。批量收帧减少插件往返，但每个批次仍占用一次有界会话步骤。
+
 `session_step` 的返回示例：
 
 ```json
@@ -622,7 +735,8 @@ WebSocket 连接动作示例：
   "action": {
     "kind": "request",
     "method": "GET",
-    "path": "/api/thread/thread-123/status",
+    "endpoint_id": "capy-api",
+    "path": "/v1/thread/thread-123/status",
     "headers": {},
     "body": {},
     "stream": false
@@ -630,7 +744,7 @@ WebSocket 连接动作示例：
 }
 ```
 
-把远端线程 ID、轮询游标等非敏感状态放在 `state` 中。同一 `sessionId` 的重复步骤和清理应保持幂等。不要把 Cookie、Bearer Token、完整网页响应或文件内容写入状态；会话数据大小受宿主限制。
+把远端线程 ID、轮询游标等会话推进数据放在 `state` 中。同一 `sessionId` 的重复步骤和清理应保持幂等。插件若自行管理上游会话认证，可按其实现需要在状态中携带短期 token；AnyFlows 将该状态作为插件数据传递，不会解析其字段。会话数据大小受宿主限制。
 
 #### 本地测试会话插件
 

@@ -162,6 +162,7 @@ fn manifest() -> PluginManifest {
     PluginManifest {
         plugin_id: PluginId::new("org.anyflows.sub2api").expect("static plugin ID is valid"),
         display_name: "Sub2API".to_owned(),
+        description: None,
         plugin_version: PluginVersion::new("0.1.0").expect("static plugin version is valid"),
         contract_range: ContractVersionRange::new(
             ContractVersion::new(1, 0),

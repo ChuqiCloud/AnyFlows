@@ -2,14 +2,19 @@ use super::*;
 use af_adapter::{TransportDispatchOutcome, UpstreamRequest};
 use af_httpclient::{WebSocketConnection, WebSocketFrame, WebSocketTransportError};
 use af_plugin_contract::{
-    MAX_PROVIDER_SESSION_VALUE_BYTES, MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES,
-    PluginProviderOperation, PluginProviderResult, PluginProviderSessionAction,
+    MAX_PROVIDER_SESSION_WEBSOCKET_AUTH_REQUEST_BYTES, MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES,
+    MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES, PluginCredentialResult,
+    PluginCredentialWebSocketFrame, PluginProviderOperation, PluginProviderResult,
+    PluginProviderSessionAction,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 
 const MAX_PROVIDER_SESSION_STEPS: u8 = 128;
 const PROVIDER_SESSION_CLEANUP_TIMEOUT: Duration = Duration::from_millis(120);
+// Keeps even worst-case JSON escaping of text frames below the 256 KiB action budget.
+const MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_BYTES: usize =
+    MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES;
 
 impl DatabasePluginProviderRelayHook {
     pub(super) async fn execute_provider_session(
@@ -176,22 +181,54 @@ impl DatabasePluginProviderRelayHook {
         session_context: &ProviderRelaySessionContext<'_>,
         action: PluginProviderSessionAction,
         deadline: Instant,
-        websocket: &mut Option<WebSocketConnection>,
+        websocket: &mut Option<ActiveProviderWebSocket>,
     ) -> Result<Value, af_domain::UpstreamError> {
         match action {
             PluginProviderSessionAction::Request {
                 method,
                 path,
+                endpoint_id,
                 headers,
                 body,
                 stream: false,
             } => {
-                let current =
-                    self.build_session_projection(request, method, path, headers, body)?;
-                let current = self.sign_request(current).await?;
-                let upstream = self
-                    .prepare_session_upstream(&current, session_context)
-                    .await?;
+                let (current, endpoint) = if let Some(endpoint_id) = endpoint_id.as_deref() {
+                    let session = request
+                        .session
+                        .as_ref()
+                        .ok_or(af_domain::UpstreamError::ProtocolError)?;
+                    let endpoint = session
+                        .endpoints
+                        .get(endpoint_id)
+                        .ok_or(af_domain::UpstreamError::ProtocolError)?;
+                    (
+                        self.build_endpoint_session_projection(
+                            request,
+                            endpoint_id,
+                            method,
+                            &path,
+                            headers,
+                            body,
+                        )?,
+                        Some(endpoint),
+                    )
+                } else {
+                    (
+                        self.build_session_projection(request, method, path, headers, body)?,
+                        None,
+                    )
+                };
+                let current = self.sign_request(current, endpoint_id.as_deref()).await?;
+                let upstream = if let Some(endpoint) = endpoint {
+                    let upstream = self
+                        .prepare_endpoint_session_upstream(&current, session_context)
+                        .await?;
+                    validate_prepared_provider_endpoint(endpoint, &upstream)?;
+                    upstream
+                } else {
+                    self.prepare_session_upstream(&current, session_context)
+                        .await?
+                };
                 self.send_session_request(upstream, session_context, deadline)
                     .await
             }
@@ -216,26 +253,31 @@ impl DatabasePluginProviderRelayHook {
                 headers,
             } => {
                 if let Some(mut previous) = websocket.take() {
-                    let _ =
-                        tokio::time::timeout(PROVIDER_SESSION_CLEANUP_TIMEOUT, previous.close())
-                            .await;
+                    let _ = tokio::time::timeout(
+                        PROVIDER_SESSION_CLEANUP_TIMEOUT,
+                        previous.connection.close(),
+                    )
+                    .await;
                 }
                 let session = request
                     .session
                     .as_ref()
                     .ok_or(af_domain::UpstreamError::ProtocolError)?;
-                let base = session
-                    .websocket_endpoints
+                let endpoint = session
+                    .endpoints
                     .get(&endpoint_id)
                     .ok_or(af_domain::UpstreamError::ProtocolError)?;
-                let target = build_provider_websocket_target(base, &path)?;
+                if !endpoint.websocket_enabled || !endpoint_path_allowed(endpoint, &path) {
+                    return Err(af_domain::UpstreamError::ProtocolError);
+                }
+                let target = build_provider_websocket_target(endpoint, &path)?;
                 let mut projected = request.clone();
                 projected.method = Method::GET;
                 projected.target = target;
                 projected.body = None;
-                projected.headers = request.headers.clone();
-                apply_provider_headers(&mut projected.headers, headers)?;
-                let projected = self.sign_request(projected).await?;
+                projected.headers = af_adapter::HeaderMap::new();
+                apply_provider_headers(&mut projected.headers, headers, true)?;
+                let projected = self.sign_request(projected, Some(&endpoint_id)).await?;
                 let mut http_target = Url::parse(&projected.target)
                     .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
                 if http_target.scheme() != "wss" {
@@ -251,10 +293,18 @@ impl DatabasePluginProviderRelayHook {
                     None,
                 )
                 .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
-                let prepared = session_context.prepare_request(prepared).await?;
+                let prepared = session_context.prepare_endpoint_request(prepared).await?;
                 let mut target = Url::parse(prepared.target())
                     .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
-                if target.scheme() != "https" || !same_websocket_origin(&target, &http_target) {
+                let mut expected_origin = Url::parse(&endpoint.url)
+                    .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+                expected_origin
+                    .set_scheme("https")
+                    .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+                if target.scheme() != "https"
+                    || !same_websocket_origin(&target, &expected_origin)
+                    || !endpoint_path_allowed(endpoint, target.path())
+                {
                     return Err(af_domain::UpstreamError::ProtocolError);
                 }
                 target
@@ -274,7 +324,11 @@ impl DatabasePluginProviderRelayHook {
                     Ok(Err(error)) => return websocket_error_event(error, "connect"),
                     Err(_) => return Err(provider_session_timeout()),
                 };
-                *websocket = Some(connection);
+                *websocket = Some(ActiveProviderWebSocket {
+                    connection,
+                    endpoint_id: endpoint_id.clone(),
+                    path: target.path().to_owned(),
+                });
                 websocket_action_result(json!({
                     "type": "connected",
                     "endpoint_id": endpoint_id
@@ -283,6 +337,7 @@ impl DatabasePluginProviderRelayHook {
             PluginProviderSessionAction::WebSocketSendText { text } => {
                 let connection = websocket
                     .as_mut()
+                    .map(|active| &mut active.connection)
                     .ok_or(af_domain::UpstreamError::ProtocolError)?;
                 let payload = Bytes::from(text);
                 if payload.len() > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES {
@@ -315,6 +370,7 @@ impl DatabasePluginProviderRelayHook {
                 }
                 let connection = websocket
                     .as_mut()
+                    .map(|active| &mut active.connection)
                     .ok_or(af_domain::UpstreamError::ProtocolError)?;
                 let send_result =
                     tokio::time::timeout_at(deadline, connection.send_binary(Bytes::from(payload)))
@@ -345,6 +401,7 @@ impl DatabasePluginProviderRelayHook {
                 let received = {
                     let connection = websocket
                         .as_mut()
+                        .map(|active| &mut active.connection)
                         .ok_or(af_domain::UpstreamError::ProtocolError)?;
                     connection.receive_with_timeout(receive_timeout).await
                 };
@@ -379,9 +436,150 @@ impl DatabasePluginProviderRelayHook {
                     }
                 }
             }
+            PluginProviderSessionAction::WebSocketReceiveBatch {
+                timeout_ms,
+                max_messages,
+            } => {
+                if websocket.is_none() {
+                    return Err(af_domain::UpstreamError::ProtocolError);
+                }
+                let action_timeout = Duration::from_millis(u64::from(timeout_ms));
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let session_deadline_first = remaining <= action_timeout;
+                let receive_timeout = action_timeout.min(remaining);
+                let batch = {
+                    let connection = websocket
+                        .as_mut()
+                        .map(|active| &mut active.connection)
+                        .ok_or(af_domain::UpstreamError::ProtocolError)?;
+                    connection
+                        .receive_batch_with_timeout(
+                            receive_timeout,
+                            usize::from(
+                                max_messages.min(MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES),
+                            ),
+                            MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_BYTES,
+                        )
+                        .await
+                };
+                match batch {
+                    Err(error) => {
+                        *websocket = None;
+                        websocket_error_event(error, "receive")
+                    }
+                    Ok(batch)
+                        if session_deadline_first && batch.timed_out && batch.frames.is_empty() =>
+                    {
+                        Err(provider_session_timeout())
+                    }
+                    Ok(batch) => {
+                        if batch.closed {
+                            *websocket = None;
+                        }
+                        let frames = batch
+                            .frames
+                            .into_iter()
+                            .map(websocket_batch_frame_event)
+                            .collect::<Result<Vec<_>, _>>()?;
+                        websocket_action_result(json!({
+                            "type": "batch",
+                            "frames": frames,
+                            "closed": batch.closed,
+                            "timed_out": batch.timed_out,
+                            "more_pending": batch.more_pending
+                        }))
+                    }
+                }
+            }
+            PluginProviderSessionAction::WebSocketAuthenticate { request: auth } => {
+                let Some(active) = websocket.as_ref() else {
+                    return Err(af_domain::UpstreamError::ProtocolError);
+                };
+                let (Some(lifecycle), Some(channel), Some(credential)) = (
+                    self.lifecycle.as_ref(),
+                    request.channel_id,
+                    request.credential_id,
+                ) else {
+                    return Err(af_domain::UpstreamError::ProtocolError);
+                };
+                let mut auth_request = auth
+                    .as_object()
+                    .cloned()
+                    .ok_or(af_domain::UpstreamError::ProtocolError)?;
+                auth_request.insert(
+                    "endpoint_id".to_owned(),
+                    Value::String(active.endpoint_id.clone()),
+                );
+                auth_request.insert("path".to_owned(), Value::String(active.path.clone()));
+                if serde_json::to_vec(&auth_request).map_or(true, |bytes| {
+                    bytes.len() > MAX_PROVIDER_SESSION_WEBSOCKET_AUTH_REQUEST_BYTES
+                }) {
+                    return Err(af_domain::UpstreamError::ProtocolError);
+                }
+                let result = lifecycle
+                    .authenticate_bound_plugin_websocket(
+                        channel.get(),
+                        credential,
+                        Value::Object(auth_request),
+                    )
+                    .await
+                    .map_err(|_| af_domain::UpstreamError::ProtocolError)?
+                    .ok_or(af_domain::UpstreamError::ProtocolError)?;
+                let PluginCredentialResult::WebSocketAuth { frames } = result else {
+                    return Err(af_domain::UpstreamError::ProtocolError);
+                };
+                let mut sent = 0_u8;
+                let mut sent_bytes = 0_usize;
+                for frame in frames {
+                    let connection = websocket
+                        .as_mut()
+                        .map(|active| &mut active.connection)
+                        .ok_or(af_domain::UpstreamError::ProtocolError)?;
+                    let result = match frame {
+                        PluginCredentialWebSocketFrame::Text { text } => {
+                            sent_bytes = sent_bytes.saturating_add(text.len());
+                            tokio::time::timeout_at(
+                                deadline,
+                                connection.send_text(Bytes::from(text)),
+                            )
+                            .await
+                        }
+                        PluginCredentialWebSocketFrame::Binary { data_base64 } => {
+                            let payload = STANDARD
+                                .decode(data_base64)
+                                .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+                            sent_bytes = sent_bytes.saturating_add(payload.len());
+                            tokio::time::timeout_at(
+                                deadline,
+                                connection.send_binary(Bytes::from(payload)),
+                            )
+                            .await
+                        }
+                    };
+                    match result {
+                        Err(_) => {
+                            *websocket = None;
+                            return Err(provider_session_timeout());
+                        }
+                        Ok(Err(error)) => {
+                            *websocket = None;
+                            return websocket_error_event(error, "send");
+                        }
+                        Ok(Ok(())) => {}
+                    }
+                    sent = sent.saturating_add(1);
+                }
+                websocket_action_result(json!({
+                    "type": "authenticated",
+                    "frames_sent": sent,
+                    "bytes_sent": sent_bytes
+                }))
+            }
             PluginProviderSessionAction::WebSocketClose => {
                 if let Some(mut connection) = websocket.take() {
-                    return match tokio::time::timeout_at(deadline, connection.close()).await {
+                    return match tokio::time::timeout_at(deadline, connection.connection.close())
+                        .await
+                    {
                         Err(_) => Err(provider_session_timeout()),
                         Ok(Err(error)) => websocket_error_event(error, "close"),
                         Ok(Ok(())) => websocket_action_result(json!({"type": "closed"})),
@@ -434,6 +632,53 @@ impl DatabasePluginProviderRelayHook {
         Ok(projected)
     }
 
+    fn build_endpoint_session_projection(
+        &self,
+        request: &ProviderRelayRequest,
+        endpoint_id: &str,
+        method: String,
+        path: &str,
+        headers: std::collections::BTreeMap<String, String>,
+        body: Value,
+    ) -> Result<ProviderRelayRequest, af_domain::UpstreamError> {
+        let session = request
+            .session
+            .as_ref()
+            .ok_or(af_domain::UpstreamError::ProtocolError)?;
+        let endpoint = session
+            .endpoints
+            .get(endpoint_id)
+            .ok_or(af_domain::UpstreamError::ProtocolError)?;
+        if !endpoint
+            .allowed_methods
+            .iter()
+            .any(|allowed| allowed == &method)
+            || !endpoint_path_allowed(endpoint, path)
+        {
+            return Err(af_domain::UpstreamError::ProtocolError);
+        }
+        let method = Method::from_bytes(method.as_bytes())
+            .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+        let target = build_provider_http_target(endpoint, path)?;
+        let mut projected = request.clone();
+        projected.method = method;
+        projected.target = target;
+        projected.body = Some(Bytes::from(
+            serde_json::to_vec(&body).map_err(|_| af_domain::UpstreamError::ProtocolError)?,
+        ));
+        // A different endpoint must never inherit the selected channel's secret headers.
+        projected.headers = af_adapter::HeaderMap::new();
+        apply_provider_headers(&mut projected.headers, headers, true)?;
+        if !projected.headers.contains_key("content-type") {
+            projected.headers.insert(
+                HeaderName::from_static("content-type"),
+                HeaderValue::from_static("application/json"),
+            );
+        }
+        projected.upstream_response_mode = af_adapter::ResponseMode::Full;
+        Ok(projected)
+    }
+
     async fn prepare_session_upstream(
         &self,
         request: &ProviderRelayRequest,
@@ -449,6 +694,23 @@ impl DatabasePluginProviderRelayHook {
         .map(|request| request.with_response_mode(af_adapter::ResponseMode::Full))
         .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
         session_context.prepare_request(upstream).await
+    }
+
+    async fn prepare_endpoint_session_upstream(
+        &self,
+        request: &ProviderRelayRequest,
+        session_context: &ProviderRelaySessionContext<'_>,
+    ) -> Result<UpstreamRequest, af_domain::UpstreamError> {
+        let upstream = UpstreamRequest::new(
+            request.method.clone(),
+            request.target.clone(),
+            request.headers.clone(),
+            request.body.clone(),
+        )
+        .and_then(|request| request.with_response_body_limit(MAX_PROVIDER_SESSION_VALUE_BYTES))
+        .map(|request| request.with_response_mode(af_adapter::ResponseMode::Full))
+        .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+        session_context.prepare_endpoint_request(upstream).await
     }
 
     fn session_response(
@@ -525,8 +787,14 @@ struct ProviderSessionCleanupGuard {
     model: String,
     session_id: String,
     state: Value,
-    websocket: Option<WebSocketConnection>,
+    websocket: Option<ActiveProviderWebSocket>,
     armed: bool,
+}
+
+struct ActiveProviderWebSocket {
+    connection: WebSocketConnection,
+    endpoint_id: String,
+    path: String,
 }
 
 impl ProviderSessionCleanupGuard {
@@ -537,8 +805,11 @@ impl ProviderSessionCleanupGuard {
         reason: &str,
     ) {
         if let Some(mut connection) = self.websocket.take() {
-            let _ =
-                tokio::time::timeout(PROVIDER_SESSION_CLEANUP_TIMEOUT, connection.close()).await;
+            let _ = tokio::time::timeout(
+                PROVIDER_SESSION_CLEANUP_TIMEOUT,
+                connection.connection.close(),
+            )
+            .await;
         }
         let target = ProviderTarget::from(&self.binding);
         let invocation = self
@@ -561,29 +832,67 @@ impl ProviderSessionCleanupGuard {
         )
         .await;
         if let Ok(Ok(PluginProviderResult::Request {
+            endpoint_id,
             method,
             path,
             headers,
             body,
         })) = result
-            && let Ok(projected) = self
-                .hook
-                .build_session_projection(request, method, path, headers, body)
-            && let Ok(projected) = self.hook.sign_request(projected).await
-            && let Ok(upstream) = self
-                .hook
-                .prepare_session_upstream(&projected, session_context)
-                .await
         {
-            let _ = tokio::time::timeout(
-                Duration::from_millis(120),
-                self.hook.send_session_request(
-                    upstream,
-                    session_context,
-                    Instant::now() + Duration::from_millis(120),
-                ),
-            )
-            .await;
+            let projected = if let Some(endpoint_id) = endpoint_id.as_deref() {
+                self.hook.build_endpoint_session_projection(
+                    request,
+                    endpoint_id,
+                    method,
+                    &path,
+                    headers,
+                    body,
+                )
+            } else {
+                self.hook
+                    .build_session_projection(request, method, path, headers, body)
+            };
+            if let Ok(projected) = projected
+                && let Ok(projected) = self
+                    .hook
+                    .sign_request(projected, endpoint_id.as_deref())
+                    .await
+            {
+                let upstream = if let Some(endpoint_id) = endpoint_id.as_deref() {
+                    let endpoint = request
+                        .session
+                        .as_ref()
+                        .and_then(|session| session.endpoints.get(endpoint_id));
+                    match (
+                        endpoint,
+                        self.hook
+                            .prepare_endpoint_session_upstream(&projected, session_context)
+                            .await,
+                    ) {
+                        (Some(endpoint), Ok(upstream))
+                            if validate_prepared_provider_endpoint(endpoint, &upstream).is_ok() =>
+                        {
+                            Ok(upstream)
+                        }
+                        _ => Err(af_domain::UpstreamError::ProtocolError),
+                    }
+                } else {
+                    self.hook
+                        .prepare_session_upstream(&projected, session_context)
+                        .await
+                };
+                if let Ok(upstream) = upstream {
+                    let _ = tokio::time::timeout(
+                        Duration::from_millis(120),
+                        self.hook.send_session_request(
+                            upstream,
+                            session_context,
+                            Instant::now() + Duration::from_millis(120),
+                        ),
+                    )
+                    .await;
+                }
+            }
         }
         self.armed = false;
     }
@@ -605,8 +914,11 @@ impl Drop for ProviderSessionCleanupGuard {
         let websocket = self.websocket.take();
         handle.spawn(async move {
             if let Some(mut connection) = websocket {
-                let _ = tokio::time::timeout(PROVIDER_SESSION_CLEANUP_TIMEOUT, connection.close())
-                    .await;
+                let _ = tokio::time::timeout(
+                    PROVIDER_SESSION_CLEANUP_TIMEOUT,
+                    connection.connection.close(),
+                )
+                .await;
             }
             let target = ProviderTarget::from(&binding);
             let invocation = hook.invocation(&target, &model, "provider-session-cancel");
@@ -635,11 +947,11 @@ fn provider_session_timeout() -> af_domain::UpstreamError {
 }
 
 fn build_provider_websocket_target(
-    endpoint: &str,
+    endpoint: &af_relay::ProviderRelayEndpoint,
     path: &str,
 ) -> Result<String, af_domain::UpstreamError> {
-    let mut url = Url::parse(endpoint).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
-    if url.scheme() != "wss"
+    let mut url = Url::parse(&endpoint.url).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+    if !matches!(url.scheme(), "https" | "wss")
         || url.host_str().is_none()
         || matches!(url.host(), Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)))
         || !url.username().is_empty()
@@ -648,12 +960,36 @@ fn build_provider_websocket_target(
         || url.fragment().is_some()
         || !matches!(url.path(), "" | "/")
         || url.port() == Some(0)
-        || path.is_empty()
-        || path.len() > 2_048
-        || !path.starts_with('/')
-        || path.starts_with("//")
-        || path.bytes().any(|byte| matches!(byte, b'#' | b'\\'))
-        || path.chars().any(char::is_control)
+        || !endpoint.websocket_enabled
+        || !endpoint_path_allowed(endpoint, path)
+    {
+        return Err(af_domain::UpstreamError::ProtocolError);
+    }
+    url.set_scheme("wss")
+        .map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+    let (path_only, query) = path
+        .split_once('?')
+        .map_or((path, None), |(path, query)| (path, Some(query)));
+    url.set_path(path_only);
+    url.set_query(query);
+    Ok(url.to_string())
+}
+
+fn build_provider_http_target(
+    endpoint: &af_relay::ProviderRelayEndpoint,
+    path: &str,
+) -> Result<String, af_domain::UpstreamError> {
+    let mut url = Url::parse(&endpoint.url).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || matches!(url.host(), Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+        || url.port() == Some(0)
+        || !endpoint_path_allowed(endpoint, path)
     {
         return Err(af_domain::UpstreamError::ProtocolError);
     }
@@ -663,6 +999,54 @@ fn build_provider_websocket_target(
     url.set_path(path_only);
     url.set_query(query);
     Ok(url.to_string())
+}
+
+fn endpoint_path_allowed(endpoint: &af_relay::ProviderRelayEndpoint, request_path: &str) -> bool {
+    let (path, query) = request_path
+        .split_once('?')
+        .map_or((request_path, None), |(path, query)| (path, Some(query)));
+    if path.is_empty()
+        || path.len() > 2_048
+        || !path.starts_with('/')
+        || path.starts_with("//")
+        || path.contains(['#', '\\', '%'])
+        || path.chars().any(char::is_control)
+        || path.split('/').any(|segment| matches!(segment, "." | ".."))
+        || query.is_some_and(|query| {
+            query
+                .chars()
+                .any(|character| character == '#' || character == '\\' || character.is_control())
+        })
+    {
+        return false;
+    }
+    endpoint.allowed_paths.iter().any(|prefix| {
+        path == prefix
+            || path.strip_prefix(prefix).is_some_and(|suffix| {
+                prefix == "/" || prefix.ends_with('/') || suffix.starts_with('/')
+            })
+    })
+}
+
+fn validate_prepared_provider_endpoint(
+    endpoint: &af_relay::ProviderRelayEndpoint,
+    request: &UpstreamRequest,
+) -> Result<(), af_domain::UpstreamError> {
+    let target =
+        Url::parse(request.target()).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+    let expected =
+        Url::parse(&endpoint.url).map_err(|_| af_domain::UpstreamError::ProtocolError)?;
+    if target.scheme() != "https"
+        || !same_websocket_origin(&target, &expected)
+        || !endpoint
+            .allowed_methods
+            .iter()
+            .any(|allowed| allowed == request.method().as_str())
+        || !endpoint_path_allowed(endpoint, target.path())
+    {
+        return Err(af_domain::UpstreamError::ProtocolError);
+    }
+    Ok(())
 }
 
 fn same_websocket_origin(left: &Url, right: &Url) -> bool {
@@ -675,9 +1059,16 @@ fn same_websocket_origin(left: &Url, right: &Url) -> bool {
 fn apply_provider_headers(
     headers: &mut af_adapter::HeaderMap,
     overrides: std::collections::BTreeMap<String, String>,
+    allow_endpoint_auth: bool,
 ) -> Result<(), af_domain::UpstreamError> {
     for (name, value) in overrides {
-        if protected_provider_header(&name) {
+        if protected_provider_header(&name)
+            && !(allow_endpoint_auth
+                && matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "authorization" | "cookie"
+                ))
+        {
             continue;
         }
         let name = HeaderName::from_bytes(name.as_bytes())
@@ -758,6 +1149,32 @@ fn websocket_text_message(text: String) -> Result<Value, af_domain::UpstreamErro
     }))
 }
 
+fn websocket_batch_frame_event(frame: WebSocketFrame) -> Result<Value, af_domain::UpstreamError> {
+    let event = match frame {
+        WebSocketFrame::Text(bytes) => json!({
+            "type": "message",
+            "frame_type": "text",
+            "encoding": "base64",
+            "data_base64": STANDARD.encode(bytes)
+        }),
+        WebSocketFrame::Binary(bytes) => json!({
+            "type": "message",
+            "frame_type": "binary",
+            "encoding": "base64",
+            "data_base64": STANDARD.encode(bytes)
+        }),
+        WebSocketFrame::Ping => json!({"type": "ping"}),
+        WebSocketFrame::Pong => json!({"type": "pong"}),
+    };
+    if serde_json::to_vec(&event).map_or(true, |bytes| {
+        bytes.len() > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES * 2
+    }) {
+        Err(af_domain::UpstreamError::ProtocolError)
+    } else {
+        Ok(event)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -766,7 +1183,12 @@ mod tests {
     fn provider_websocket_targets_keep_the_admin_origin_and_relative_path() {
         assert_eq!(
             build_provider_websocket_target(
-                "wss://realtime.example.invalid/",
+                &af_relay::ProviderRelayEndpoint {
+                    url: "wss://realtime.example.invalid/".to_owned(),
+                    allowed_paths: vec!["/".to_owned()],
+                    allowed_methods: vec![],
+                    websocket_enabled: true,
+                },
                 "/v1/events?cursor=next",
             )
             .unwrap(),
@@ -780,8 +1202,48 @@ mod tests {
             ("wss://realtime.example.invalid", "//other.example/events"),
             ("wss://realtime.example.invalid", "/events#fragment"),
         ] {
-            assert!(build_provider_websocket_target(endpoint, path).is_err());
+            let endpoint = af_relay::ProviderRelayEndpoint {
+                url: endpoint.to_owned(),
+                allowed_paths: vec!["/".to_owned()],
+                allowed_methods: vec![],
+                websocket_enabled: true,
+            };
+            assert!(build_provider_websocket_target(&endpoint, path).is_err());
         }
+    }
+
+    #[test]
+    fn provider_endpoint_paths_match_authorized_prefix_boundaries() {
+        let endpoint = af_relay::ProviderRelayEndpoint {
+            url: "https://api.example.invalid".to_owned(),
+            allowed_paths: vec!["/v1".to_owned(), "/oauth/".to_owned()],
+            allowed_methods: vec!["GET".to_owned()],
+            websocket_enabled: false,
+        };
+        assert!(endpoint_path_allowed(&endpoint, "/v1"));
+        assert!(endpoint_path_allowed(&endpoint, "/v1/models?active=true"));
+        assert!(endpoint_path_allowed(&endpoint, "/oauth/callback"));
+        assert!(!endpoint_path_allowed(&endpoint, "/v10/models"));
+        assert!(!endpoint_path_allowed(&endpoint, "/oauth"));
+        for path in ["/v1/../admin", "/v1/%2e%2e/admin", "//other.example/v1"] {
+            assert!(!endpoint_path_allowed(&endpoint, path));
+        }
+    }
+
+    #[test]
+    fn provider_http_targets_use_the_granted_origin_and_relative_path() {
+        let endpoint = af_relay::ProviderRelayEndpoint {
+            url: "https://api.example.invalid:8443".to_owned(),
+            allowed_paths: vec!["/v1".to_owned()],
+            allowed_methods: vec!["POST".to_owned()],
+            websocket_enabled: false,
+        };
+        assert_eq!(
+            build_provider_http_target(&endpoint, "/v1/chat?mode=fast").unwrap(),
+            "https://api.example.invalid:8443/v1/chat?mode=fast"
+        );
+        assert!(build_provider_http_target(&endpoint, "/admin").is_err());
+        assert!(build_provider_http_target(&endpoint, "//other.example/v1").is_err());
     }
 
     #[test]

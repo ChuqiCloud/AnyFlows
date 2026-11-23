@@ -1922,7 +1922,7 @@ impl SidecarSession {
         let provider_value =
             serde_json::to_value(&provider).map_err(|_| SidecarError::InvalidConfiguration)?;
         if contains_sensitive_fields(&self.public_config)
-            || contains_sensitive_fields(&provider_value)
+            || contains_sensitive_provider_fields(&provider_value)
         {
             return Err(SidecarError::SensitivePayload);
         }
@@ -1963,7 +1963,7 @@ impl SidecarSession {
                     self.manifest.limits.max_response_bytes as usize,
                 )
                 .map_err(|_| SidecarError::FrameTooLarge)?;
-                if contains_sensitive_fields(&value) {
+                if contains_sensitive_provider_fields(&value) {
                     self.stop().await;
                     return Err(SidecarError::SensitivePayload);
                 }
@@ -2565,6 +2565,23 @@ fn contains_sensitive_fields(value: &Value) -> bool {
     }
 }
 
+/// Provider endpoint sessions may deliberately carry user-supplied Cookie or
+/// Authorization headers. They are still bounded by the Provider contract and
+/// endpoint grant; do not apply the generic public-payload field-name screen to
+/// values nested under an explicit `headers` object.
+fn contains_sensitive_provider_fields(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.iter().any(|(name, value)| {
+            if name.eq_ignore_ascii_case("headers") {
+                return false;
+            }
+            is_sensitive_field_name(name) || contains_sensitive_provider_fields(value)
+        }),
+        Value::Array(items) => items.iter().any(contains_sensitive_provider_fields),
+        _ => false,
+    }
+}
+
 fn deployable_sidecar_capability(capability: &af_plugin_contract::CapabilityDeclaration) -> bool {
     match (capability.access, capability.side_effect) {
         (CapabilityAccess::Read, SideEffectClass::None) => true,
@@ -2707,6 +2724,7 @@ mod tests {
         PluginManifest {
             plugin_id: PluginId::new("org.example.signature-test").unwrap(),
             display_name: "Signature test".to_owned(),
+            description: None,
             plugin_version: PluginVersion::new("1.0.0").unwrap(),
             contract_range: ContractVersionRange::new(
                 ContractVersion::new(1, 0),

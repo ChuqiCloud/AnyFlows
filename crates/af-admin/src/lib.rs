@@ -453,11 +453,12 @@ pub use plugin_lifecycle::{
     AdminPluginCapabilityInvocationResult, AdminPluginCredentialInvocationResult,
     AdminPluginDeployment, AdminPluginDeploymentPage, AdminPluginEventResult,
     AdminPluginEventResultPage, AdminPluginLifecycleError, AdminPluginMarketEntry,
-    AdminPluginRouteInvocationResult, AdminPluginTaskInvocationResult,
-    DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
-    MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand, PluginDeploymentCommand,
-    PluginEventDeliveryWorker, PluginMarketInstallRequest, PluginMarketInstallSource,
-    PluginNativeTaskProtocol, PluginPackageUpload, PluginProviderSelection,
+    AdminPluginPublicConfiguration, AdminPluginRouteInvocationResult,
+    AdminPluginTaskInvocationResult, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
+    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
+    PluginArtifactRegistrationCommand, PluginDeploymentCommand, PluginEventDeliveryWorker,
+    PluginMarketInstallRequest, PluginMarketInstallSource, PluginNativeTaskProtocol,
+    PluginPackageUpload, PluginProviderEndpoint, PluginProviderSelection,
     PluginProviderUpstreamResponseMode, PluginProviderWebSocketEndpoint,
 };
 pub use plugin_operations::{

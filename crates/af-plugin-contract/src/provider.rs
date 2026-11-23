@@ -9,6 +9,10 @@ pub const PROVIDER_LIFECYCLE_CAPABILITY: &str = "provider.lifecycle";
 pub const MAX_PROVIDER_SESSION_VALUE_BYTES: usize = 256 * 1024;
 /// Maximum WebSocket message size exposed to a Provider plugin session.
 pub const MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES: usize = 128 * 1024;
+/// Maximum number of frames returned by one bounded Provider receive action.
+pub const MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES: u8 = 16;
+/// Maximum JSON challenge/context accepted for host-mediated WebSocket authentication.
+pub const MAX_PROVIDER_SESSION_WEBSOCKET_AUTH_REQUEST_BYTES: usize = 16 * 1024;
 
 /// Provider lifecycle operations that a plugin may implement. The host still
 /// owns credentials, the upstream host, network I/O, billing and public IDs.
@@ -69,6 +73,8 @@ pub enum PluginProviderResult {
     Request {
         method: String,
         path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint_id: Option<String>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         headers: BTreeMap<String, String>,
         body: Value,
@@ -102,6 +108,8 @@ pub enum PluginProviderSessionAction {
     Request {
         method: String,
         path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint_id: Option<String>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         headers: BTreeMap<String, String>,
         body: Value,
@@ -122,6 +130,14 @@ pub enum PluginProviderSessionAction {
     },
     WebSocketReceive {
         timeout_ms: u32,
+    },
+    WebSocketReceiveBatch {
+        timeout_ms: u32,
+        max_messages: u8,
+    },
+    WebSocketAuthenticate {
+        #[serde(default)]
+        request: Value,
     },
     WebSocketClose,
     Wait {
@@ -256,12 +272,22 @@ impl PluginProviderResult {
             Self::Request {
                 method,
                 path,
+                endpoint_id,
                 headers,
                 body,
             } => {
                 validate_text(method, 16, ProviderContractError::InvalidMethod)?;
+                if !matches!(
+                    method.as_str(),
+                    "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+                ) {
+                    return Err(ProviderContractError::InvalidMethod);
+                }
                 validate_provider_path(path)?;
-                validate_session_headers(headers)?;
+                if let Some(endpoint_id) = endpoint_id {
+                    validate_endpoint_id(endpoint_id)?;
+                }
+                validate_session_headers(headers, endpoint_id.is_some())?;
                 if headers.len() > 64 || body.is_null() {
                     return Err(ProviderContractError::InvalidPayload);
                 }
@@ -304,13 +330,20 @@ impl PluginProviderSessionAction {
             Self::Request {
                 method,
                 path,
+                endpoint_id,
                 headers,
                 body,
                 stream,
             } => {
                 validate_text(method, 16, ProviderContractError::InvalidMethod)?;
+                if !valid_provider_method(method) {
+                    return Err(ProviderContractError::InvalidMethod);
+                }
                 validate_provider_path(path)?;
-                validate_session_headers(headers)?;
+                if let Some(endpoint_id) = endpoint_id {
+                    validate_endpoint_id(endpoint_id)?;
+                }
+                validate_session_headers(headers, endpoint_id.is_some())?;
                 if *stream || body.is_null() {
                     return Err(ProviderContractError::InvalidPayload);
                 }
@@ -328,7 +361,7 @@ impl PluginProviderSessionAction {
             } => {
                 validate_endpoint_id(endpoint_id)?;
                 validate_provider_path(path)?;
-                validate_session_headers(headers)?;
+                validate_session_headers(headers, true)?;
             }
             Self::WebSocketSendText { text } => {
                 if text.len() > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES {
@@ -347,12 +380,41 @@ impl PluginProviderSessionAction {
                     return Err(ProviderContractError::InvalidDelay);
                 }
             }
+            Self::WebSocketReceiveBatch {
+                timeout_ms,
+                max_messages,
+            } => {
+                if *timeout_ms == 0
+                    || *timeout_ms > 30_000
+                    || *max_messages == 0
+                    || *max_messages > MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES
+                {
+                    return Err(ProviderContractError::InvalidLimit);
+                }
+            }
+            Self::WebSocketAuthenticate { request } => {
+                if !request.is_object()
+                    || request.get("challenge").is_none_or(Value::is_null)
+                    || serde_json::to_vec(request).map_or(true, |bytes| {
+                        bytes.len() > MAX_PROVIDER_SESSION_WEBSOCKET_AUTH_REQUEST_BYTES
+                    })
+                {
+                    return Err(ProviderContractError::InvalidPayload);
+                }
+            }
             Self::WebSocketClose => {}
             Self::Complete { response } => validate_session_value(response)?,
             Self::Abort { code } => validate_text(code, 128, ProviderContractError::InvalidReason)?,
         }
         Ok(())
     }
+}
+
+fn valid_provider_method(method: &str) -> bool {
+    matches!(
+        method,
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+    )
 }
 
 fn validate_session_text(value: &str) -> Result<(), ProviderContractError> {
@@ -437,12 +499,16 @@ fn validate_session_value(value: &Value) -> Result<(), ProviderContractError> {
 }
 
 fn validate_provider_path(path: &str) -> Result<(), ProviderContractError> {
+    let path_only = path.split_once('?').map_or(path, |(path, _)| path);
     if path.is_empty()
         || path.len() > 2048
-        || !path.starts_with('/')
-        || path.starts_with("//")
-        || path.bytes().any(|byte| matches!(byte, b'#' | b'\\'))
-        || path.chars().any(char::is_control)
+        || !path_only.starts_with('/')
+        || path_only.starts_with("//")
+        || path_only.contains(['#', '\\', '%'])
+        || path_only.chars().any(char::is_control)
+        || path_only
+            .split('/')
+            .any(|segment| matches!(segment, "." | ".."))
     {
         return Err(ProviderContractError::InvalidPath);
     }
@@ -451,6 +517,7 @@ fn validate_provider_path(path: &str) -> Result<(), ProviderContractError> {
 
 fn validate_session_headers(
     headers: &BTreeMap<String, String>,
+    allow_endpoint_auth: bool,
 ) -> Result<(), ProviderContractError> {
     if headers.len() > 64 {
         return Err(ProviderContractError::InvalidLimit);
@@ -482,6 +549,11 @@ fn validate_session_headers(
             || value.len() > 8192
             || !value.is_ascii()
             || value.bytes().any(|byte| byte < b' ' || byte == 0x7f)
+            || (!allow_endpoint_auth
+                && matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "authorization" | "cookie"
+                ))
         {
             return Err(ProviderContractError::InvalidPayload);
         }
@@ -564,13 +636,40 @@ mod tests {
         let result = PluginProviderResult::Request {
             method: "POST".to_owned(),
             path: "/v1/chat/completions".to_owned(),
+            endpoint_id: None,
             headers: BTreeMap::new(),
             body: serde_json::json!({"model":"gpt-test"}),
         };
         assert!(result.validate().is_ok());
+        let endpoint_auth = PluginProviderResult::Request {
+            method: "POST".to_owned(),
+            path: "/app/orgs/org/jams/delete".to_owned(),
+            endpoint_id: Some("capy-api".to_owned()),
+            headers: BTreeMap::from([
+                ("authorization".to_owned(), "Bearer jwt".to_owned()),
+                ("cookie".to_owned(), "__client=session".to_owned()),
+            ]),
+            body: serde_json::json!({"jamIds":["child"]}),
+        };
+        assert!(endpoint_auth.validate().is_ok());
+        let unscoped_auth = PluginProviderResult::Request {
+            method: "POST".to_owned(),
+            path: "/app/orgs/org/jams/delete".to_owned(),
+            endpoint_id: None,
+            headers: BTreeMap::from([
+                ("authorization".to_owned(), "Bearer jwt".to_owned()),
+                ("cookie".to_owned(), "__client=session".to_owned()),
+            ]),
+            body: serde_json::json!({"jamIds":["child"]}),
+        };
+        assert_eq!(
+            unscoped_auth.validate(),
+            Err(ProviderContractError::InvalidPayload)
+        );
         let absolute = PluginProviderResult::Request {
             method: "POST".to_owned(),
             path: "https://example.invalid".to_owned(),
+            endpoint_id: None,
             headers: BTreeMap::new(),
             body: serde_json::json!({"model":"gpt-test"}),
         };
@@ -582,6 +681,7 @@ mod tests {
         let valid = PluginProviderSessionAction::Request {
             method: "GET".to_owned(),
             path: "/v1/tasks/status?cursor=2".to_owned(),
+            endpoint_id: Some("provider-api".to_owned()),
             headers: BTreeMap::new(),
             body: serde_json::json!({}),
             stream: false,
@@ -597,6 +697,7 @@ mod tests {
             let action = PluginProviderSessionAction::Request {
                 method: "GET".to_owned(),
                 path: path.to_owned(),
+                endpoint_id: Some("provider-api".to_owned()),
                 headers: BTreeMap::new(),
                 body: serde_json::json!({}),
                 stream: false,
@@ -607,6 +708,7 @@ mod tests {
         let streaming = PluginProviderSessionAction::Request {
             method: "GET".to_owned(),
             path: "/v1/events".to_owned(),
+            endpoint_id: Some("provider-api".to_owned()),
             headers: BTreeMap::new(),
             body: serde_json::json!({}),
             stream: true,
@@ -663,6 +765,36 @@ mod tests {
             PluginProviderSessionAction::WebSocketReceive { timeout_ms: 30_001 }
                 .validate()
                 .is_err()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketReceiveBatch {
+                timeout_ms: 2_000,
+                max_messages: MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES,
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketReceiveBatch {
+                timeout_ms: 2_000,
+                max_messages: MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES + 1,
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketAuthenticate {
+                request: serde_json::json!({"challenge":{"id":"nonce"}}),
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketAuthenticate {
+                request: serde_json::json!({"endpoint_id":"provider-api"}),
+            }
+            .validate()
+            .is_err()
         );
         assert!(
             PluginProviderSessionAction::WebSocketSendText {

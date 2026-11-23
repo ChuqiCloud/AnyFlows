@@ -1,4 +1,4 @@
-import { Button, Chip, Select, SelectItem, Textarea } from '@heroui/react'
+import { Button, Chip, Select, SelectItem } from '@heroui/react'
 import { Play } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -90,17 +90,11 @@ export function PluginCapabilityConsole({ deployment }: { deployment: PluginDepl
           {capability.id} · v{capability.version}
         </SelectItem>)}
       </Select>
-      {selected && (selected.inputSchema.type === 'object' || object(selected.inputSchema.properties)) ? <PluginConfigEditor
+      {selected ? <PluginConfigEditor
         schema={selected.inputSchema}
         value={input}
         onChange={(next) => { setInput(next); setOutput(undefined) }}
         locale={i18n.resolvedLanguage ?? 'en'}
-      /> : selected ? <Textarea
-        label={t('apiExplorer.requestBody')}
-        minRows={5}
-        value={input}
-        onValueChange={(next) => { setInput(next); setOutput(undefined) }}
-        classNames={{ input: 'font-mono text-xs' }}
       /> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button

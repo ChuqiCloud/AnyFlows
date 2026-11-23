@@ -8,12 +8,13 @@ use af_admin::{
     AdminPluginCapabilityActionResult, AdminPluginCapabilityGrant,
     AdminPluginCapabilityInvocationResult, AdminPluginDeployment, AdminPluginDeploymentPage,
     AdminPluginEventResult, AdminPluginEventResultPage, AdminPluginLifecycleError,
-    AdminPluginRouteInvocationResult, DEFAULT_PLUGIN_CATALOG_PAGE_SIZE,
-    DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
-    PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
-    PluginMarketInstallRequest, PluginMarketInstallSource, PluginPackageUpload,
-    PluginProviderSelection, PluginProviderUpstreamResponseMode, PluginProviderWebSocketEndpoint,
-    SessionAuthentication, SessionAuthenticator,
+    AdminPluginPublicConfiguration, AdminPluginRouteInvocationResult,
+    DEFAULT_PLUGIN_CATALOG_PAGE_SIZE, DatabaseAdminPluginLifecycleService,
+    MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand,
+    PluginCatalogExtensionQuery, PluginDeploymentCommand, PluginMarketInstallRequest,
+    PluginMarketInstallSource, PluginPackageUpload, PluginProviderEndpoint,
+    PluginProviderSelection, PluginProviderUpstreamResponseMode, SessionAuthentication,
+    SessionAuthenticator,
 };
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
@@ -161,6 +162,16 @@ pub(crate) struct PluginDeploymentRequest {
     granted_capabilities: Vec<PluginCapabilityGrantRequest>,
     #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
     config: Value,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = PluginPublicConfigurationUpdateRequest)]
+pub(crate) struct PluginPublicConfigurationUpdateRequest {
+    #[schema(minimum = 1)]
+    expected_generation: i64,
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
+    configuration: Value,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -404,6 +415,7 @@ pub(crate) struct PluginDeploymentResponse {
     generation: i64,
     artifact: PluginArtifactResponse,
     enabled: bool,
+    needs_configuration: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     provider_selection: Option<PluginProviderSelectionBody>,
     granted_capabilities: Vec<PluginCapabilityGrantResponse>,
@@ -419,6 +431,7 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
             generation: value.generation(),
             artifact: value.artifact().clone().into(),
             enabled: value.enabled(),
+            needs_configuration: value.needs_configuration(),
             provider_selection: value.provider_selection().map(|selection| {
                 PluginProviderSelectionBody {
                     channel_ids: selection.channel_ids.clone(),
@@ -437,12 +450,15 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
                     },
                     session_enabled: selection.session_enabled,
                     session_timeout_ms: selection.session_timeout_ms,
-                    websocket_endpoints: selection
-                        .websocket_endpoints
+                    endpoints: selection
+                        .endpoints
                         .iter()
-                        .map(|endpoint| PluginProviderWebSocketEndpointBody {
+                        .map(|endpoint| PluginProviderEndpointBody {
                             id: endpoint.id.clone(),
                             url: endpoint.url.clone(),
+                            allowed_paths: Some(endpoint.allowed_paths.clone()),
+                            allowed_methods: endpoint.allowed_methods.clone(),
+                            websocket_enabled: Some(endpoint.websocket_enabled),
                         })
                         .collect(),
                 }
@@ -455,6 +471,26 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
             updated_by: value.updated_by(),
             updated_at: value.updated_at(),
             request_id: value.request_id().to_owned(),
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[schema(as = PluginPublicConfigurationResponse)]
+pub(crate) struct PluginPublicConfigurationResponse {
+    plugin_id: String,
+    generation: i64,
+    #[schema(schema_with = crate::openapi::schema::public_plugin_config_schema)]
+    configuration: Value,
+}
+
+impl From<AdminPluginPublicConfiguration> for PluginPublicConfigurationResponse {
+    fn from(value: AdminPluginPublicConfiguration) -> Self {
+        Self {
+            plugin_id: value.plugin_id().to_owned(),
+            generation: value.generation(),
+            configuration: value.configuration().clone(),
         }
     }
 }
@@ -474,16 +510,24 @@ pub(crate) struct PluginProviderSelectionBody {
     #[serde(default)]
     #[schema(required = false, minimum = 1000, maximum = 360000)]
     session_timeout_ms: u32,
-    #[serde(default, rename = "webSocketEndpoints", alias = "websocketEndpoints")]
-    #[schema(required = false, max_items = 16, rename = "webSocketEndpoints")]
-    websocket_endpoints: Vec<PluginProviderWebSocketEndpointBody>,
+    #[serde(default, alias = "webSocketEndpoints", alias = "websocketEndpoints")]
+    #[schema(required = false, max_items = 16)]
+    endpoints: Vec<PluginProviderEndpointBody>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct PluginProviderWebSocketEndpointBody {
+pub(crate) struct PluginProviderEndpointBody {
     id: String,
     url: String,
+    #[serde(default)]
+    #[schema(required = false, min_items = 1, max_items = 64)]
+    allowed_paths: Option<Vec<String>>,
+    #[serde(default)]
+    #[schema(max_items = 7)]
+    allowed_methods: Vec<String>,
+    #[serde(default)]
+    websocket_enabled: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -952,6 +996,10 @@ pub fn build_plugin_lifecycle_router(
         .route(
             "/api/admin/plugins/{plugin_id}/provider-selection",
             post(configure_provider_selection),
+        )
+        .route(
+            "/api/admin/plugins/{plugin_id}/configuration",
+            get(get_public_plugin_configuration).put(update_public_plugin_configuration),
         )
         .route(
             "/api/admin/plugins/{plugin_id}/disable",
@@ -2270,13 +2318,26 @@ async fn configure_provider_selection(
         } else {
             request.selection.session_timeout_ms
         },
-        websocket_endpoints: request
+        endpoints: request
             .selection
-            .websocket_endpoints
+            .endpoints
             .into_iter()
-            .map(|endpoint| PluginProviderWebSocketEndpoint {
-                id: endpoint.id,
-                url: endpoint.url,
+            .map(|endpoint| {
+                let legacy_wss = endpoint.websocket_enabled.is_none()
+                    && url::Url::parse(&endpoint.url).is_ok_and(|url| url.scheme() == "wss");
+                PluginProviderEndpoint {
+                    id: endpoint.id,
+                    url: endpoint.url,
+                    allowed_paths: endpoint.allowed_paths.unwrap_or_else(|| {
+                        if legacy_wss {
+                            vec!["/".to_owned()]
+                        } else {
+                            Vec::new()
+                        }
+                    }),
+                    allowed_methods: endpoint.allowed_methods,
+                    websocket_enabled: endpoint.websocket_enabled.unwrap_or(legacy_wss),
+                }
             })
             .collect(),
     };
@@ -2292,6 +2353,47 @@ async fn configure_provider_selection(
         .await
         .map_err(map_service_error)?;
     Ok(no_store_json(PluginDeploymentResponse::from(deployment)))
+}
+
+async fn update_public_plugin_configuration(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    request: Result<Json<PluginPublicConfigurationUpdateRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
+    if contains_sensitive_config_fields(&request.configuration) {
+        return Err(ManagementError::PluginLifecycleInvalidRequest);
+    }
+    let deployment = state
+        .service
+        .configure_public_plugin_configuration(
+            authentication.principal(),
+            &plugin_id,
+            request.expected_generation,
+            request.configuration,
+            request_id.as_str(),
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(PluginDeploymentResponse::from(deployment)))
+}
+
+async fn get_public_plugin_configuration(
+    State(state): State<PluginLifecycleHttpState>,
+    PathParam(plugin_id): PathParam<String>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let configuration = state
+        .service
+        .get_public_plugin_configuration(authentication.principal(), &plugin_id)
+        .await
+        .map_err(map_service_error)?
+        .ok_or(ManagementError::PluginLifecycleNotFound)?;
+    Ok(no_store_json(PluginPublicConfigurationResponse::from(
+        configuration,
+    )))
 }
 
 async fn disable_deployment(

@@ -34,8 +34,9 @@ pub use capability::{
     ExternalWriteSemantics, ResultLookupSupport, SideEffectClass,
 };
 pub use credential::{
-    CredentialContractError, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY, PluginCredentialOperation,
-    PluginCredentialResult,
+    CredentialContractError, MAX_PLUGIN_CREDENTIAL_WEBSOCKET_FRAME_BYTES,
+    MAX_PLUGIN_CREDENTIAL_WEBSOCKET_FRAMES, PLUGIN_CREDENTIAL_LIFECYCLE_CAPABILITY,
+    PluginCredentialOperation, PluginCredentialResult, PluginCredentialWebSocketFrame,
 };
 pub use error::{ConnectorError, ConnectorErrorCode, OperationOutcome};
 pub use event::{
@@ -53,7 +54,8 @@ pub use market::{
 };
 pub use proposal::HostActionProposal;
 pub use provider::{
-    MAX_PROVIDER_SESSION_VALUE_BYTES, MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES,
+    MAX_PROVIDER_SESSION_VALUE_BYTES, MAX_PROVIDER_SESSION_WEBSOCKET_AUTH_REQUEST_BYTES,
+    MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES, MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES,
     PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass, PluginProviderModel,
     PluginProviderOperation, PluginProviderResult, PluginProviderSessionAction,
     ProviderContractError,
