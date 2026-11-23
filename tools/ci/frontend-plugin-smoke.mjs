@@ -352,7 +352,7 @@ try {
   await page.getByText(label('pluginLifecycle.provider.responseModes.nonStreaming'), { exact: true }).last().click()
   await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.save'), exact: true }).click()
   await providerDialog.waitFor({ state: 'hidden' })
-  assert.deepEqual(providerSelections, [{channelIds: [12], models: ['fixture-text'], priority: 4, sessionEnabled: false, upstreamResponseMode: 'non_streaming'}])
+  assert.deepEqual(providerSelections, [{channelIds: [12], models: ['fixture-text'], priority: 4, sessionEnabled: false, sessionTimeoutMs: 30000, webSocketEndpoints: [], upstreamResponseMode: 'non_streaming'}])
   await page.getByText(label('pluginLifecycle.provider.bound').replace('{{count}}', '1'), { exact: true }).waitFor()
 
   await page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }).click()

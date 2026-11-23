@@ -22,9 +22,37 @@ export function PluginProviderEditor({ deployment, onClose }: {
     deployment.providerSelection?.upstreamResponseMode ?? 'auto',
   )
   const [sessionEnabled, setSessionEnabled] = useState(deployment.providerSelection?.sessionEnabled ?? false)
+  const [sessionTimeoutMs, setSessionTimeoutMs] = useState(String(deployment.providerSelection?.sessionTimeoutMs ?? 30_000))
+  const [webSocketEndpoints, setWebSocketEndpoints] = useState(deployment.providerSelection?.webSocketEndpoints?.map((endpoint) => `${endpoint.id}=${endpoint.url}`).join('\n') ?? '')
   const [search, setSearch] = useState('')
   const modelList = [...new Set(models.split('\n').map((model) => model.trim()).filter(Boolean))]
   const priorityValue = Number(priority)
+  const sessionTimeoutValue = Number(sessionTimeoutMs)
+  const sessionTimeoutValid = /^\d+$/.test(sessionTimeoutMs) && sessionTimeoutValue >= 1_000 && sessionTimeoutValue <= 360_000
+  const endpointLines = webSocketEndpoints.split('\n').map((line) => line.trim()).filter(Boolean)
+  const parsedEndpoints = endpointLines.map((line) => {
+    const separator = line.indexOf('=')
+    return separator > 0 && line.indexOf('=', separator + 1) < 0
+      ? { id: line.slice(0, separator).trim(), url: line.slice(separator + 1).trim() }
+      : null
+  })
+  const endpointList = parsedEndpoints.filter((endpoint): endpoint is { id: string; url: string } => Boolean(endpoint))
+  const endpointIds = endpointList.map((endpoint) => endpoint.id)
+  const webSocketEndpointsValid = !sessionEnabled || (endpointLines.length <= 16
+    && parsedEndpoints.length === endpointList.length
+    && endpointList.every(({ id, url }) => {
+      if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(id)) return false
+      try {
+        const parsed = new URL(url)
+        const isIpAddress = /^\[.*\]$/.test(parsed.hostname) || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(parsed.hostname)
+        return parsed.protocol === 'wss:' && !isIpAddress && !parsed.username && !parsed.password
+          && !parsed.search && !parsed.hash && (parsed.pathname === '/' || parsed.pathname === '')
+          && parsed.port !== '0'
+      } catch {
+        return false
+      }
+    })
+    && new Set(endpointIds).size === endpointIds.length)
   const priorityValid = /^-?\d+$/.test(priority) && priorityValue >= -2147483648 && priorityValue <= 2147483647
   const stale = generation !== deployment.generation || (save.error instanceof ApiError && save.error.status === 409)
   const entries = channels.data?.pages.flatMap((page) => page.channels) ?? []
@@ -65,6 +93,11 @@ export function PluginProviderEditor({ deployment, onClose }: {
               <span className="block text-xs text-muted-foreground">{t('pluginLifecycle.provider.sessionEnabledHint')}</span>
             </span>
           </label>
+          {sessionEnabled ? <>
+            <Input label={t('pluginLifecycle.provider.sessionTimeout')} type="number" value={sessionTimeoutMs} onValueChange={setSessionTimeoutMs} isDisabled={save.isPending} />
+            <Textarea label={t('pluginLifecycle.provider.webSocketEndpoints')} description={t('pluginLifecycle.provider.webSocketEndpointsHint')} value={webSocketEndpoints} onValueChange={setWebSocketEndpoints} isDisabled={save.isPending} minRows={2} />
+            {!webSocketEndpointsValid ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.provider.webSocketEndpointsInvalid')}</p> : null}
+          </> : null}
           <div className="grid gap-1.5">
             <label id="plugin-provider-response-mode-label" className="text-xs font-medium leading-none text-foreground">
               {t('pluginLifecycle.provider.upstreamResponseMode')}
@@ -88,10 +121,10 @@ export function PluginProviderEditor({ deployment, onClose }: {
         </ModalBody>
         <ModalFooter>
           <Button variant="light" onPress={onClose} isDisabled={save.isPending}>{t('pluginLifecycle.cancel')}</Button>
-          <Button color="primary" isLoading={save.isPending} isDisabled={stale || !priorityValid || selected.length > 128 || modelList.length > 128}
+          <Button color="primary" isLoading={save.isPending} isDisabled={stale || !priorityValid || !sessionTimeoutValid || !webSocketEndpointsValid || selected.length > 128 || modelList.length > 128 || endpointList.length > 16}
             onPress={() => save.mutate({
               pluginId: deployment.pluginId,
-              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue, upstreamResponseMode, sessionEnabled } },
+              body: { expected_generation: generation, selection: { channelIds: selected, models: modelList, priority: priorityValue, upstreamResponseMode, sessionEnabled, sessionTimeoutMs: sessionTimeoutValue, webSocketEndpoints: sessionEnabled ? endpointList : [] } },
             }, { onSuccess: onClose })}>{t('pluginLifecycle.provider.save')}</Button>
         </ModalFooter>
       </ModalContent>

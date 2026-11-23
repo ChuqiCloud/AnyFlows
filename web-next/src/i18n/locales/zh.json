@@ -99,7 +99,11 @@
       "modelsHint": "每行填写一个模型 ID。留空时匹配所选渠道的全部模型。",
       "priority": "优先级",
       "sessionEnabled": "启用多步会话",
-      "sessionEnabledHint": "仅用于需要登录、轮询或多次上游请求的 Provider。普通插件保持关闭。",
+      "sessionEnabledHint": "用于需要登录、轮询或 WebSocket 事件的 Provider。普通插件保持关闭。",
+      "sessionTimeout": "会话最长时间（毫秒）",
+      "webSocketEndpoints": "允许连接的 WebSocket 服务",
+      "webSocketEndpointsHint": "每行填写 endpoint-id=wss://host[:port]。插件只能连接这里列出的 WSS 服务，路径由插件契约限制。",
+      "webSocketEndpointsInvalid": "请检查 endpoint 标识和 WSS 地址；最多配置 16 个不重复的服务。",
       "upstreamResponseMode": "上游响应模式",
       "upstreamResponseModeHint": "自动跟随客户端。强制模式只适用于 OpenAI Chat Completions 兼容渠道；宿主会把上游结果转换回客户端请求的格式。",
       "responseModes": {

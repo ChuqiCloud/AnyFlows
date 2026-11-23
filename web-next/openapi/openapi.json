@@ -56348,6 +56348,19 @@
           },
           "sessionEnabled": {
             "type": "boolean"
+          },
+          "sessionTimeoutMs": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 360000,
+            "minimum": 1000
+          },
+          "webSocketEndpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PluginProviderWebSocketEndpointBody"
+            },
+            "maxItems": 16
           }
         },
         "additionalProperties": false
@@ -56377,6 +56390,22 @@
           "non_streaming",
           "streaming"
         ]
+      },
+      "PluginProviderWebSocketEndpointBody": {
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "PluginRouteInvocationResponse": {
         "type": "object",

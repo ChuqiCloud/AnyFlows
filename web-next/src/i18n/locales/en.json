@@ -99,7 +99,11 @@
       "modelsHint": "Enter one model ID per line. Leave blank to match every model on the selected channels.",
       "priority": "Priority",
       "sessionEnabled": "Enable multi-step session",
-      "sessionEnabledHint": "Use only for Providers that need login, polling, or multiple upstream requests. Keep it off for ordinary plugins.",
+      "sessionEnabledHint": "Use for Providers that need login, polling, or WebSocket events. Keep it off for ordinary plugins.",
+      "sessionTimeout": "Maximum session duration (ms)",
+      "webSocketEndpoints": "Allowed WebSocket services",
+      "webSocketEndpointsHint": "Enter endpoint-id=wss://host[:port] on each line. Plugins can only connect to listed WSS services; paths remain contract-controlled.",
+      "webSocketEndpointsInvalid": "Check the endpoint IDs and WSS URLs. Up to 16 unique services are allowed.",
       "upstreamResponseMode": "Upstream response mode",
       "upstreamResponseModeHint": "Auto follows the client. Forced modes apply to OpenAI Chat Completions compatible channels; the host converts the result back to the format requested by the client.",
       "responseModes": {

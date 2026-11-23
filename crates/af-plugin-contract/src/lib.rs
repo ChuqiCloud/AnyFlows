@@ -53,9 +53,10 @@ pub use market::{
 };
 pub use proposal::HostActionProposal;
 pub use provider::{
-    MAX_PROVIDER_SESSION_VALUE_BYTES, PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass,
-    PluginProviderModel, PluginProviderOperation, PluginProviderResult,
-    PluginProviderSessionAction, ProviderContractError,
+    MAX_PROVIDER_SESSION_VALUE_BYTES, MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES,
+    PROVIDER_LIFECYCLE_CAPABILITY, PluginProviderFailureClass, PluginProviderModel,
+    PluginProviderOperation, PluginProviderResult, PluginProviderSessionAction,
+    ProviderContractError,
 };
 pub use request_processing::{
     HeaderPatchEffect, JsonPatchEffect, JsonPatchOperation, JsonPatchOperationKind,

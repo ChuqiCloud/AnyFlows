@@ -12,8 +12,8 @@ use af_admin::{
     DatabaseAdminPluginLifecycleService, MAX_PLUGIN_PACKAGE_UPLOAD_BYTES,
     PluginArtifactRegistrationCommand, PluginCatalogExtensionQuery, PluginDeploymentCommand,
     PluginMarketInstallRequest, PluginMarketInstallSource, PluginPackageUpload,
-    PluginProviderSelection, PluginProviderUpstreamResponseMode, SessionAuthentication,
-    SessionAuthenticator,
+    PluginProviderSelection, PluginProviderUpstreamResponseMode, PluginProviderWebSocketEndpoint,
+    SessionAuthentication, SessionAuthenticator,
 };
 use af_admin::{
     PluginCredentialOperation, PluginCredentialResult, PluginTaskOperation, PluginTaskResult,
@@ -436,6 +436,15 @@ impl From<AdminPluginDeployment> for PluginDeploymentResponse {
                         }
                     },
                     session_enabled: selection.session_enabled,
+                    session_timeout_ms: selection.session_timeout_ms,
+                    websocket_endpoints: selection
+                        .websocket_endpoints
+                        .iter()
+                        .map(|endpoint| PluginProviderWebSocketEndpointBody {
+                            id: endpoint.id.clone(),
+                            url: endpoint.url.clone(),
+                        })
+                        .collect(),
                 }
             }),
             granted_capabilities: value
@@ -462,6 +471,19 @@ pub(crate) struct PluginProviderSelectionBody {
     #[serde(default)]
     #[schema(required = false)]
     session_enabled: bool,
+    #[serde(default)]
+    #[schema(required = false, minimum = 1000, maximum = 360000)]
+    session_timeout_ms: u32,
+    #[serde(default, rename = "webSocketEndpoints", alias = "websocketEndpoints")]
+    #[schema(required = false, max_items = 16, rename = "webSocketEndpoints")]
+    websocket_endpoints: Vec<PluginProviderWebSocketEndpointBody>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PluginProviderWebSocketEndpointBody {
+    id: String,
+    url: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, ToSchema)]
@@ -2243,6 +2265,20 @@ async fn configure_provider_selection(
             }
         },
         session_enabled: request.selection.session_enabled,
+        session_timeout_ms: if request.selection.session_timeout_ms == 0 {
+            30_000
+        } else {
+            request.selection.session_timeout_ms
+        },
+        websocket_endpoints: request
+            .selection
+            .websocket_endpoints
+            .into_iter()
+            .map(|endpoint| PluginProviderWebSocketEndpoint {
+                id: endpoint.id,
+                url: endpoint.url,
+            })
+            .collect(),
     };
     let deployment = state
         .service

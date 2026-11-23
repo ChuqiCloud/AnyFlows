@@ -540,13 +540,28 @@ JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或�
 
 需要登录、创建网页线程、等待任务完成或多次轮询的上游，可以在部署的 Provider 渠道绑定中打开 `sessionEnabled`。普通 Provider 不要打开此选项；关闭时只调用一次 `request`，不会产生额外的会话尝试。
 
-1. `session_start` 返回 `session`，初始动作通常为 `request`；如果插件已有本地结果，也可以直接返回 `complete`。
-2. 宿主发送请求。上游主机、渠道认证、客户端仿真、适配器最终签名和响应大小限制仍由宿主处理。
-3. `session_step` 收到上一次响应投影 `{status, body}`，可返回 `request`、`wait`、`complete` 或 `abort`。
-4. `request` 发送下一次上游 HTTP 请求；`wait` 暂停后会把同一份最近响应再次传给 `session_step`，插件应通过 `state` 推进轮询；`complete` 返回统一 JSON 响应；`abort` 结束本次候选并进入 Relay 故障分类。
-5. `session_close` 在成功、失败、超时或中止后调用。插件可以返回一个普通 `request`，让宿主再发送一次同渠道的清理请求；也可以返回 `response` 结束清理。清理失败不会覆盖已确定的请求结果。客户端直接取消时，宿主会尽力调用 `session_close`，但不会等待清理结果。
+1. `session_start` 返回 `session`，初始动作可以是 `request`、`web_socket_connect` 或 `complete`。
+2. 宿主执行动作，再把结果交给 `session_step`。HTTP 响应使用 `{status, body}`；WebSocket 事件使用 `{kind: "websocket", event: {...}}`。
+3. `session_step` 可返回 `request`、`web_socket_connect`、`web_socket_send_text`、`web_socket_send_binary`、`web_socket_receive`、`web_socket_close`、`wait`、`complete` 或 `abort`。插件用 `state` 保存上游任务 ID、阶段和解析游标。
+4. `web_socket_connect` 只引用管理员为当前 Provider 绑定配置的 endpoint ID，并提交相对路径。宿主负责凭据、签名、TLS、代理、DNS 和 SSRF 检查；插件不能提供完整 URL，也不能覆盖握手、认证或代理 Header。一个会话可以在 WebSocket 和 HTTP 请求之间切换。
+5. `web_socket_receive` 等待指定时长，收到文本、二进制、Ping、Pong 或关闭事件后进入下一步；单次等待到时会返回 `event.type: "timeout"`，会话总时限到期则失败。`complete` 返回统一 JSON 响应；`abort` 结束本次候选并进入 Relay 故障分类。
+6. `session_close` 在成功、失败、超时或中止后调用。宿主先关闭仍打开的 WebSocket，再调用插件清理；插件可以返回一个普通 `request`，让宿主再发送一次同渠道的清理请求。清理失败不会覆盖已确定的请求结果。客户端直接取消时，宿主会尽力关闭连接并调用 `session_close`，但不会等待清理结果。
 
-宿主为一轮会话设置 30 秒总时限、16 次动作上限。每个状态、响应和结果最多 256 KiB；请求 Header 最多 64 个，路径必须以单个 `/` 开头。会话步骤使用完整响应缓冲，适合 REST 轮询；`stream` 必须为 `false`。插件需要 SSE 时可读取已结束响应中的 `data:` 事件，长期未结束的事件流和通用 WebSocket 目前不在会话契约范围内。
+会话总时限默认为 30 秒，可在渠道绑定中设置为 1 至 360 秒；每轮最多执行 128 个动作。每个状态、响应和结果最多 256 KiB，每个 WebSocket 消息最多 128 KiB，请求 Header 最多 64 个，路径最多 2048 字节并必须以单个 `/` 开头。二进制帧使用标准 Base64。HTTP 会话步骤使用完整响应缓冲，适合短请求和轮询；长期事件流应使用 WebSocket 动作。最终结果只在 `complete` 后交给 Relay，不会把中间帧作为客户端输出。
+
+WebSocket 动作字段：
+
+| 动作 | 字段 | 宿主返回给 `session_step` 的事件 |
+| --- | --- | --- |
+| `web_socket_connect` | `endpoint_id`、`path`、可选 `headers` | `connected` |
+| `web_socket_send_text` | `text` | `sent`，包含帧类型和字节数 |
+| `web_socket_send_binary` | `data_base64` | `sent`，包含帧类型 |
+| `web_socket_receive` | `timeout_ms`，范围 1–30000 | `message`、`ping`、`pong`、`closed` 或 `timeout` |
+| `web_socket_close` | 无 | `closed` |
+
+连接失败会返回 `error` 事件和稳定错误码。握手成功前的网络错误会带 `retryable`，插件可在安全时切换到 HTTP；策略阻止会返回 `retryable: false`。发送或接收阶段的错误会带 `outcome_unknown: true`，表示上游可能已收到请求，插件不要直接重放生成请求，应先查询任务状态或依据已收事件完成结果。
+
+每一步完成后，插件都会收到该事件，再决定继续收发、改用 HTTP、等待或完成响应。二进制入站事件使用 `data_base64`；文本超出 JSON 字符串容量时也会带 `encoding: "base64"`。
 
 部署配置示例：
 
@@ -557,10 +572,45 @@ JSON Patch 支持 `add`、`replace`、`remove`，宿主会拒绝无效路径或�
     "models": ["capy-free-model"],
     "priority": 100,
     "sessionEnabled": true,
+    "sessionTimeoutMs": 60000,
+    "webSocketEndpoints": [
+      { "id": "capy-realtime", "url": "wss://realtime.example.invalid:8443" }
+    ],
     "upstreamResponseMode": "non_streaming"
   }
 }
 ```
+
+WebSocket 连接动作示例：
+
+```json
+{
+  "kind": "session",
+  "session_id": "thread-123",
+  "state": { "phase": "streaming" },
+  "action": {
+    "kind": "web_socket_connect",
+    "endpoint_id": "capy-realtime",
+    "path": "/v1/events?thread=thread-123",
+    "headers": { "x-client-version": "1" }
+  }
+}
+```
+
+收到事件后，`session_step.response` 的结构如下。文本内容通常放在 `data`；若 JSON 转义会让响应超过 256 KiB 上限，则宿主改用 `encoding: "base64"` 和 `data_base64`。二进制帧始终用 `data_base64`。Ping 会由宿主自动回复，插件只会收到事件类型；上游发送的 Pong 也会以事件类型报告。
+
+```json
+{
+  "kind": "websocket",
+  "event": {
+    "type": "message",
+    "frame_type": "text",
+    "data": "{\"type\":\"delta\",\"text\":\"hello\"}"
+  }
+}
+```
+
+插件可继续返回 `web_socket_receive` 读取下一帧，或返回 `web_socket_close` 关闭连接。上游输出结束后，插件应把事件整理为 Provider 的标准响应，再返回 `complete`。
 
 `session_step` 的返回示例：
 

@@ -168,6 +168,31 @@ class PluginSdkTests(unittest.TestCase):
         self.assertEqual(response["result"]["kind"], "provider")
         self.assertEqual(response["result"]["value"], session)
 
+    def test_provider_websocket_session_actions_are_bounded(self):
+        session = {
+            "kind": "session",
+            "session_id": "thread-1",
+            "state": {},
+            "action": {
+                "kind": "web_socket_send_binary",
+                "data_base64": "aGVsbG8=",
+            },
+        }
+        Plugin._validate_provider_result(session)
+        for data_base64 in ("%%%",):
+            invalid = copy.deepcopy(session)
+            invalid["action"]["data_base64"] = data_base64
+            with self.assertRaises(PluginError):
+                Plugin._validate_provider_result(invalid)
+
+        oversized = copy.deepcopy(session)
+        oversized["action"] = {
+            "kind": "web_socket_send_text",
+            "text": "x" * (128 * 1024 + 1),
+        }
+        with self.assertRaises(PluginError):
+            Plugin._validate_provider_result(oversized)
+
     def test_malformed_envelopes_and_non_json_numbers_close_the_stream(self):
         envelope = request({"operation": "health"})
         envelope["deploymentGeneration"] = True
