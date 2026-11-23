@@ -90,4 +90,5 @@ pub use af_domain::{ChannelType, ClientSimulationProfile, CredentialKind, Operat
 pub use af_httpclient::{
     Bytes, HeaderMap, HeaderName, HeaderValue, HttpClientConfig, HttpClientPool, HttpTimeouts,
     Method, PooledClient, PooledClientIdentity, ProxyConfig, RemoteDnsPolicy, StatusCode,
+    WebSocketConnection, WebSocketFrame, WebSocketTransportError,
 };

@@ -580,6 +580,21 @@ pub struct PluginProviderSelection {
     pub upstream_response_mode: PluginProviderUpstreamResponseMode,
     #[serde(default)]
     pub session_enabled: bool,
+    #[serde(default = "default_provider_session_timeout_ms")]
+    pub session_timeout_ms: u32,
+    #[serde(default, rename = "webSocketEndpoints", alias = "websocketEndpoints")]
+    pub websocket_endpoints: Vec<PluginProviderWebSocketEndpoint>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginProviderWebSocketEndpoint {
+    pub id: String,
+    pub url: String,
+}
+
+fn default_provider_session_timeout_ms() -> u32 {
+    30_000
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -594,12 +609,19 @@ pub enum PluginProviderUpstreamResponseMode {
 impl PluginProviderSelection {
     pub fn from_config(config: &Value) -> Option<Self> {
         let selection = config.get("providerSelection")?.as_object()?;
+        let websocket_endpoints = selection
+            .get("webSocketEndpoints")
+            .or_else(|| selection.get("websocketEndpoints"))
+            .cloned()
+            .unwrap_or_else(|| json!([]));
         serde_json::from_value(json!({
             "channelIds": selection.get("channelIds").cloned().unwrap_or_else(|| json!([])),
             "models": selection.get("models").cloned().unwrap_or_else(|| json!([])),
             "priority": selection.get("priority").cloned().unwrap_or_else(|| json!(0)),
             "upstreamResponseMode": selection.get("upstreamResponseMode").cloned().unwrap_or_else(|| json!("auto")),
-            "sessionEnabled": selection.get("sessionEnabled").cloned().unwrap_or(json!(false))
+            "sessionEnabled": selection.get("sessionEnabled").cloned().unwrap_or(json!(false)),
+            "sessionTimeoutMs": selection.get("sessionTimeoutMs").cloned().unwrap_or_else(|| json!(default_provider_session_timeout_ms())),
+            "webSocketEndpoints": websocket_endpoints
         }))
         .ok()
     }
@@ -622,6 +644,38 @@ impl PluginProviderSelection {
             })
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        if !(1_000..=360_000).contains(&self.session_timeout_ms)
+            || self.websocket_endpoints.len() > 16
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let mut endpoint_ids = std::collections::BTreeSet::new();
+        for endpoint in &self.websocket_endpoints {
+            if endpoint.id.is_empty()
+                || endpoint.id.len() > 64
+                || !endpoint.id.as_bytes()[0].is_ascii_lowercase()
+                || !endpoint.id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_.".contains(&byte)
+                })
+                || !endpoint_ids.insert(&endpoint.id)
+            {
+                return Err(AdminPluginLifecycleError::InvalidInput);
+            }
+            let url = url::Url::parse(&endpoint.url)
+                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+            if url.scheme() != "wss"
+                || url.host_str().is_none()
+                || url.username() != ""
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+                || !matches!(url.path(), "" | "/")
+                || url.port() == Some(0)
+                || matches!(url.host(), Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)))
+            {
+                return Err(AdminPluginLifecycleError::InvalidInput);
+            }
         }
         Ok(())
     }
@@ -3835,6 +3889,42 @@ mod tests {
         }))
         .unwrap();
         assert!(session_enabled.session_enabled);
+        assert_eq!(session_enabled.session_timeout_ms, 30_000);
+    }
+
+    #[test]
+    fn provider_websocket_endpoint_configuration_uses_the_public_field_name_and_wss_only() {
+        let selection = PluginProviderSelection::from_config(&json!({
+            "providerSelection": {
+                "channelIds": [12],
+                "sessionEnabled": true,
+                "sessionTimeoutMs": 60000,
+                "webSocketEndpoints": [
+                    { "id": "capy-realtime", "url": "wss://realtime.example.invalid" }
+                ]
+            }
+        }))
+        .unwrap();
+        assert_eq!(selection.session_timeout_ms, 60_000);
+        assert_eq!(selection.websocket_endpoints.len(), 1);
+        assert!(selection.validate().is_ok());
+        assert!(
+            serde_json::to_value(&selection)
+                .unwrap()
+                .get("webSocketEndpoints")
+                .is_some()
+        );
+
+        for url in [
+            "ws://realtime.example.invalid",
+            "wss://127.0.0.1",
+            "wss://user:secret@realtime.example.invalid",
+            "wss://realtime.example.invalid/path",
+        ] {
+            let mut invalid = selection.clone();
+            invalid.websocket_endpoints[0].url = url.to_owned();
+            assert!(invalid.validate().is_err());
+        }
     }
 
     fn capability(

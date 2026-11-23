@@ -191,6 +191,8 @@ struct ProviderTarget {
     models: Vec<String>,
     channels: Vec<i64>,
     session_enabled: bool,
+    session_timeout_ms: u32,
+    websocket_endpoints: std::collections::BTreeMap<String, String>,
 }
 
 /// Connects the versioned Provider adapter to the actual Relay candidate
@@ -302,6 +304,28 @@ impl DatabasePluginProviderRelayHook {
                         .and_then(|value| value.get("sessionEnabled"))
                         .and_then(Value::as_bool)
                         .unwrap_or(false);
+                    let session_timeout_ms = selection
+                        .and_then(|value| value.get("sessionTimeoutMs"))
+                        .and_then(Value::as_u64)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .filter(|value| (1_000..=360_000).contains(value))
+                        .unwrap_or(30_000);
+                    let websocket_endpoints = selection
+                        .and_then(|value| value.get("webSocketEndpoints"))
+                        .or_else(|| selection.and_then(|value| value.get("websocketEndpoints")))
+                        .and_then(Value::as_array)
+                        .map(|endpoints| {
+                            endpoints
+                                .iter()
+                                .filter_map(|endpoint| {
+                                    Some((
+                                        endpoint.get("id")?.as_str()?.to_owned(),
+                                        endpoint.get("url")?.as_str()?.to_owned(),
+                                    ))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     targets.push(ProviderTarget {
                         plugin_id: deployment.plugin_id.clone(),
                         generation: deployment.generation,
@@ -311,6 +335,8 @@ impl DatabasePluginProviderRelayHook {
                         models,
                         channels,
                         session_enabled,
+                        session_timeout_ms,
+                        websocket_endpoints,
                     });
                 }
             }
@@ -448,6 +474,8 @@ impl DatabasePluginProviderRelayHook {
                     state,
                     action: serde_json::to_value(action)
                         .map_err(|_| af_domain::UpstreamError::ProtocolError)?,
+                    timeout_ms: selected.session_timeout_ms,
+                    websocket_endpoints: selected.websocket_endpoints,
                 });
                 request.upstream_response_mode = af_adapter::ResponseMode::Full;
                 request.upstream_response_mode_overridden = false;
@@ -705,6 +733,8 @@ impl From<&ProviderRelayBinding> for ProviderTarget {
             models: vec![],
             channels: vec![],
             session_enabled: false,
+            session_timeout_ms: 30_000,
+            websocket_endpoints: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -718,10 +748,22 @@ fn target_matches(target: &ProviderTarget, request: &ProviderRelayRequest) -> bo
 }
 
 fn protected_provider_header(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
     matches!(
-        name.to_ascii_lowercase().as_str(),
-        "authorization" | "host" | "content-length" | "cookie" | "proxy-authorization"
-    )
+        name.as_str(),
+        "authorization"
+            | "host"
+            | "content-length"
+            | "cookie"
+            | "proxy-authorization"
+            | "connection"
+            | "keep-alive"
+            | "proxy-connection"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    ) || name.starts_with("sec-websocket-")
 }
 
 fn set_chat_stream_mode(

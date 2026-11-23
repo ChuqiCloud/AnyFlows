@@ -149,6 +149,16 @@ impl PooledClient {
         crate::websocket::connect(self, target, headers).await
     }
 
+    /// Establish a managed WebSocket connection with a lower per-message budget.
+    pub async fn connect_websocket_with_message_limit(
+        &self,
+        target: &str,
+        headers: HeaderMap,
+        max_message_bytes: usize,
+    ) -> Result<crate::WebSocketConnection, crate::WebSocketTransportError> {
+        crate::websocket::connect_with_message_limit(self, target, headers, max_message_bytes).await
+    }
+
     pub(crate) async fn execute_managed_request(
         &self,
         request: Request,

@@ -6,6 +6,8 @@ their handler side-effect free and never accept credentials through public_confi
 
 from __future__ import annotations
 
+import base64
+import binascii
 import copy
 import inspect
 import json
@@ -14,6 +16,9 @@ import sys
 import time
 from collections.abc import Callable
 from typing import Any, BinaryIO
+
+MAX_PROVIDER_SESSION_VALUE_BYTES = 256 * 1024
+MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES = 128 * 1024
 
 
 class PluginError(Exception):
@@ -638,24 +643,98 @@ class Plugin:
             if (
                 not isinstance(value.get("session_id"), str)
                 or not value["session_id"].strip()
+                or value["session_id"].strip() != value["session_id"]
+                or len(value["session_id"].encode("utf-8")) > 128
+                or any(ord(character) < 32 for character in value["session_id"])
                 or value.get("state") is None
                 or not isinstance(value.get("action"), dict)
+                or Plugin._json_size(value.get("state")) > MAX_PROVIDER_SESSION_VALUE_BYTES
             ):
                 raise PluginError("invalid_response")
             action = value["action"]
             action_kind = action.get("kind")
+            action_fields = {
+                "request": {"kind", "method", "path", "headers", "body", "stream"},
+                "web_socket_connect": {"kind", "endpoint_id", "path", "headers"},
+                "web_socket_send_text": {"kind", "text"},
+                "web_socket_send_binary": {"kind", "data_base64"},
+                "web_socket_receive": {"kind", "timeout_ms"},
+                "web_socket_close": {"kind"},
+                "wait": {"kind", "delay_ms"},
+                "complete": {"kind", "response"},
+                "abort": {"kind", "code"},
+            }
+            required_fields = {
+                "request": {"kind", "method", "path", "body"},
+                "web_socket_connect": {"kind", "endpoint_id", "path"},
+                "web_socket_send_text": {"kind", "text"},
+                "web_socket_send_binary": {"kind", "data_base64"},
+                "web_socket_receive": {"kind", "timeout_ms"},
+                "web_socket_close": {"kind"},
+                "wait": {"kind", "delay_ms"},
+                "complete": {"kind", "response"},
+                "abort": {"kind", "code"},
+            }
+            if (
+                not isinstance(action_kind, str)
+                or action_kind not in action_fields
+                or set(action) - action_fields[action_kind]
+                or not required_fields[action_kind].issubset(action)
+                or Plugin._json_size(action) > MAX_PROVIDER_SESSION_VALUE_BYTES
+            ):
+                raise PluginError("invalid_response")
             if action_kind == "request":
                 if (
                     not isinstance(action.get("method"), str)
+                    or action["method"] not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
                     or not isinstance(action.get("path"), str)
                     or not action["path"].startswith("/")
                     or action["path"].startswith("//")
+                    or len(action["path"].encode("utf-8")) > 2048
+                    or any(ord(char) < 32 or ord(char) == 127 or char in "#\\" for char in action["path"])
                     or action.get("body") is None
                     or action.get("stream", False) is not False
                     or not isinstance(action.get("headers", {}), dict)
                     or len(action.get("headers", {})) > 64
                 ):
                     raise PluginError("invalid_response")
+            elif action_kind == "web_socket_connect":
+                endpoint_id = action.get("endpoint_id")
+                path = action.get("path")
+                if (
+                    not isinstance(endpoint_id, str)
+                    or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", endpoint_id)
+                    or not isinstance(path, str)
+                    or not path.startswith("/")
+                    or path.startswith("//")
+                    or len(path.encode("utf-8")) > 2048
+                    or any(ord(char) < 32 or ord(char) == 127 or char in "#\\" for char in path)
+                    or not isinstance(action.get("headers", {}), dict)
+                    or len(action.get("headers", {})) > 64
+                ):
+                    raise PluginError("invalid_response")
+            elif action_kind == "web_socket_send_text":
+                text = action.get("text")
+                if (
+                    not isinstance(text, str)
+                    or len(text.encode("utf-8")) > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES
+                ):
+                    raise PluginError("invalid_response")
+            elif action_kind == "web_socket_send_binary":
+                encoded = action.get("data_base64")
+                if not isinstance(encoded, str) or len(encoded) > ((MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES + 2) // 3) * 4:
+                    raise PluginError("invalid_response")
+                try:
+                    decoded = base64.b64decode(encoded, validate=True)
+                except (binascii.Error, ValueError, TypeError):
+                    raise PluginError("invalid_response") from None
+                if len(decoded) > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES:
+                    raise PluginError("invalid_response")
+            elif action_kind == "web_socket_receive":
+                if type(action.get("timeout_ms")) is not int or not 1 <= action["timeout_ms"] <= 30_000:
+                    raise PluginError("invalid_response")
+            elif action_kind == "web_socket_close":
+                pass
             elif action_kind == "wait":
                 if type(action.get("delay_ms")) is not int or not 0 <= action["delay_ms"] <= 30_000:
                     raise PluginError("invalid_response")

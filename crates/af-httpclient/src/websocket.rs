@@ -22,8 +22,6 @@ pub const MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES: usize = 32 * 1_024 * 1_024;
 
 const MAX_MANAGED_WEBSOCKET_TARGET_BYTES: usize = 8_192;
 const WEBSOCKET_BUFFER_BYTES: usize = 16 * 1_024;
-const MAX_WEBSOCKET_WRITE_BUFFER_BYTES: usize =
-    MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES + 2 * WEBSOCKET_BUFFER_BYTES;
 
 /// 已完成协议解析且不携带敏感内容的 WebSocket 帧。
 #[derive(Clone, Eq, PartialEq)]
@@ -85,6 +83,8 @@ pub enum WebSocketTransportError {
     ReceiveTimeout,
     #[error("WebSocket 接收失败")]
     Receive,
+    #[error("WebSocket 消息超过本次连接上限")]
+    MessageTooLarge,
     #[error("WebSocket 连接已关闭")]
     Closed,
 }
@@ -138,21 +138,27 @@ impl WebSocketTransportError {
 pub struct WebSocketConnection {
     inner: Option<WebSocketStream<Upgraded>>,
     io_timeout: Duration,
+    max_message_bytes: usize,
 }
 
 impl WebSocketConnection {
-    fn new(inner: WebSocketStream<Upgraded>, io_timeout: Duration) -> Self {
+    fn new(
+        inner: WebSocketStream<Upgraded>,
+        io_timeout: Duration,
+        max_message_bytes: usize,
+    ) -> Self {
         Self {
             inner: Some(inner),
             io_timeout,
+            max_message_bytes,
         }
     }
 
     /// 发送一条 UTF-8 文本消息，并按全局读取超时限制写入停顿。
     pub async fn send_text(&mut self, payload: Bytes) -> Result<(), WebSocketTransportError> {
-        if payload.len() > MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES {
+        if payload.len() > self.max_message_bytes {
             self.inner = None;
-            return Err(WebSocketTransportError::Send);
+            return Err(WebSocketTransportError::MessageTooLarge);
         }
         let payload = Utf8Bytes::try_from(payload).map_err(|_| WebSocketTransportError::Send)?;
         let result = {
@@ -176,15 +182,62 @@ impl WebSocketConnection {
         }
     }
 
-    /// 接收下一条消息；正常 Close 或 EOF 返回 `None`，控制帧不会暴露载荷。
-    pub async fn receive(&mut self) -> Result<Option<WebSocketFrame>, WebSocketTransportError> {
+    /// Send one binary WebSocket message within the same bounded transport budget.
+    pub async fn send_binary(&mut self, payload: Bytes) -> Result<(), WebSocketTransportError> {
+        if payload.len() > self.max_message_bytes {
+            self.inner = None;
+            return Err(WebSocketTransportError::MessageTooLarge);
+        }
         let result = {
             let stream = self.inner.as_mut().ok_or(WebSocketTransportError::Closed)?;
-            timeout(self.io_timeout, stream.next()).await
+            timeout(self.io_timeout, stream.send(Message::Binary(payload))).await
+        };
+        match result {
+            Err(_) => {
+                self.inner = None;
+                Err(WebSocketTransportError::SendTimeout)
+            }
+            Ok(Err(error)) => {
+                self.inner = None;
+                Err(if is_closed_error(&error) {
+                    WebSocketTransportError::Closed
+                } else {
+                    WebSocketTransportError::Send
+                })
+            }
+            Ok(Ok(())) => Ok(()),
+        }
+    }
+
+    /// 接收下一条消息；正常 Close 或 EOF 返回 `None`，控制帧不会暴露载荷。
+    pub async fn receive(&mut self) -> Result<Option<WebSocketFrame>, WebSocketTransportError> {
+        self.receive_with_timeout_policy(self.io_timeout, true)
+            .await
+    }
+
+    /// Receive one message with a caller timeout while keeping an idle connection open.
+    pub async fn receive_with_timeout(
+        &mut self,
+        receive_timeout: Duration,
+    ) -> Result<Option<WebSocketFrame>, WebSocketTransportError> {
+        self.receive_with_timeout_policy(receive_timeout, false)
+            .await
+    }
+
+    async fn receive_with_timeout_policy(
+        &mut self,
+        receive_timeout: Duration,
+        close_on_timeout: bool,
+    ) -> Result<Option<WebSocketFrame>, WebSocketTransportError> {
+        let result = {
+            let stream = self.inner.as_mut().ok_or(WebSocketTransportError::Closed)?;
+            timeout(receive_timeout, stream.next()).await
         };
         let message = match result {
             Err(_) => {
-                self.inner = None;
+                if close_on_timeout {
+                    self.inner = None;
+                }
                 return Err(WebSocketTransportError::ReceiveTimeout);
             }
             Ok(None) => {
@@ -195,6 +248,10 @@ impl WebSocketConnection {
                 self.inner = None;
                 return Ok(None);
             }
+            Ok(Some(Err(TungsteniteError::Capacity(_)))) => {
+                self.inner = None;
+                return Err(WebSocketTransportError::MessageTooLarge);
+            }
             Ok(Some(Err(_))) => {
                 self.inner = None;
                 return Err(WebSocketTransportError::Receive);
@@ -203,8 +260,23 @@ impl WebSocketConnection {
         };
 
         match message {
-            Message::Text(text) => Ok(Some(WebSocketFrame::Text(text.into()))),
-            Message::Binary(bytes) => Ok(Some(WebSocketFrame::Binary(bytes))),
+            Message::Text(text) => {
+                let text: Bytes = text.into();
+                if text.len() > self.max_message_bytes {
+                    self.inner = None;
+                    Err(WebSocketTransportError::MessageTooLarge)
+                } else {
+                    Ok(Some(WebSocketFrame::Text(text)))
+                }
+            }
+            Message::Binary(bytes) => {
+                if bytes.len() > self.max_message_bytes {
+                    self.inner = None;
+                    Err(WebSocketTransportError::MessageTooLarge)
+                } else {
+                    Ok(Some(WebSocketFrame::Binary(bytes)))
+                }
+            }
             Message::Ping(_) => {
                 // Tungstenite 在读取 Ping 时自动排队 Pong；显式 flush 保证空闲读期间也会及时回写。
                 self.flush_control_reply().await?;
@@ -272,6 +344,7 @@ impl fmt::Debug for WebSocketConnection {
                 },
             )
             .field("io_timeout", &self.io_timeout)
+            .field("max_message_bytes", &self.max_message_bytes)
             .finish()
     }
 }
@@ -286,6 +359,18 @@ pub(crate) async fn connect(
     target: &str,
     headers: HeaderMap,
 ) -> Result<WebSocketConnection, WebSocketTransportError> {
+    connect_with_message_limit(client, target, headers, MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES).await
+}
+
+pub(crate) async fn connect_with_message_limit(
+    client: &PooledClient,
+    target: &str,
+    headers: HeaderMap,
+    max_message_bytes: usize,
+) -> Result<WebSocketConnection, WebSocketTransportError> {
+    if max_message_bytes == 0 || max_message_bytes > MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES {
+        return Err(WebSocketTransportError::InvalidRequestTarget);
+    }
     let prepared = prepare_handshake(target, headers)?;
     client
         .validate_target(prepared.request.url())
@@ -299,6 +384,7 @@ pub(crate) async fn connect(
         request_timeout,
         &prepared.expected_accept,
         client.read_timeout(),
+        max_message_bytes,
     )
     .await
 }
@@ -367,6 +453,7 @@ async fn finish_handshake(
     mut request_timeout: Pin<Box<Sleep>>,
     expected_accept: &str,
     io_timeout: Duration,
+    max_message_bytes: usize,
 ) -> Result<WebSocketConnection, WebSocketTransportError> {
     validate_handshake_response(&response, expected_accept)?;
     let upgraded = tokio::select! {
@@ -381,13 +468,17 @@ async fn finish_handshake(
             WebSocketConfig::default()
                 .read_buffer_size(WEBSOCKET_BUFFER_BYTES)
                 .write_buffer_size(WEBSOCKET_BUFFER_BYTES)
-                .max_write_buffer_size(MAX_WEBSOCKET_WRITE_BUFFER_BYTES)
-                .max_message_size(Some(MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES))
-                .max_frame_size(Some(MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES)),
+                .max_write_buffer_size(max_message_bytes + 2 * WEBSOCKET_BUFFER_BYTES)
+                .max_message_size(Some(max_message_bytes))
+                .max_frame_size(Some(max_message_bytes)),
         ),
     )
     .await;
-    Ok(WebSocketConnection::new(websocket, io_timeout))
+    Ok(WebSocketConnection::new(
+        websocket,
+        io_timeout,
+        max_message_bytes,
+    ))
 }
 
 fn validate_application_headers(headers: &HeaderMap) -> Result<(), WebSocketTransportError> {
@@ -532,6 +623,69 @@ mod tests {
             Some(WebSocketFrame::Pong)
         );
         assert_eq!(connection.receive().await.unwrap(), None);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn per_connection_message_budget_rejects_oversized_frames() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(stream).await.unwrap();
+            let _ = websocket
+                .send(Message::Binary(Bytes::from_static(b"12345")))
+                .await;
+        });
+
+        let mut connection = loopback_client(ProxyConfig::direct())
+            .connect_websocket_with_message_limit(
+                &format!("ws://{address}/bounded"),
+                HeaderMap::new(),
+                4,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            connection.receive().await.unwrap_err(),
+            WebSocketTransportError::MessageTooLarge
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn per_action_receive_timeout_keeps_the_connection_available() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(stream).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            websocket
+                .send(Message::Text(Utf8Bytes::from("after-timeout")))
+                .await
+                .unwrap();
+            websocket.close(None).await.unwrap();
+        });
+
+        let mut connection = loopback_client(ProxyConfig::direct())
+            .connect_websocket(&format!("ws://{address}/receive-timeout"), HeaderMap::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            connection
+                .receive_with_timeout(Duration::from_millis(5))
+                .await
+                .unwrap_err(),
+            WebSocketTransportError::ReceiveTimeout
+        );
+        assert_eq!(
+            connection
+                .receive_with_timeout(Duration::from_secs(1))
+                .await
+                .unwrap(),
+            Some(WebSocketFrame::Text(Bytes::from_static(b"after-timeout")))
+        );
         server.await.unwrap();
     }
 

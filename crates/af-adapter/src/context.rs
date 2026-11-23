@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_domain::Protocol;
-use af_httpclient::PooledClient;
+use af_httpclient::{HeaderMap, PooledClient, WebSocketConnection, WebSocketTransportError};
 use url::Url;
 
 use crate::{AdaptorError, AdaptorResult, MAX_UPSTREAM_REQUEST_TARGET_BYTES};
@@ -135,6 +135,18 @@ impl RelayContext {
     #[must_use]
     pub const fn http_client(&self) -> &PooledClient {
         &self.http_client
+    }
+
+    /// Open a WebSocket using the same managed proxy, DNS, SSRF, TLS, and timeout policies.
+    pub async fn connect_websocket(
+        &self,
+        target: &str,
+        headers: HeaderMap,
+        max_message_bytes: usize,
+    ) -> Result<WebSocketConnection, WebSocketTransportError> {
+        self.http_client
+            .connect_websocket_with_message_limit(target, headers, max_message_bytes)
+            .await
     }
 
     /// 返回渠道配置提供的基础地址覆盖。

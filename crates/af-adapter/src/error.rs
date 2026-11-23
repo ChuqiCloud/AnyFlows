@@ -1,5 +1,5 @@
 use af_domain::{ChannelType, CredentialKind, Operation};
-use af_httpclient::HttpTransportError;
+use af_httpclient::{HttpTransportError, WebSocketTransportError};
 use thiserror::Error;
 
 /// 与具体传输实现无关的安全传输错误分类。
@@ -55,6 +55,30 @@ impl From<HttpTransportError> for AdaptorTransportError {
             HttpTransportError::Connect => Self::Connect,
             HttpTransportError::Request => Self::Request,
             HttpTransportError::ResponseBody => Self::ResponseBody,
+            _ => Self::Request,
+        }
+    }
+}
+
+impl From<WebSocketTransportError> for AdaptorTransportError {
+    fn from(error: WebSocketTransportError) -> Self {
+        match error {
+            WebSocketTransportError::InvalidRequestTarget => Self::InvalidRequestTarget,
+            WebSocketTransportError::TargetAddressBlocked => Self::TargetAddressBlocked,
+            WebSocketTransportError::RemoteDnsDenied => Self::RemoteDnsDenied,
+            WebSocketTransportError::TargetResolution => Self::TargetResolution,
+            WebSocketTransportError::ConnectTimeout => Self::ConnectTimeout,
+            WebSocketTransportError::Connect => Self::Connect,
+            WebSocketTransportError::HandshakeTimeout | WebSocketTransportError::ReceiveTimeout => {
+                Self::ReadTimeout
+            }
+            WebSocketTransportError::SendTimeout => Self::RequestTimeout,
+            WebSocketTransportError::InvalidHandshakeHeader
+            | WebSocketTransportError::Handshake
+            | WebSocketTransportError::Send => Self::Request,
+            WebSocketTransportError::Receive
+            | WebSocketTransportError::MessageTooLarge
+            | WebSocketTransportError::Closed => Self::ResponseBody,
             _ => Self::Request,
         }
     }

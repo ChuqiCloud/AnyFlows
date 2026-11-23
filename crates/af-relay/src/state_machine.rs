@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt,
     future::Future,
     num::NonZeroUsize,
@@ -577,6 +577,8 @@ pub struct ProviderRelaySession {
     pub state: Value,
     /// Contract-validated action; Relay itself does not interpret the plugin protocol.
     pub action: Value,
+    pub timeout_ms: u32,
+    pub websocket_endpoints: BTreeMap<String, String>,
 }
 
 /// Frozen host context used for every step of a Provider session.
@@ -629,6 +631,18 @@ impl ProviderRelaySessionContext<'_> {
             .send_with_report(request, self.context)
             .await
             .map_err(map_adaptor_error)
+    }
+
+    /// Open a bounded provider WebSocket through the candidate's managed transport context.
+    pub async fn connect_websocket(
+        &self,
+        target: &str,
+        headers: HeaderMap,
+        max_message_bytes: usize,
+    ) -> Result<af_adapter::WebSocketConnection, af_adapter::WebSocketTransportError> {
+        self.context
+            .connect_websocket(target, headers, max_message_bytes)
+            .await
     }
 }
 

@@ -458,7 +458,7 @@ pub use plugin_lifecycle::{
     MAX_PLUGIN_PACKAGE_UPLOAD_BYTES, PluginArtifactRegistrationCommand, PluginDeploymentCommand,
     PluginEventDeliveryWorker, PluginMarketInstallRequest, PluginMarketInstallSource,
     PluginNativeTaskProtocol, PluginPackageUpload, PluginProviderSelection,
-    PluginProviderUpstreamResponseMode,
+    PluginProviderUpstreamResponseMode, PluginProviderWebSocketEndpoint,
 };
 pub use plugin_operations::{
     AdminPluginArtifactCleanup, AdminPluginRuntimeNode, AdminPluginRuntimeOverview,

@@ -7,6 +7,8 @@ use serde_json::Value;
 pub const PROVIDER_LIFECYCLE_CAPABILITY: &str = "provider.lifecycle";
 /// Maximum JSON payload carried by one provider session request, state, or response.
 pub const MAX_PROVIDER_SESSION_VALUE_BYTES: usize = 256 * 1024;
+/// Maximum WebSocket message size exposed to a Provider plugin session.
+pub const MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES: usize = 128 * 1024;
 
 /// Provider lifecycle operations that a plugin may implement. The host still
 /// owns credentials, the upstream host, network I/O, billing and public IDs.
@@ -106,6 +108,22 @@ pub enum PluginProviderSessionAction {
         #[serde(default)]
         stream: bool,
     },
+    WebSocketConnect {
+        endpoint_id: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        headers: BTreeMap<String, String>,
+    },
+    WebSocketSendText {
+        text: String,
+    },
+    WebSocketSendBinary {
+        data_base64: String,
+    },
+    WebSocketReceive {
+        timeout_ms: u32,
+    },
+    WebSocketClose,
     Wait {
         delay_ms: u32,
     },
@@ -303,6 +321,33 @@ impl PluginProviderSessionAction {
                     return Err(ProviderContractError::InvalidDelay);
                 }
             }
+            Self::WebSocketConnect {
+                endpoint_id,
+                path,
+                headers,
+            } => {
+                validate_endpoint_id(endpoint_id)?;
+                validate_provider_path(path)?;
+                validate_session_headers(headers)?;
+            }
+            Self::WebSocketSendText { text } => {
+                if text.len() > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES {
+                    return Err(ProviderContractError::InvalidPayload);
+                }
+            }
+            Self::WebSocketSendBinary { data_base64 } => {
+                if data_base64.len() > MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES.div_ceil(3) * 4
+                    || !validate_provider_base64(data_base64)
+                {
+                    return Err(ProviderContractError::InvalidPayload);
+                }
+            }
+            Self::WebSocketReceive { timeout_ms } => {
+                if *timeout_ms == 0 || *timeout_ms > 30_000 {
+                    return Err(ProviderContractError::InvalidDelay);
+                }
+            }
+            Self::WebSocketClose => {}
             Self::Complete { response } => validate_session_value(response)?,
             Self::Abort { code } => validate_text(code, 128, ProviderContractError::InvalidReason)?,
         }
@@ -312,6 +357,72 @@ impl PluginProviderSessionAction {
 
 fn validate_session_text(value: &str) -> Result<(), ProviderContractError> {
     validate_text(value, 128, ProviderContractError::InvalidReason)
+}
+
+fn validate_endpoint_id(value: &str) -> Result<(), ProviderContractError> {
+    if value.is_empty()
+        || value.len() > 64
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_.".contains(&byte)
+        })
+        || !value.as_bytes()[0].is_ascii_lowercase()
+    {
+        Err(ProviderContractError::InvalidReason)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_provider_base64(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if !bytes.is_ascii() || !bytes.len().is_multiple_of(4) {
+        return false;
+    }
+    if bytes.is_empty() {
+        return true;
+    }
+
+    let padding = if bytes.ends_with(b"==") {
+        2
+    } else if bytes.ends_with(b"=") {
+        1
+    } else {
+        0
+    };
+    let data_len = bytes.len() - padding;
+    if !bytes[..data_len]
+        .iter()
+        .all(|byte| base64_value(*byte).is_some())
+        || (padding == 1 && data_len % 4 != 3)
+        || (padding == 2 && data_len % 4 != 2)
+        || (padding == 0 && !data_len.is_multiple_of(4))
+    {
+        return false;
+    }
+
+    if padding > 0 {
+        let Some(last_value) = base64_value(bytes[data_len - 1]) else {
+            return false;
+        };
+        let unused_bits = if padding == 1 { 2 } else { 4 };
+        if last_value & ((1 << unused_bits) - 1) != 0 {
+            return false;
+        }
+    }
+
+    let decoded_len = (bytes.len() / 4) * 3 - padding;
+    decoded_len <= MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES
+}
+
+const fn base64_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
 }
 
 fn validate_session_value(value: &Value) -> Result<(), ProviderContractError> {
@@ -525,6 +636,77 @@ mod tests {
         assert_eq!(
             result.validate(),
             Err(ProviderContractError::InvalidPayload)
+        );
+    }
+
+    #[test]
+    fn provider_websocket_actions_are_bounded_and_use_named_endpoints() {
+        assert!(
+            PluginProviderSessionAction::WebSocketConnect {
+                endpoint_id: "capy-realtime".to_owned(),
+                path: "/realtime".to_owned(),
+                headers: BTreeMap::new(),
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketConnect {
+                endpoint_id: "../private".to_owned(),
+                path: "/realtime".to_owned(),
+                headers: BTreeMap::new(),
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketReceive { timeout_ms: 30_001 }
+                .validate()
+                .is_err()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketSendText {
+                text: "hello".to_owned()
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketSendBinary {
+                data_base64: "aGVsbG8=".to_owned()
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketSendBinary {
+                data_base64: "%%%".to_owned()
+            }
+            .validate()
+            .is_err()
+        );
+        for invalid_base64 in ["a===", "YR==", "YWJ="] {
+            assert!(
+                PluginProviderSessionAction::WebSocketSendBinary {
+                    data_base64: invalid_base64.to_owned()
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(
+            PluginProviderSessionAction::WebSocketSendBinary {
+                data_base64: "YWJj".to_owned()
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            PluginProviderSessionAction::WebSocketSendText {
+                text: "x".repeat(MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES + 1)
+            }
+            .validate()
+            .is_err()
         );
     }
 }

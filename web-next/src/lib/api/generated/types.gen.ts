@@ -3028,12 +3028,18 @@ export type PluginProviderSelectionBody = {
     priority: number;
     upstreamResponseMode?: PluginProviderUpstreamResponseModeBody;
     sessionEnabled?: boolean;
+    sessionTimeoutMs?: number;
+    webSocketEndpoints?: Array<PluginProviderWebSocketEndpointBody>;
 };
 export type PluginProviderSelectionRequest = {
     expected_generation: number;
     selection: PluginProviderSelectionBody;
 };
 export type PluginProviderUpstreamResponseModeBody = 'auto' | 'non_streaming' | 'streaming';
+export type PluginProviderWebSocketEndpointBody = {
+    id: string;
+    url: string;
+};
 export type PluginRouteInvocationResponse = {
     pluginId: string;
     routeId: string;
