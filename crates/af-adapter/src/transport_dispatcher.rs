@@ -89,7 +89,8 @@ pub struct TransportDispatchOutcome {
 }
 
 impl TransportDispatchOutcome {
-    fn direct(response: UpstreamResponse) -> Self {
+    #[must_use]
+    pub fn direct(response: UpstreamResponse) -> Self {
         Self {
             response,
             fallback: None,

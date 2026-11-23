@@ -619,7 +619,7 @@ class Plugin:
 
     @staticmethod
     def _validate_provider_result(value: Any) -> None:
-        if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code"}:
+        if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code", "session_id", "state", "action"}:
             raise PluginError("invalid_response")
         kind = value.get("kind")
         if kind == "models":
@@ -633,6 +633,39 @@ class Plugin:
             if not isinstance(value.get("method"), str) or not isinstance(value.get("path"), str) or not value["path"].startswith("/") or value.get("body") is None:
                 raise PluginError("invalid_response")
             if not isinstance(value.get("headers", {}), dict) or len(value.get("headers", {})) > 64:
+                raise PluginError("invalid_response")
+        elif kind == "session":
+            if (
+                not isinstance(value.get("session_id"), str)
+                or not value["session_id"].strip()
+                or value.get("state") is None
+                or not isinstance(value.get("action"), dict)
+            ):
+                raise PluginError("invalid_response")
+            action = value["action"]
+            action_kind = action.get("kind")
+            if action_kind == "request":
+                if (
+                    not isinstance(action.get("method"), str)
+                    or not isinstance(action.get("path"), str)
+                    or not action["path"].startswith("/")
+                    or action["path"].startswith("//")
+                    or action.get("body") is None
+                    or action.get("stream", False) is not False
+                    or not isinstance(action.get("headers", {}), dict)
+                    or len(action.get("headers", {})) > 64
+                ):
+                    raise PluginError("invalid_response")
+            elif action_kind == "wait":
+                if type(action.get("delay_ms")) is not int or not 0 <= action["delay_ms"] <= 30_000:
+                    raise PluginError("invalid_response")
+            elif action_kind == "complete":
+                if action.get("response") is None:
+                    raise PluginError("invalid_response")
+            elif action_kind == "abort":
+                if not isinstance(action.get("code"), str) or not action["code"].strip():
+                    raise PluginError("invalid_response")
+            else:
                 raise PluginError("invalid_response")
         elif kind == "response":
             if value.get("response") is None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a local plugin through the contract v1 handshake and one capability call."""
+"""Run a local plugin through the contract v1 handshake and one operation."""
 
 from __future__ import annotations
 
@@ -105,11 +105,16 @@ async def run(args: argparse.Namespace) -> int:
     capabilities = manifest.get("capabilities")
     if not isinstance(capabilities, list):
         raise RuntimeError("Manifest 缺少 capabilities")
+    capability_id = args.capability or "provider.lifecycle"
     declaration = next(
-        (item for item in capabilities if item.get("id") == args.capability), None
+        (item for item in capabilities if item.get("id") == capability_id), None
     )
     if not isinstance(declaration, dict):
-        raise RuntimeError(f"Manifest 中没有 capability：{args.capability}")
+        raise RuntimeError(f"Manifest 中没有 capability：{capability_id}")
+    if args.provider_operation is None and args.input is None:
+        raise RuntimeError("请提供 --input，或使用 --provider-operation 测试 Provider 生命周期操作")
+    if args.provider_operation is not None and args.input is not None:
+        raise RuntimeError("--provider-operation 与 --input 不能同时使用")
 
     entry = (root / args.entry).resolve()
     if not entry.is_file():
@@ -128,6 +133,7 @@ async def run(args: argparse.Namespace) -> int:
         stderr=asyncio.subprocess.PIPE,
     )
     input_value = read_json(args.input, {})
+    provider_value = read_json(args.provider_operation)
     config = read_json(args.config, {})
     proxy_payload = read_json(args.proxy_response)
     try:
@@ -143,30 +149,39 @@ async def run(args: argparse.Namespace) -> int:
         if health_response.get("result", {}).get("kind") != "health":
             raise RuntimeError(f"health 握手失败：{json.dumps(health_response, ensure_ascii=False)}")
 
+        if args.provider_operation is not None:
+            if not isinstance(provider_value, dict) or not isinstance(provider_value.get("kind"), str):
+                raise RuntimeError("Provider 操作文件必须是带 kind 的 JSON 对象")
+            operation = {
+                "operation": "invoke_provider",
+                "connectionId": args.connection_id,
+                "publicConfig": config,
+                "capabilityId": capability_id,
+                "capabilityVersion": declaration["version"],
+                "provider": provider_value,
+            }
+            expected_result_kind = "provider"
+        else:
+            operation = {
+                "operation": "invoke_capability",
+                "connectionId": args.connection_id,
+                "publicConfig": config,
+                "capabilityId": capability_id,
+                "capabilityVersion": declaration["version"],
+                "input": input_value,
+            }
+            expected_result_kind = "capability"
         capability_response = await exchange(
-            process,
-            envelope(
-                manifest,
-                {
-                    "operation": "invoke_capability",
-                    "connectionId": args.connection_id,
-                    "publicConfig": config,
-                    "capabilityId": args.capability,
-                    "capabilityVersion": declaration["version"],
-                    "input": input_value,
-                },
-                args.request_id,
-            ),
-            proxy_payload,
+            process, envelope(manifest, operation, args.request_id), proxy_payload
         )
         result = capability_response.get("result")
-        if not isinstance(result, dict) or result.get("kind") not in {"capability", "error"}:
+        if not isinstance(result, dict) or result.get("kind") not in {expected_result_kind, "error"}:
             raise RuntimeError(f"能力调用返回格式错误：{json.dumps(capability_response, ensure_ascii=False)}")
         if result["kind"] == "error" and not args.allow_error:
             raise RuntimeError(f"插件返回业务错误：{json.dumps(result, ensure_ascii=False)}")
         if args.expect:
             expected = read_json(args.expect)
-            actual = result.get("value", {}).get("output")
+            actual = result.get("value", {}).get("output") if expected_result_kind == "capability" else result.get("value")
             if actual != expected:
                 raise RuntimeError(
                     "能力输出与期望文件不一致：\n"
@@ -194,8 +209,9 @@ def main() -> int:
     parser.add_argument("--root", type=Path, required=True, help="插件目录")
     parser.add_argument("--manifest", type=Path, required=True, help="Manifest JSON 文件")
     parser.add_argument("--entry", default="plugin.py", help="相对插件目录的入口文件")
-    parser.add_argument("--capability", required=True, help="要测试的 capability ID")
-    parser.add_argument("--input", type=Path, required=True, help="能力输入 JSON 文件")
+    parser.add_argument("--capability", help="要测试的 capability ID；Provider 测试默认 provider.lifecycle")
+    parser.add_argument("--input", type=Path, help="能力输入 JSON 文件")
+    parser.add_argument("--provider-operation", type=Path, help="Provider 操作 JSON 文件，如 session_start 或 session_step")
     parser.add_argument("--config", type=Path, help="publicConfig JSON 文件，默认 {}")
     parser.add_argument("--expect", type=Path, help="期望的能力输出 JSON 文件")
     parser.add_argument("--proxy-response", type=Path, help="宿主回调返回的 JSON 投影")

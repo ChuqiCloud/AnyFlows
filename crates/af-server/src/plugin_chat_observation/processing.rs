@@ -179,7 +179,11 @@ impl DatabasePluginProviderRelayHook {
             let Ok(body) = serde_json::from_slice(bytes) else {
                 return Ok(response);
             };
-            let body = self.provider_value(request, status.as_u16(), body).await?;
+            let body = if request.session.is_some() {
+                body
+            } else {
+                self.provider_value(request, status.as_u16(), body).await?
+            };
             let body = self
                 .process_stage(
                     request,

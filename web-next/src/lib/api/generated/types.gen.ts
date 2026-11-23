@@ -3027,6 +3027,7 @@ export type PluginProviderSelectionBody = {
     models: Array<string>;
     priority: number;
     upstreamResponseMode?: PluginProviderUpstreamResponseModeBody;
+    sessionEnabled?: boolean;
 };
 export type PluginProviderSelectionRequest = {
     expected_generation: number;
