@@ -51,7 +51,7 @@ use crate::{
 
 pub const DEFAULT_PLUGIN_CATALOG_PAGE_SIZE: u32 = 50;
 const PLUGIN_PERMISSION: PlatformPermission = PlatformPermission::PluginsManage;
-const PLUGIN_SETUP_PENDING_FIELD: &str = "pluginSetupPending";
+pub(crate) const PLUGIN_SETUP_PENDING_FIELD: &str = "pluginSetupPending";
 const PLUGIN_EVENT_CALL_BUDGET: Duration = Duration::from_secs(5);
 const PLUGIN_CUSTOM_CAPABILITY_CALL_BUDGET: Duration = Duration::from_secs(30);
 const PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES: u32 = 1024 * 1024;
@@ -85,6 +85,43 @@ fn plugin_public_configuration(configuration: &Value, schema: &Value) -> Value {
         }
     }
     public
+}
+
+fn prepare_install_configuration(
+    schema: &Value,
+    provided: Option<Value>,
+    existing: Option<Value>,
+) -> Result<(Value, bool), AdminPluginLifecycleError> {
+    let explicit = provided.is_some();
+    let mut config = provided.or(existing).unwrap_or_else(|| json!({}));
+    config
+        .as_object_mut()
+        .ok_or(AdminPluginLifecycleError::InvalidInput)?
+        .remove(PLUGIN_SETUP_PENDING_FIELD);
+    if !plugin_configuration_contains_sensitive_fields(&config)
+        && validate_public_plugin_configuration(
+            schema,
+            &plugin_public_configuration(&config, schema),
+        )
+        .is_ok()
+    {
+        return Ok((config, false));
+    }
+    if explicit {
+        return Err(AdminPluginLifecycleError::InvalidInput);
+    }
+
+    // Incompatible settings stay in the previous revision for rollback. Keep
+    // only host-owned settings so the new form starts from its own schema.
+    let mut pending = json!({ (PLUGIN_SETUP_PENDING_FIELD): true });
+    for key in ["providerSelection", "taskPricing"] {
+        if schema["properties"].get(key).is_none()
+            && let Some(value) = config.get(key)
+        {
+            pending[key] = value.clone();
+        }
+    }
+    Ok((pending, true))
 }
 
 fn plugin_configuration_contains_sensitive_fields(value: &Value) -> bool {
@@ -984,7 +1021,7 @@ pub struct PluginDeploymentCommand {
     expected_generation: Option<i64>,
     enabled: bool,
     granted_capabilities: Vec<AdminPluginCapabilityGrant>,
-    config: Value,
+    config: Option<Value>,
 }
 
 /// Administrator supplied artifact locator and optional publisher signature.
@@ -1086,8 +1123,9 @@ impl PluginDeploymentCommand {
         expected_generation: Option<i64>,
         enabled: bool,
         granted_capabilities: Vec<AdminPluginCapabilityGrant>,
-        config: Value,
+        config: impl Into<Option<Value>>,
     ) -> Result<Self, AdminPluginLifecycleError> {
+        let config = config.into();
         if plugin_id.is_empty()
             || plugin_id.len() > 128
             || artifact_digest.len() != 64
@@ -1095,7 +1133,7 @@ impl PluginDeploymentCommand {
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
             || expected_generation.is_some_and(|generation| generation <= 0)
-            || !config.is_object()
+            || config.as_ref().is_some_and(|value| !value.is_object())
             || granted_capabilities.len() > af_db::MAX_PLUGIN_CAPABILITIES
             || (enabled && granted_capabilities.is_empty())
         {
@@ -2453,38 +2491,12 @@ impl DatabaseAdminPluginLifecycleService {
         {
             return Err(AdminPluginLifecycleError::Conflict);
         }
-        let configuration_was_provided = config.is_some();
-        let existing_config = current.as_ref().map(|row| row.config.clone());
-        let config = config.unwrap_or_else(|| existing_config.clone().unwrap_or_else(|| json!({})));
         manifest
             .validate()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        let configuration_is_valid = validate_public_plugin_configuration(
-            &manifest.config_schema,
-            &plugin_public_configuration(&config, &manifest.config_schema),
-        )
-        .is_ok();
-        let may_defer_configuration = current.as_ref().is_none_or(|row| {
-            row.config
-                .get(PLUGIN_SETUP_PENDING_FIELD)
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        });
-        let install_unconfigured =
-            !configuration_was_provided && may_defer_configuration && !configuration_is_valid;
-        if !configuration_is_valid && !install_unconfigured {
-            return Err(AdminPluginLifecycleError::InvalidInput);
+        if let Some(config) = &config {
+            prepare_install_configuration(&manifest.config_schema, Some(config.clone()), None)?;
         }
-        let config = if install_unconfigured {
-            let mut pending = existing_config.unwrap_or_else(|| json!({}));
-            let fields = pending
-                .as_object_mut()
-                .ok_or(AdminPluginLifecycleError::InvalidInput)?;
-            fields.insert(PLUGIN_SETUP_PENDING_FIELD.to_owned(), json!(true));
-            pending
-        } else {
-            config
-        };
         let capability_count = manifest.capabilities.len();
         let grants = manifest
             .capabilities
@@ -2591,7 +2603,7 @@ impl DatabaseAdminPluginLifecycleService {
             artifact.plugin_id().to_owned(),
             artifact.digest().to_owned(),
             deployment_expected_generation,
-            !install_unconfigured,
+            true,
             grants,
             config,
         )?;
@@ -3525,79 +3537,48 @@ impl DatabaseAdminPluginLifecycleService {
             Some(&plugin_id),
         )
         .await?;
-        let config_validation = async {
-            if !command.enabled {
-                return Ok(());
+        let result = async {
+            let (enabled, config) = self.deployment_settings(&command).await?;
+            if enabled && self.sidecar_runtime.is_none() {
+                return Err(AdminPluginLifecycleError::RuntimeUnavailable);
             }
-            if plugin_configuration_contains_sensitive_fields(&command.config) {
-                return Err(AdminPluginLifecycleError::InvalidInput);
-            }
-            let artifact = self
+            let record = self
                 .repository
-                .get_artifact_by_digest(&command.plugin_id, &command.artifact_digest)
+                .deploy(PluginDeploymentWrite {
+                    plugin_id: command.plugin_id.clone(),
+                    artifact_digest: command.artifact_digest.clone(),
+                    expected_generation: command.expected_generation,
+                    enabled,
+                    granted_capabilities: command
+                        .granted_capabilities
+                        .iter()
+                        .map(|grant| PluginCapabilityGrant {
+                            id: grant.id.clone(),
+                            version: grant.version,
+                        })
+                        .collect(),
+                    config,
+                    updated_by: principal.user_id(),
+                    updated_at: current_timestamp()?,
+                    request_id: request_id.to_owned(),
+                })
                 .await
-                .map_err(map_catalog_error)?
-                .ok_or(AdminPluginLifecycleError::NotFound)?;
-            let manifest: PluginManifest = serde_json::from_value(artifact.manifest)
-                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-            manifest
-                .validate()
-                .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-            validate_public_plugin_configuration(
-                &manifest.config_schema,
-                &plugin_public_configuration(&command.config, &manifest.config_schema),
-            )
-            .map_err(|_| AdminPluginLifecycleError::InvalidInput)
+                .map_err(map_catalog_error)?;
+            if let Err(error) = self.apply_runtime(&record).await {
+                if record.enabled {
+                    self.disable_after_activation_failure(&record, principal, request_id)
+                        .await;
+                }
+                return Err(error);
+            }
+            Ok(self.deployment_view(record))
         }
         .await;
-        let result = if command.enabled && self.sidecar_runtime.is_none() {
-            Err(AdminPluginLifecycleError::RuntimeUnavailable)
-        } else if let Err(error) = config_validation {
-            Err(error)
-        } else {
-            match current_timestamp() {
-                Ok(updated_at) => match self
-                    .repository
-                    .deploy(PluginDeploymentWrite {
-                        plugin_id: command.plugin_id.clone(),
-                        artifact_digest: command.artifact_digest.clone(),
-                        expected_generation: command.expected_generation,
-                        enabled: command.enabled,
-                        granted_capabilities: command
-                            .granted_capabilities
-                            .iter()
-                            .map(|grant| PluginCapabilityGrant {
-                                id: grant.id.clone(),
-                                version: grant.version,
-                            })
-                            .collect(),
-                        config: command.config.clone(),
-                        updated_by: principal.user_id(),
-                        updated_at,
-                        request_id: request_id.to_owned(),
-                    })
-                    .await
-                    .map_err(map_catalog_error)
-                {
-                    Ok(record) => match self.apply_runtime(&record).await {
-                        Ok(()) => Ok(self.deployment_view(record)),
-                        Err(error) => {
-                            if record.enabled {
-                                self.disable_after_activation_failure(
-                                    &record, principal, request_id,
-                                )
-                                .await;
-                            }
-                            Err(error)
-                        }
-                    },
-                    Err(error) => Err(error),
-                },
-                Err(error) => Err(error),
-            }
-        };
+        let enabled = result
+            .as_ref()
+            .map_or(command.enabled, AdminPluginDeployment::enabled);
         self.finish_mutation(principal, request_id, "/admin/plugins/{pluginId}/deployment", "deploy", "plugin_deployment", Some(plugin_id), None,
-            Some(json!({ "artifactDigest": command.artifact_digest, "enabled": command.enabled, "generation": command.expected_generation })), result).await
+            Some(json!({ "artifactDigest": command.artifact_digest, "enabled": enabled, "generation": command.expected_generation })), result).await
     }
 
     pub async fn disable(
@@ -3813,6 +3794,54 @@ impl DatabaseAdminPluginLifecycleService {
             );
         }
         result
+    }
+
+    async fn deployment_settings(
+        &self,
+        command: &PluginDeploymentCommand,
+    ) -> Result<(bool, Value), AdminPluginLifecycleError> {
+        let existing = if command.config.is_none() {
+            let deployment = self
+                .repository
+                .get_deployment(&command.plugin_id)
+                .await
+                .map_err(map_catalog_error)?;
+            if deployment.as_ref().map(|row| row.generation) != command.expected_generation {
+                return Err(AdminPluginLifecycleError::Conflict);
+            }
+            deployment.map(|row| row.config)
+        } else {
+            None
+        };
+        if !command.enabled {
+            let mut config = command
+                .config
+                .clone()
+                .or(existing)
+                .unwrap_or_else(|| json!({}));
+            if let Some(fields) = config.as_object_mut() {
+                fields.remove(PLUGIN_SETUP_PENDING_FIELD);
+            }
+            return Ok((false, config));
+        }
+
+        let artifact = self
+            .repository
+            .get_artifact_by_digest(&command.plugin_id, &command.artifact_digest)
+            .await
+            .map_err(map_catalog_error)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        let manifest: PluginManifest = serde_json::from_value(artifact.manifest)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        manifest
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        let (config, needs_configuration) = prepare_install_configuration(
+            &manifest.config_schema,
+            command.config.clone(),
+            existing,
+        )?;
+        Ok((!needs_configuration, config))
     }
 }
 
@@ -4115,6 +4144,38 @@ fn map_audit_error(error: PlatformAuditError) -> AdminPluginLifecycleError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn install_without_configuration_reuses_compatible_settings_or_waits_for_setup() {
+        let schema = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label"],
+            "properties": {"label": {"type": "string"}}
+        });
+        let previous = json!({
+            "label": "Catalog",
+            "providerSelection": {"channelIds": [12]}
+        });
+        assert_eq!(
+            prepare_install_configuration(&schema, None, Some(previous.clone())).unwrap(),
+            (previous, false)
+        );
+        let obsolete = json!({
+            "oldName": "Catalog",
+            "providerSelection": {"channelIds": [12]}
+        });
+        let (pending, needs_configuration) =
+            prepare_install_configuration(&schema, None, Some(obsolete.clone())).unwrap();
+        assert!(needs_configuration);
+        assert_eq!(pending[PLUGIN_SETUP_PENDING_FIELD], json!(true));
+        assert_eq!(pending["providerSelection"], obsolete["providerSelection"]);
+        assert_eq!(plugin_public_configuration(&pending, &schema), json!({}));
+        assert!(matches!(
+            prepare_install_configuration(&schema, Some(obsolete), None),
+            Err(AdminPluginLifecycleError::InvalidInput)
+        ));
+    }
 
     #[test]
     fn public_plugin_configuration_hides_host_fields_and_sensitive_values() {

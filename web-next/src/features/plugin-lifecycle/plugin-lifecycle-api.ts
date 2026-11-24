@@ -27,6 +27,7 @@ import type {
 } from '@/lib/api/generated/types.gen'
 
 const root = ['admin-plugin-lifecycle'] as const
+const catalogRoot = ['plugin-model-catalog'] as const
 const artifactsKey = [...root, 'artifacts'] as const
 const deploymentsKey = [...root, 'deployments'] as const
 
@@ -248,7 +249,7 @@ export type PluginMarketIndex = {
 
 export function usePluginCatalogSources(enabled = true) {
   return useInfiniteQuery({
-    queryKey: ['plugin-model-catalog', 'sources'],
+    queryKey: [...catalogRoot, 'sources'],
     enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
@@ -284,7 +285,7 @@ export function usePluginMarketIndex(indexUrl: string) {
 
 export function usePluginCatalogModels(pluginId: string | undefined, search: string) {
   return useInfiniteQuery({
-    queryKey: ['plugin-model-catalog', 'models', pluginId, search],
+    queryKey: [...catalogRoot, 'models', pluginId, search],
     enabled: Boolean(pluginId),
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
@@ -442,7 +443,10 @@ export function useConfirmPluginCapabilityAction() {
 }
 
 function invalidate(client: ReturnType<typeof useQueryClient>) {
-  return client.invalidateQueries({ queryKey: root })
+  return Promise.all([
+    client.invalidateQueries({ queryKey: root }),
+    client.invalidateQueries({ queryKey: catalogRoot }),
+  ])
 }
 
 type PluginInstallSource =
@@ -452,7 +456,7 @@ type PluginInstallSource =
 export function useInstallPlugin() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async ({ source, config }: { source: PluginInstallSource; config?: Record<string, unknown> }) => {
+    mutationFn: async (source: PluginInstallSource) => {
       const body = new FormData()
       if ('packageFile' in source) {
         body.append('package', source.packageFile, source.packageFile.name)
@@ -460,7 +464,6 @@ export function useInstallPlugin() {
         body.append('repository', source.repository)
         if (source.assetName) body.append('asset_name', source.assetName)
       }
-      if (config) body.append('config', JSON.stringify(config))
       const result = await apiClient.post<PluginDeploymentResponse>({
         url: '/api/admin/plugins/install',
         body,

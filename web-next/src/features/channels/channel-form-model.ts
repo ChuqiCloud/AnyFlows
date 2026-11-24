@@ -54,6 +54,7 @@ export type ChannelFormValues = {
   autoBanStatusCodes: number[]
   autoBanKeywords: string[]
   poolMode: boolean
+  healthScoring: boolean
   clientSimulationProfile: ClientSimulationProfile
   clientSimulationRiskAccepted: boolean
   clientSimulationBodyProfile: ClientSimulationBodyProfile
@@ -123,6 +124,7 @@ export function buildChannelFormSchema(
     autoBanStatusCodes: z.array(z.number()),
     autoBanKeywords: z.array(z.string()),
     poolMode: z.boolean(),
+    healthScoring: z.boolean(),
     clientSimulationProfile: z.enum(['', 'anthropic_cli_headers_v1']),
     clientSimulationRiskAccepted: z.boolean(),
     clientSimulationBodyProfile: z.enum(['', 'anthropic_cli_system_date_v1']),
@@ -243,6 +245,7 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     autoBanStatusCodes: [...(channel?.auto_ban_rules?.status_codes ?? [])],
     autoBanKeywords: [...(channel?.auto_ban_rules?.keywords ?? [])],
     poolMode: channel?.pool_mode ?? false,
+    healthScoring: channel?.health_scoring ?? true,
     clientSimulationProfile: channel?.client_simulation_profile ?? '',
     clientSimulationRiskAccepted: false,
     clientSimulationBodyProfile: channel?.client_simulation_body_profile ?? '',
@@ -315,6 +318,7 @@ function commonRequest(values: ChannelFormValues) {
       keywords: values.autoBanKeywords,
     },
     pool_mode: values.poolMode,
+    health_scoring: values.healthScoring,
     client_simulation_profile: values.clientSimulationProfile || null,
     client_simulation_risk_accepted: values.clientSimulationRiskAccepted,
     client_simulation_body_profile: values.clientSimulationBodyProfile || null,

@@ -20,6 +20,9 @@ pub(crate) struct CredentialAttemptTarget {
     credential_kind: CredentialKind,
     oauth_has_refresh_token: bool,
     pool_mode: bool,
+    health_scoring: bool,
+    single_credential: bool,
+    recovery_probe: bool,
     model: Option<RedisHealthModel>,
 }
 
@@ -76,8 +79,53 @@ impl CredentialAttemptTarget {
             oauth_has_refresh_token: matches!(credential_kind, CredentialKind::Oauth)
                 && oauth_has_refresh_token,
             pool_mode,
+            health_scoring: true,
+            single_credential: false,
+            recovery_probe: false,
             model: None,
         })
+    }
+
+    pub(crate) fn with_health_policy(
+        mut self,
+        target: &af_db::SchedulerRuntimeTargetRecord,
+        eligible: &[af_db::SchedulerRuntimeCredentialRecord],
+    ) -> Self {
+        self.health_scoring = target.health_scoring();
+        self.single_credential = eligible.first().is_some_and(|first| {
+            eligible
+                .iter()
+                .all(|key| key.shared_health_id() == first.shared_health_id())
+        });
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn with_test_health_policy(
+        mut self,
+        health_scoring: bool,
+        single_credential: bool,
+    ) -> Self {
+        self.health_scoring = health_scoring;
+        self.single_credential = single_credential;
+        self
+    }
+
+    pub(crate) const fn with_recovery_probe(mut self, recovery_probe: bool) -> Self {
+        self.recovery_probe = recovery_probe;
+        self
+    }
+
+    pub(crate) const fn recovery_probe(self) -> bool {
+        self.recovery_probe
+    }
+
+    pub(crate) const fn health_scoring(self) -> bool {
+        self.health_scoring
+    }
+
+    pub(crate) const fn single_credential(self) -> bool {
+        self.single_credential
     }
 
     /// 绑定实际路由的 Canonical 模型摘要；不保留模型正文或上游别名。

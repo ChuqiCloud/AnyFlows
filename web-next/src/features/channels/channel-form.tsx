@@ -267,6 +267,15 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
               <Controller control={form.control} name="poolMode" render={({ field }) => <Switch aria-label={t('channels.fields.poolMode')} id="channel-pool-mode" isSelected={field.value} size="sm" onValueChange={field.onChange} />} />
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
+              <div>
+                <label className="text-xs font-medium leading-none text-foreground" htmlFor="channel-health-scoring">{t('channels.fields.healthScoring')}</label>
+                <p className="mt-1 text-[0.6875rem] text-muted-foreground" id="channel-health-scoring-help">{t('channels.form.healthScoringHint')}</p>
+              </div>
+              <Controller control={form.control} name="healthScoring" render={({ field }) => (
+                <Switch id="channel-health-scoring" aria-label={t('channels.fields.healthScoring')} aria-describedby="channel-health-scoring-help" isSelected={field.value} size="sm" onValueChange={field.onChange} />
+              )} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
               <div><label className="text-xs font-medium leading-none text-foreground" htmlFor="channel-auto-ban">{t('channels.fields.autoBan')}</label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t(poolMode ? 'channels.form.autoBanPoolModeHint' : 'channels.form.autoBanHint')}</p></div>
               <Controller control={form.control} name="autoBan" render={({ field }) => <Switch aria-label={t('channels.fields.autoBan')} id="channel-auto-ban" isDisabled={poolMode} isSelected={field.value} size="sm" onValueChange={field.onChange} />} />
             </div>

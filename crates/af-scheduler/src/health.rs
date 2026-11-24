@@ -62,6 +62,12 @@ impl ChannelRoutingHealth {
         self.recently_failed
     }
 
+    #[must_use]
+    pub const fn with_cooling(mut self, cooling: bool) -> Self {
+        self.cooling = cooling;
+        self
+    }
+
     /// 返回当前渠道是否应在 weighted 抽样前被过滤。
     #[must_use]
     pub const fn is_cooling(self) -> bool {

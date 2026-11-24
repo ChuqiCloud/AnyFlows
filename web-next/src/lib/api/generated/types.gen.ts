@@ -231,6 +231,7 @@ export type AdminChannel = {
     auto_ban: boolean;
     auto_ban_rules: AdminChannelAutoBanRules;
     pool_mode: boolean;
+    health_scoring: boolean;
     client_simulation_profile?: null | ClientSimulationProfile;
     client_simulation_body_profile?: null | ClientSimulationBodyProfile;
     responses_websocket_enabled: boolean;
@@ -277,6 +278,7 @@ export type AdminChannelCreateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -327,6 +329,7 @@ export type AdminChannelUpdateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -1873,6 +1876,7 @@ export type CredentialHealthSnapshot = {
     credential_id: number;
     penalty_micros: number;
     cooling: boolean;
+    cooldown_remaining_seconds: number;
     weight_multiplier_micros: number;
 };
 export type CredentialModelItem = {
@@ -3287,6 +3291,13 @@ export type ReviewerResponse = {
     pluginVersion: string;
     supportsExternalReads: boolean;
 };
+export type RoutingHealthRecoveryRequest = {
+    credential_id?: number | null;
+};
+export type RoutingHealthRecoveryResponse = {
+    channel_reenabled: boolean;
+    probe_requested: boolean;
+};
 export type RuntimeDependency = {
     kind: string;
     status: string;
@@ -3989,6 +4000,7 @@ export type AdminChannelCreateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -4034,6 +4046,7 @@ export type AdminChannelUpdateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -4283,7 +4296,7 @@ export type PluginDeploymentRequestWritable = {
     expected_generation?: number | null;
     enabled: boolean;
     granted_capabilities: Array<PluginCapabilityGrantRequest>;
-    config: {
+    config?: {
         [key: string]: unknown;
     };
 };
@@ -11114,6 +11127,26 @@ export type GetAdminCredentialHealthResponses = {
     200: CredentialHealthResponse;
 };
 export type GetAdminCredentialHealthResponse = GetAdminCredentialHealthResponses[keyof GetAdminCredentialHealthResponses];
+export type RecoverAdminRoutingHealthData = {
+    body: RoutingHealthRecoveryRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/health/recover';
+};
+export type RecoverAdminRoutingHealthErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type RecoverAdminRoutingHealthError = RecoverAdminRoutingHealthErrors[keyof RecoverAdminRoutingHealthErrors];
+export type RecoverAdminRoutingHealthResponses = {
+    200: RoutingHealthRecoveryResponse;
+};
+export type RecoverAdminRoutingHealthResponse = RecoverAdminRoutingHealthResponses[keyof RecoverAdminRoutingHealthResponses];
 export type ListAdminCredentialProxiesData = {
     body?: never;
     path?: never;

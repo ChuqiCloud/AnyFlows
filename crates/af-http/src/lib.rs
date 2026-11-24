@@ -40,8 +40,8 @@ mod credential_proxies;
 mod credential_usage;
 mod upstream_usage;
 pub use credential_health::{
-    AdminCredentialHealthReader, CredentialHealthFuture, CredentialHealthSnapshot,
-    build_credential_health_router,
+    AdminCredentialHealthReader, ChannelRecoveryFuture, CredentialHealthFuture,
+    CredentialHealthSnapshot, RoutingHealthRecoveryResponse, build_credential_health_router,
 };
 pub use upstream_usage::build_upstream_usage_router;
 mod credentials;

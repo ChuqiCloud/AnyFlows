@@ -100,6 +100,7 @@ fn order_credentials_with_optional_health<'a>(
     for (Reverse(priority), tier) in tiers {
         ordered.extend(order_tier(request_id, channel_id, priority, tier, health));
     }
+    ordered.sort_by_key(|credential| recovery_order(credential, health));
     ordered
 }
 
@@ -115,6 +116,7 @@ pub(crate) fn apply_channel_credential_strategy(
     }
     let rank = |credential: &SchedulerRuntimeCredentialRecord| {
         (
+            recovery_order(credential, health),
             Reverse(credential.priority()),
             health
                 .and_then(|states| states.get(&credential.credential_id()))
@@ -217,14 +219,15 @@ fn order_credentials_by_load_with_optional_health<'a>(
                 && health
                     .and_then(|states| states.get(&credential.credential_id()))
                     .is_none_or(|state| {
-                        !state.recently_failed()
+                        !state.is_recovery_probe()
+                            && !state.recently_failed()
                             && state.weight_multiplier_micros() >= HEALTH_PENALTY_SCALE / 2
                     })
         });
     ordered.sort_by(|left, right| {
-        right
-            .priority()
-            .cmp(&left.priority())
+        recovery_order(left, health)
+            .cmp(&recovery_order(right, health))
+            .then_with(|| right.priority().cmp(&left.priority()))
             .then_with(|| recently_failed(left, health).cmp(&recently_failed(right, health)))
             .then_with(|| {
                 credential_load(left, loads).compare_utilization(credential_load(right, loads))
@@ -239,6 +242,24 @@ fn order_credentials_by_load_with_optional_health<'a>(
         ordered.insert(0, preferred);
     }
     ordered
+}
+
+pub(crate) fn recovery_probe(
+    credential: &SchedulerRuntimeCredentialRecord,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> bool {
+    health
+        .and_then(|states| states.get(&credential.credential_id()))
+        .is_some_and(|state| state.is_recovery_probe())
+}
+
+fn recovery_order(
+    credential: &SchedulerRuntimeCredentialRecord,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> i8 {
+    health
+        .and_then(|states| states.get(&credential.credential_id()))
+        .map_or(0, |state| state.recovery_order())
 }
 
 fn credential_load(

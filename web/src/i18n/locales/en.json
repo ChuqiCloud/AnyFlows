@@ -454,6 +454,14 @@
     "empty": "No matching providers"
   },
   "channels": {
+    "recovery": {
+      "enable": "Restore channel",
+      "probe": "Request recovery probe",
+      "failed": "Recovery failed. Try again.",
+      "enabled": "Channel re-enabled.",
+      "requested": "Recovery requested. An eligible call will probe the upstream.",
+      "unavailable": "Health scoring is unavailable."
+    },
     "title": "Channels",
     "subtitle": "Maintain routing, credentials, and request policies for chat, multimodal, rerank, and asynchronous video upstreams.",
     "scope": "Native OpenAI, Anthropic, Gemini, Jina, Cohere, and xAI protocols",
@@ -603,6 +611,7 @@
       "overrides": "Request transformation",
       "relayExecution": "Upstream execution",
       "relayInherited": "Blank inherits the global default",
+      "healthScoringHint": "When off, routing uses configured priorities and weights. Status, rate limits and quotas still apply.",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
       "autoBanPoolModeHint": "This setting is preserved in external pool mode, but the channel is not automatically disabled.",
       "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",
@@ -646,6 +655,7 @@
       "status": "Status",
       "weight": "Weight",
       "priority": "Priority",
+      "healthScoring": "Health scoring and circuit breaking",
       "autoBan": "Allow automatic disabling",
       "autoBanRules": "Automatic-disable rules",
       "autoBanStatusCodes": "HTTP status codes",
@@ -996,6 +1006,9 @@
   },
   "credentials": {
     "health": {
+      "awaitingProbe": "Awaiting recovery probe",
+      "cooldownRemaining_other": "Health cooldown has about {{count}} seconds remaining",
+      "cooldownRemaining_one": "Health cooldown has about {{count}} second remaining",
       "degraded": "Reduced health weight",
       "cooling": "Health cooldown",
       "reduced": "Effective weight {{percent}}%",

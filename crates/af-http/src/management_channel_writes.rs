@@ -105,6 +105,7 @@ pub(crate) struct AdminChannelCreateRequest {
     /// 外部账号池模式；省略时默认关闭。
     #[serde(default)]
     pool_mode: bool,
+    health_scoring: Option<bool>,
     /// 可空固定仿真档案；null 表示关闭，启用时必须同时确认风险。
     #[schema(
         value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>,
@@ -195,6 +196,7 @@ pub(crate) struct AdminChannelUpdateRequest {
     auto_ban_rules: Option<AdminChannelAutoBanRulesDto>,
     /// 省略或 null 表示保留原值。
     pool_mode: Option<bool>,
+    health_scoring: Option<bool>,
     /// 必须显式提交；null 表示关闭，非空档案表示保持、启用或换档案。
     #[schema(
         value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>,
@@ -340,6 +342,7 @@ impl AdminChannelCreateRequest {
         .with_provider(self.provider)
         .map_err(map_write_error)?
         .with_pool_mode(self.pool_mode)
+        .with_health_scoring(self.health_scoring.unwrap_or(true))
         .with_client_simulation_profile(
             self.client_simulation_profile.0,
             self.client_simulation_risk_accepted,
@@ -407,6 +410,10 @@ impl AdminChannelUpdateRequest {
             Some(rules) => command
                 .with_auto_ban_rules(rules.into_domain()?)
                 .map_err(map_write_error)?,
+            None => command,
+        };
+        let command = match self.health_scoring {
+            Some(enabled) => command.with_health_scoring(enabled),
             None => command,
         };
         let command = match self.pool_mode {

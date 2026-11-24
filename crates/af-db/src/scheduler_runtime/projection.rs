@@ -183,6 +183,8 @@ struct ProjectionTargetWire {
     auto_ban_keywords: Vec<String>,
     #[serde(default)]
     pool_mode: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    health_scoring: Option<bool>,
     /// 旧投影缺少该字段时保持默认关闭。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     client_simulation_profile: Option<String>,
@@ -421,6 +423,7 @@ impl ProjectionTargetWire {
                 .collect(),
             auto_ban_keywords: target.auto_ban_rules().keywords().to_vec(),
             pool_mode: target.pool_mode(),
+            health_scoring: (!target.health_scoring()).then_some(false),
             client_profile: target.client_profile().cloned(),
             opencode_entry: target.opencode_entry(),
             opencode_full_compatibility: target.opencode_full_compatibility(),
@@ -535,6 +538,7 @@ impl ProjectionTargetWire {
         .with_timeout(timeout)
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)
+        .with_health_scoring(self.health_scoring.unwrap_or(true))
         .with_upstream_routing(upstream_routing)
         .with_relay_settings(
             crate::channel_settings::RelayChannelSettings::new(

@@ -248,6 +248,23 @@ impl ChannelStateRepository {
         &self,
         lease: ChannelProbeLease,
     ) -> Result<ChannelProbeRecoveryOutcome, ChannelStateRepositoryError> {
+        self.recover(lease.channel_id, Some(lease.auto_disabled_at))
+            .await
+    }
+
+    /// Restores a channel that the system disabled. Manual disable always wins.
+    pub async fn recover_manually(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<ChannelProbeRecoveryOutcome, ChannelStateRepositoryError> {
+        self.recover(channel_id, None).await
+    }
+
+    async fn recover(
+        &self,
+        channel_id: ChannelId,
+        expected: Option<TimeDateTimeWithTimeZone>,
+    ) -> Result<ChannelProbeRecoveryOutcome, ChannelStateRepositoryError> {
         let operation = async {
             let transaction = self
                 .pool
@@ -255,12 +272,12 @@ impl ChannelStateRepository {
                 .begin()
                 .await
                 .map_err(|_| ChannelStateRepositoryError::Query)?;
-            lock_probe_channel(&transaction, lease.channel_id).await?;
-            let outcome = match load_live_state(&transaction, lease.channel_id).await? {
+            lock_probe_channel(&transaction, channel_id).await?;
+            let outcome = match load_live_state(&transaction, channel_id).await? {
                 Some((Status::Enabled, _)) => {
                     set_channel_abilities_enabled(
                         &transaction,
-                        lease.channel_id,
+                        channel_id,
                         true,
                         TimeDateTimeWithTimeZone::now_utc(),
                     )
@@ -270,7 +287,7 @@ impl ChannelStateRepository {
                 }
                 Some((Status::Disabled, _)) | None => ChannelProbeRecoveryOutcome::NotEligible,
                 Some((Status::AutoDisabled, updated_at))
-                    if updated_at != lease.auto_disabled_at =>
+                    if expected.is_some_and(|expected| updated_at != expected) =>
                 {
                     ChannelProbeRecoveryOutcome::StaleProbe
                 }
@@ -282,7 +299,7 @@ impl ChannelStateRepository {
                             Expr::value(Status::Enabled.code()),
                         )
                         .col_expr(channels::Column::UpdatedAt, Expr::value(now))
-                        .filter(channels::Column::Id.eq(lease.channel_id.get()))
+                        .filter(channels::Column::Id.eq(channel_id.get()))
                         .filter(channels::Column::Status.eq(Status::AutoDisabled.code()))
                         .filter(channels::Column::DeletedAt.is_null())
                         .exec(&transaction)
@@ -291,7 +308,7 @@ impl ChannelStateRepository {
                     if result.rows_affected != 1 {
                         return Err(ChannelStateRepositoryError::Invariant);
                     }
-                    set_channel_abilities_enabled(&transaction, lease.channel_id, true, now)
+                    set_channel_abilities_enabled(&transaction, channel_id, true, now)
                         .await
                         .map_err(map_ability_write_error)?;
                     ChannelProbeRecoveryOutcome::Recovered

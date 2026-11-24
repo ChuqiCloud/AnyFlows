@@ -65,6 +65,7 @@ export type CredentialHealthSnapshot = {
   credential_id: number
   penalty_micros: number
   cooling: boolean
+  cooldown_remaining_seconds: number
   weight_multiplier_micros: number
 }
 

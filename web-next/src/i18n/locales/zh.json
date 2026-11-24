@@ -151,7 +151,7 @@
       "repositoryHint": "输入公开 GitHub 仓库地址，系统会下载最新正式 Release 的预构建插件包。",
       "assetName": "发布文件名（选填）",
       "assetNameHint": "系统会优先选择唯一的 .afplugin 包。若有多个候选包，填写适合服务器的文件名。",
-      "submit": "安装并启用",
+      "submit": "安装",
       "installing": "正在安装…",
       "success": "{{plugin}} {{version}} 已安装并启用。",
       "successNeedsConfiguration": "{{plugin}} {{version}} 已安装。请在插件卡片上点击「配置」，填写必填项后启用。",
@@ -165,7 +165,7 @@
         "conflict": "安装期间部署状态发生变化。请刷新后重试，避免覆盖并发更新。",
         "needsReview": "该插件声明了外部读取、写入或未提供有效 Schema 的能力。请到高级管理中查看并明确授权。",
         "tooLarge": "插件包超过服务允许的大小，请检查包内容。",
-        "invalidPackage": "插件包或配置未通过校验，请检查包格式、兼容版本和必填配置。",
+        "invalidPackage": "插件包未通过校验，请检查包格式和兼容版本。",
         "forbidden": "当前账号没有安装插件的权限。",
         "failed": "安装未完成。请稍后重试；若仍失败，请检查插件包和服务日志。"
       }
@@ -178,16 +178,15 @@
     "loading": "正在加载…",
     "checkingGeneration": "正在确认当前部署版本…",
     "currentGeneration": "当前部署 generation：{{generation}}",
-    "deploy": "配置部署",
+    "deploy": "授权部署",
     "deployTitle": "部署 {{plugin}}",
     "configure": "配置",
     "configureTitle": "配置 {{plugin}}",
-    "configureHint": "保存会创建新的部署代次（当前 g{{generation}}），并让插件在各节点重新加载。现有能力授权会保留。",
     "saveConfiguration": "保存配置",
     "disable": "停用",
     "rollback": "回滚到此版本",
-    "grantsHint": "只勾选本次部署所需的只读能力。能力授权会作为独立部署事实保存。",
-    "configHint": "这里只填写插件可读取的公开设置。保存会生成新的部署代次。密钥、口令和其他凭据请使用插件凭据管理。",
+    "grantsHint": "勾选此插件运行所需的权限。",
+    "configHint": "密钥和口令请在插件凭据管理中设置。",
     "configEditor": {
       "value": "输入值",
       "emptyForm": "没有可填写的字段。",
@@ -222,6 +221,7 @@
       "revoked": "已撤销",
       "enabled": "已启用",
       "disabled": "已停用",
+      "needsConfiguration": "待配置",
       "unverified": "管理员安装 · 发布者未验证",
       "signed": "发布者签名已验证",
       "official": "官方插件"
@@ -881,6 +881,14 @@
     }
   },
   "channels": {
+    "recovery": {
+      "enable": "恢复渠道",
+      "probe": "恢复试探",
+      "failed": "恢复操作失败，请重试。",
+      "enabled": "渠道已重新启用。",
+      "requested": "已申请。在符合条件的请求中试探恢复。",
+      "unavailable": "当前未启用健康评分。"
+    },
     "title": "渠道管理",
     "subtitle": "管理上游渠道的路由范围、凭据和请求策略，支持对话、多模态、重排序及视频生成。",
     "activeMonitor": {
@@ -1096,6 +1104,7 @@
       "overrides": "请求转换",
       "relayExecution": "上游执行策略",
       "relayInherited": "留空继承全局默认值",
+      "healthScoringHint": "关闭后按配置的优先级和权重选路，继续遵守启停、限流和额度设置。",
       "autoBanHint": "启用后，渠道发生符合下方规则的故障时会自动停用。",
       "autoBanPoolModeHint": "外部账号池模式开启时保留此配置，但不会自动停用渠道。",
       "autoBanRulesHint": "仅匹配精确 5xx 状态码和上游结构化 type、code、status；空规则不会停用渠道。",
@@ -1139,6 +1148,7 @@
       "status": "状态",
       "weight": "权重",
       "priority": "优先级",
+      "healthScoring": "健康评分与熔断",
       "autoBan": "允许自动停用",
       "autoBanRules": "自动停用规则",
       "autoBanStatusCodes": "HTTP 状态码",
@@ -1560,6 +1570,8 @@
   },
   "credentials": {
     "health": {
+      "awaitingProbe": "等待恢复试探",
+      "cooldownRemaining_other": "健康冷却约剩 {{count}} 秒",
       "degraded": "健康降权",
       "cooling": "健康冷却中",
       "reduced": "有效权重 {{percent}}%",
@@ -9521,7 +9533,6 @@
     "source": "目录来源",
     "chooseSource": "选择目录来源",
     "sourceLabel": "来源：{{source}} · 部署代次 {{generation}}",
-    "noSources": "暂无可用的模型目录插件。",
     "sourceError": "目录来源加载失败。",
     "modelsError": "该来源未返回有效的模型资料，请稍后重试或切换来源。",
     "search": "搜索此来源",

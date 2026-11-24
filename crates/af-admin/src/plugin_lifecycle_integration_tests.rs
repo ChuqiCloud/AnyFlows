@@ -271,16 +271,24 @@ async fn event_delivery_uses_the_active_deployment_public_configuration()
         .begin_package_upload(fixture.operator, "event-config-upload")
         .await?;
     upload.write_chunk(&event_config_package()?).await?;
+    let installed = fixture
+        .first
+        .install_package(fixture.operator, upload, None, None, "event-config-install")
+        .await?;
+    assert!(installed.needs_configuration());
+    assert!(!installed.enabled());
     let deployment = fixture
         .first
-        .install_package(
+        .configure_public_plugin_configuration(
             fixture.operator,
-            upload,
+            EVENT_PLUGIN_ID,
+            installed.generation(),
             json!({"marker":"event-config"}),
-            None,
-            "event-config-install",
+            "event-config-save",
         )
         .await?;
+    assert!(deployment.enabled());
+    assert!(!deployment.needs_configuration());
     assert!(deployment.granted_capabilities().iter().any(|grant| {
         grant.id() == "events.channel-health.changed.consume" && grant.version() == 1
     }));

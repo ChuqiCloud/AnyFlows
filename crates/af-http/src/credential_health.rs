@@ -1,7 +1,9 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use af_admin::{AdminChannelReader, SessionAuthentication, SessionAuthenticator};
-use af_domain::CredentialId;
+use af_admin::{
+    AdminChannelReader, AdminRoutingStatus, SessionAuthentication, SessionAuthenticator,
+};
+use af_domain::{ChannelId, CredentialId};
 use axum::{
     Extension, Json, Router,
     extract::{Path, State, rejection::JsonRejection},
@@ -25,24 +27,49 @@ pub struct CredentialHealthSnapshot {
     pub credential_id: i64,
     pub penalty_micros: u64,
     pub cooling: bool,
+    pub cooldown_remaining_seconds: u64,
     pub weight_multiplier_micros: u64,
 }
 
 pub type CredentialHealthFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Vec<CredentialHealthSnapshot>, ()>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<Option<Vec<CredentialHealthSnapshot>>, ()>> + Send + 'a>>;
 
-/// 组合根注入的共享调度健康只读端口。
+pub type ChannelRecoveryFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<RoutingHealthRecoveryResponse, ()>> + Send + 'a>>;
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RoutingHealthRecoveryRequest {
+    #[schema(minimum = 1)]
+    credential_id: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RoutingHealthRecoveryResponse {
+    pub channel_reenabled: bool,
+    pub probe_requested: bool,
+}
+
+/// Shared routing health administration.
 pub trait AdminCredentialHealthReader: Send + Sync {
     fn snapshots<'a>(
         &'a self,
         ids: &'a [(CredentialId, CredentialId)],
     ) -> CredentialHealthFuture<'a>;
+
+    fn request_recovery(
+        &self,
+        channel: ChannelId,
+        credential: Option<CredentialId>,
+        auto_disabled: bool,
+        health_scoring: bool,
+    ) -> ChannelRecoveryFuture<'_>;
 }
 
 #[derive(Clone)]
 struct CredentialHealthState {
     reader: Arc<dyn AdminChannelReader>,
-    health: Option<Arc<dyn AdminCredentialHealthReader>>,
+    health: Arc<dyn AdminCredentialHealthReader>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -62,7 +89,7 @@ pub(crate) struct CredentialHealthResponse {
 pub fn build_credential_health_router(
     auth: Arc<dyn SessionAuthenticator>,
     reader: Arc<dyn AdminChannelReader>,
-    health: Option<Arc<dyn AdminCredentialHealthReader>>,
+    health: Arc<dyn AdminCredentialHealthReader>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(auth),
@@ -72,6 +99,10 @@ pub fn build_credential_health_router(
         .route(
             "/api/admin/channels/{channel_id}/credentials/health",
             post(read),
+        )
+        .route(
+            "/api/admin/channels/{channel_id}/health/recover",
+            post(recover),
         )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(authentication)
@@ -89,6 +120,11 @@ async fn read(
     if request.credential_ids.is_empty() || request.credential_ids.len() > 100 {
         return Err(ManagementError::InvalidRequest);
     }
+    let channel = state
+        .reader
+        .get_channel(auth.principal(), channel_id)
+        .await
+        .map_err(map_channel_read_error)?;
     let mut ids = Vec::with_capacity(request.credential_ids.len());
     let mut seen = std::collections::BTreeSet::new();
     for id in request.credential_ids {
@@ -103,18 +139,64 @@ async fn read(
             .map_err(map_channel_read_error)?;
         ids.push((id, credential.parent_id().unwrap_or(id)));
     }
-    let Some(health) = state.health else {
-        return Ok(no_store_json(CredentialHealthResponse {
-            available: false,
-            credentials: Vec::new(),
-        }));
+    let credentials = if channel.health_scoring() {
+        state
+            .health
+            .snapshots(&ids)
+            .await
+            .map_err(|_| ManagementError::Internal)?
+    } else {
+        None
     };
-    let credentials = health
-        .snapshots(&ids)
+    Ok(no_store_json(CredentialHealthResponse {
+        available: credentials.is_some(),
+        credentials: credentials.unwrap_or_default(),
+    }))
+}
+
+async fn recover(
+    State(state): State<CredentialHealthState>,
+    Path(channel_id): Path<String>,
+    Extension(auth): Extension<SessionAuthentication>,
+    request: Result<Json<RoutingHealthRecoveryRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let channel_id = parse_channel_id(&channel_id)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let channel = state
+        .reader
+        .get_channel(auth.principal(), channel_id)
+        .await
+        .map_err(map_channel_read_error)?;
+    if channel.status() == AdminRoutingStatus::Disabled {
+        return Err(ManagementError::InvalidRequest);
+    }
+    let credential_id = request
+        .credential_id
+        .map(CredentialId::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    if let Some(id) = credential_id {
+        let key = state
+            .reader
+            .get_credential(auth.principal(), channel_id, id)
+            .await
+            .map_err(map_channel_read_error)?;
+        if key.status() != AdminRoutingStatus::Enabled
+            || !key.schedulable()
+            || key.oauth_token_pending()
+        {
+            return Err(ManagementError::InvalidRequest);
+        }
+    }
+    let result = state
+        .health
+        .request_recovery(
+            channel_id,
+            credential_id,
+            credential_id.is_none() && channel.status() == AdminRoutingStatus::AutoDisabled,
+            channel.health_scoring(),
+        )
         .await
         .map_err(|_| ManagementError::Internal)?;
-    Ok(no_store_json(CredentialHealthResponse {
-        available: true,
-        credentials,
-    }))
+    Ok(no_store_json(result))
 }

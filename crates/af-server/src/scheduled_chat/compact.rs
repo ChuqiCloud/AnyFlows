@@ -44,7 +44,11 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
                     .scheduler
                     .responses_compact_route_channel_ids(principal.group_id(), request.model())
                     .map_err(map_scheduler_error)?;
-                let channel_health = load_channel_health(store, &channel_ids, request.model())
+                let health_ids = self
+                    .scheduler
+                    .health_scored_channel_ids(&channel_ids)
+                    .map_err(map_scheduler_error)?;
+                let channel_health = load_channel_health(store, &health_ids, request.model())
                     .await
                     .map_err(|_| AfError::Internal)?;
                 let route = self
@@ -125,7 +129,7 @@ impl ScheduledChatService {
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut auto_ban_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut health_filtered = false;
-        'channels: for candidate in route.candidates() {
+        'channels: for candidate in super::ordered_health_channels(&route, credential_health) {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
             if !target_matches_protocol(target, Protocol::OpenAiResponses) {
@@ -204,12 +208,21 @@ impl ScheduledChatService {
                 if let Some(profile) = target.client_profile() {
                     relay_candidate = relay_candidate.with_client_profile(profile.clone());
                 }
-                if let Some(concurrency) = &self.concurrency {
-                    relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
-                        runtime_credential.concurrency_owner_id(),
-                        runtime_credential.concurrency(),
-                        wait_plan.timeout(),
-                    ));
+                let recovery_probe =
+                    crate::credential_order::recovery_probe(runtime_credential, credential_health);
+                if recovery_probe {
+                    relay_candidate = relay_candidate
+                        .with_retry_limit(Some(0))
+                        .with_race_width(Some(1));
+                }
+                if let Some(gate) = self.credential_attempt_gate(
+                    target.channel_id(),
+                    runtime_credential,
+                    &model,
+                    wait_plan.timeout(),
+                    recovery_probe,
+                )? {
+                    relay_candidate = relay_candidate.with_attempt_gate(gate);
                 }
                 if let Some(candidate_request) = &candidate_request {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
@@ -225,6 +238,8 @@ impl ScheduledChatService {
                         oauth_has_refresh_token,
                         target.pool_mode(),
                     )?
+                    .with_health_policy(target, &eligible_credentials)
+                    .with_recovery_probe(recovery_probe)
                     .with_model(&model)?,
                 );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(

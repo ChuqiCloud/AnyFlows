@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
 import type { CredentialHealthSnapshot } from './credential-api'
+import { RoutingHealthRecoveryButton } from '../channels/routing-health-recovery-button'
 import { cn } from '@/lib/utils'
 import { updateCredentialStatusRequest } from './credential-form-model'
 import { getAdminCredentialUsage, type CredentialUsageSnapshot } from './credential-api'
@@ -100,7 +101,7 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
             {shadow ? <Badge className="gap-1 border-transparent bg-info/10 text-info"><GitFork className="size-3" aria-hidden="true" />{t('credentials.spark.badge')}</Badge> : null}
             <Badge>{t(`credentials.kind.${credential.kind}`, { defaultValue: credential.kind })}</Badge>
             <Badge className={cn('border-transparent', stateStyles[runtimeState])}>{t(`credentials.runtime.${runtimeState}`)}</Badge>
-            {health && health.weight_multiplier_micros < 1_000_000 ? <Badge className="border-transparent bg-warning/10 text-warning">{t('credentials.health.reduced', { percent: Math.round(health.weight_multiplier_micros / 10_000) })}</Badge> : null}
+            {health && (health.cooling || health.weight_multiplier_micros < 1_000_000) ? <Badge className="border-transparent bg-warning/10 text-warning">{t('credentials.health.reduced', { percent: Math.round(health.weight_multiplier_micros / 10_000) })}</Badge> : null}
             {parentBlocked ? <Badge className="border-transparent bg-destructive/10 text-destructive">{t('credentials.runtime.parentBlocked')}</Badge> : null}
             {isOAuth ? <Badge className="max-w-48 truncate">{credential.oauth_provider ?? t('credentials.oauth.unbound')}</Badge> : null}
           </div>
@@ -114,7 +115,11 @@ export function CredentialItem({ selected, onSelect, health, channelType, creden
               ? t('credentials.item.inheritedProxy', { id: parent.proxy_id })
               : t('credentials.item.inheritedGlobalProxy')}</span> : credential.proxy_id ? <span>{t('credentials.item.proxy', { id: credential.proxy_id })}</span> : null}
           </div>
-          {health && health.weight_multiplier_micros < 1_000_000 ? <p className="mt-1.5 text-[0.6875rem] text-warning">{health.cooling ? t('credentials.health.cooling') : t('credentials.health.reducedDescription', { percent: Math.round(health.weight_multiplier_micros / 10_000) })}</p> : null}
+          {health && (health.cooling || health.weight_multiplier_micros < 1_000_000) ? <p className="mt-1.5 text-[0.6875rem] text-warning">{health.cooling ? t(health.cooldown_remaining_seconds > 0 ? 'credentials.health.cooldownRemaining' : 'credentials.health.awaitingProbe', { count: health.cooldown_remaining_seconds }) : t('credentials.health.reducedDescription', { percent: Math.round(health.weight_multiplier_micros / 10_000) })}</p> : null}
+          {health && (health.cooling || health.weight_multiplier_micros < 1_000_000)
+            && credential.status === 'enabled' && credential.schedulable && !credential.oauth_token_pending ? (
+            <RoutingHealthRecoveryButton channelId={credential.channel_id} credentialId={credential.id} />
+          ) : null}
           <p className="mt-1.5 text-[0.6875rem] text-muted-foreground">
             {credential.oauth_token_pending
               ? t('credentials.item.authorizationRequired')

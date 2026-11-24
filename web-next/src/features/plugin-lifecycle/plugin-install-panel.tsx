@@ -80,7 +80,7 @@ export function PluginInstallPanel({ disabled = false, onInstallingChange }: {
     const selected = source === 'package' && packageFile
       ? { packageFile }
       : { repository: repository.trim(), assetName: assetName.trim() || undefined }
-    install.mutate({ source: selected }, {
+    install.mutate(selected, {
       onSuccess: () => {
         if (source === 'package') {
           setPackageFile(undefined)

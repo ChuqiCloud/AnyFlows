@@ -10,6 +10,7 @@ import type { AdminChannel, AdminChannelProbeResponse } from '@/lib/api/generate
 import { cn } from '@/lib/utils'
 
 import { supportsProbe } from './channel-capabilities'
+import { RoutingHealthRecoveryButton } from './routing-health-recovery-button'
 
 export type ProbeDisplay = (AdminChannelProbeResponse & { failed?: false }) | { failed: true }
 
@@ -94,6 +95,17 @@ function RoutingBadges({ channel }: { channel: AdminChannel }) {
           {t('channels.values.clientSimulationBody')}
         </Badge>
       ) : null}
+    </div>
+  )
+}
+
+function HealthActions({ channel, probing, result }: { channel: AdminChannel; probing: boolean; result?: ProbeDisplay }) {
+  const canRecover = channel.status === 'auto_disabled'
+    || (channel.status === 'enabled' && channel.health_scoring !== false)
+  return (
+    <div className="grid justify-items-start gap-1">
+      <ProbeState probing={probing} value={result} />
+      {canRecover ? <RoutingHealthRecoveryButton channelId={channel.id} reenable={channel.status === 'auto_disabled'} /> : null}
     </div>
   )
 }
@@ -194,7 +206,7 @@ export function ChannelTable({ channels, probeResults, probingId, onProfile, onC
                 <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{channel.name}</span><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-28 truncate">{channel.tag}</Badge> : null}</div><div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</div><div className="mt-1 min-w-0 text-[0.6875rem] text-muted-foreground"><ProviderLabel provider={channel.provider ?? channel.type} /></div></td>
                 <td className="px-3 py-2.5"><RoutingBadges channel={channel} /></td>
                 <td className="px-3 py-2.5"><ScheduleBadges channel={channel} /></td>
-                <td className="px-3 py-2.5 text-[0.6875rem]"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></td>
+                <td className="px-3 py-2.5 text-[0.6875rem]"><HealthActions channel={channel} probing={probingId === channel.id} result={probeResults[channel.id]} /></td>
                 <td className="px-2 py-2.5"><RowActions channel={channel} probing={probingId === channel.id} onProfile={onProfile} onCredentials={onCredentials} onModels={onModels} onEdit={onEdit} onProbe={onProbe} /></td>
               </tr>
             ))}
@@ -207,7 +219,7 @@ export function ChannelTable({ channels, probeResults, probingId, onProfile, onC
           <article key={channel.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-32 truncate">{channel.tag}</Badge> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p><div className="mt-1 min-w-0 text-xs text-muted-foreground"><ProviderLabel provider={channel.provider ?? channel.type} /></div></div><RowActions channel={channel} probing={probingId === channel.id} onProfile={onProfile} onCredentials={onCredentials} onModels={onModels} onEdit={onEdit} onProbe={onProbe} /></div>
             <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><RoutingBadges channel={channel} /><ScheduleBadges channel={channel} /></div>
-            <div className="mt-3 text-xs"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></div>
+            <div className="mt-3 text-xs"><HealthActions channel={channel} probing={probingId === channel.id} result={probeResults[channel.id]} /></div>
           </article>
         ))}
       </div>

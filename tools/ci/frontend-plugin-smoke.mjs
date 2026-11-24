@@ -89,6 +89,7 @@ const revoked = { ...artifact, id: 2, pluginId: 'org.example.revoked', digest: '
 let publicConfiguration = { displayName: 'Catalog', layout: 'compact', headers: [] }
 let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled: true, needsConfiguration: false, grantedCapabilities: [{ id: 'catalog.models.read', version: 1 }, { id: 'provider.lifecycle', version: 1 }], updatedBy: 1, updatedAt: now, requestId: 'ci-deployment' }
 const marketPlugin = 'org.example.market'
+let marketDeployment
 const marketIndex = 'https://example.org/plugins.json'
 const archiveUrl = 'https://example.org/market.afplugin'
 const marketInstalls = []
@@ -99,7 +100,7 @@ let source = { pluginId: artifact.pluginId, pluginVersion: '1.0.0', displayName:
 const model = { id: 'fixture-text', displayName: 'Fixture text model', provider: 'example', description: 'Plugin reference entry', contextWindow: 32768, inputModalities: ['text'], outputModalities: ['text'], tags: ['fixture'] }
 const catalogCalls = [], installs = [], uninstalls = [], cleanups = [], requests = [], errors = []
 const snapshotReviews = []
-let modelFailure = false, sourceFailure = false, runtimeFailure = false
+let modelFailure = false, sourceFailure = false, runtimeFailure = false, catalogAvailable = false
 let runtimeRequests = 0, deploymentRequests = 0, catalogRequests = 0
 let server, browser, page, serverOutput = ''
 
@@ -178,7 +179,11 @@ try {
     if (path === '/api/model-providers') return respond({ providers: [] })
     assert.equal(request.headers().authorization, 'Bearer ci-plugin', `${method} ${path} must use the current session`)
     if (path === '/api/admin/plugins/artifacts' && method === 'GET') return respond({ artifacts: [artifact, revoked], nextBeforeId: null })
-    if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; assert.equal(Object.hasOwn(deployment, 'config'), false); return respond({ deployments: [deployment], nextCursor: null }) }
+    if (path === '/api/admin/plugins/deployments' && method === 'GET') {
+      deploymentRequests += 1
+      assert.equal(Object.hasOwn(deployment, 'config'), false)
+      return respond({ deployments: marketDeployment ? [deployment, marketDeployment] : [deployment], nextCursor: null })
+    }
     if (path === '/api/admin/plugins/tasks/unknown' && method === 'GET') return respond({ tasks: [], nextCursor: null })
     if (path === '/api/admin/plugins/events/results' && method === 'GET') return respond({ results: [{ deliveryId: 31, pluginId: 'org.example.events', eventKind: 'channel.health.changed', deploymentGeneration: 4, capabilityId: 'events.channel-health.changed.consume', capabilityVersion: 1, attemptCount: 1, status: 'delivered', completedAt: now, summary: 'Channel 12 recovered.', result: { summary: 'Channel 12 recovered.', status: 'info' } }], nextBeforeId: null })
     if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
@@ -192,7 +197,14 @@ try {
     if (path === '/api/admin/plugins/market/install' && method === 'POST') {
       const body = request.postDataJSON()
       marketInstalls.push(body)
-      return respond({ ...deployment, pluginId: marketPlugin, artifact: { ...artifact, pluginId: marketPlugin, pluginVersion: body.plugin_version } })
+      marketDeployment = {
+        ...deployment, pluginId: marketPlugin,
+        artifact: {
+          ...artifact, pluginId: marketPlugin, pluginVersion: body.plugin_version,
+          manifest: { displayName: 'Market fixture without settings', configSchema: { type: 'object', properties: { empty: { type: 'object' }, password: { type: 'string' } } } },
+        },
+      }
+      return respond(marketDeployment)
     }
     if (path === '/api/admin/channels' && method === 'GET') return respond({ channels: [{ id: 12, name: 'Fixture upstream' }], next_cursor: null })
     if (path === `/api/admin/plugins/${artifact.pluginId}/provider-selection` && method === 'POST') {
@@ -207,7 +219,7 @@ try {
       assert.equal(body.expected_generation, deployment.generation)
       configurationUpdates.push(body.configuration)
       publicConfiguration = body.configuration
-      deployment = { ...deployment, generation: deployment.generation + 1 }
+      deployment = { ...deployment, generation: deployment.generation + 1, enabled: true, needsConfiguration: false }
       return respond(deployment)
     }
     if (path === `/api/admin/plugins/${artifact.pluginId}/configuration` && method === 'GET') {
@@ -221,9 +233,11 @@ try {
     if (path === '/api/admin/plugins/install' && method === 'POST') {
       assert.match(request.headers()['content-type'], /^multipart\/form-data; boundary=/)
       const body = request.postData() ?? ''
+      assert.equal(body.includes('name="config"'), false, 'Installation submits no plugin configuration')
       if (body.includes('filename="catalog.afplugin"')) {
         assert.equal(body.includes('name="repository"'), false)
-        assert.equal(body.includes('name="config"'), false, 'Blank configuration preserves an existing config or uses an empty object for first install')
+        publicConfiguration = {}
+        deployment = { ...deployment, enabled: false, needsConfiguration: true }
       } else {
         assert.ok(body.includes('name="repository"'))
         assert.ok(body.includes('https://github.com/example/catalog'))
@@ -248,7 +262,11 @@ try {
     }
     if (path === '/api/account/plugin-models/sources' && method === 'GET') {
       catalogRequests += 1
-      return sourceFailure ? respond({ error: { code: 'internal' } }, 500) : respond({ sources: [source], nextCursor: null })
+      if (sourceFailure) return respond({ error: { code: 'internal' } }, 500)
+      if (!catalogAvailable) return respond({ sources: [], nextCursor: null })
+      return url.searchParams.has('cursor')
+        ? respond({ sources: [source], nextCursor: null })
+        : respond({ sources: [], nextCursor: 'next-deployment' })
     }
     if (path === '/api/account/plugin-models/org.example.catalog' && method === 'GET') {
       catalogCalls.push(Object.fromEntries(url.searchParams))
@@ -325,13 +343,9 @@ try {
   await advanced.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
   await page.getByRole('button', { name: label('pluginLifecycle.deploy'), exact: true }).first().click()
   const configDialog = page.getByRole('dialog')
-  await configDialog.getByRole('textbox', { name: /公开标签/ }).waitFor()
-  const layout = configDialog.getByLabel(/布局/)
-  await layout.selectOption('"compact"')
-  assert.equal(await layout.inputValue(), '"compact"', 'JSON Schema enum values render as safe host-owned options')
-  assert.equal(await configDialog.getByLabel(/API 密钥/).count(), 0, 'Credential-like fields are never rendered as form controls')
-  assert.equal(await configDialog.getByLabel(/密码/).count(), 0, 'Password fields are never rendered as form controls')
-  assert.equal(await configDialog.locator('textarea').count(), 0, 'Deployment configuration has no raw editor')
+  await configDialog.getByRole('checkbox', { name: /catalog.models.read/ }).waitFor()
+  assert.equal(await configDialog.getByRole('textbox').count(), 0, 'Authorization has no plugin settings')
+  assert.equal(configurationReads.length, 0, 'Authorization does not read plugin configuration')
   await configDialog.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
   await configDialog.waitFor({ state: 'hidden' })
   await advanced.locator('summary').first().click()
@@ -346,12 +360,37 @@ try {
   const previousDeploymentRequests = deploymentRequests, previousRuntimeRequests = runtimeRequests
   await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()
   await installed
-  await page.getByText(label('pluginLifecycle.install.success').replace('{{plugin}}', artifact.pluginId).replace('{{version}}', artifact.pluginVersion), { exact: true }).waitFor()
+  await page.getByText(label('pluginLifecycle.install.successNeedsConfiguration').replace('{{plugin}}', artifact.pluginId).replace('{{version}}', artifact.pluginVersion), { exact: true }).waitFor()
+  await deploymentCard.getByText(label('pluginLifecycle.status.needsConfiguration'), { exact: true }).waitFor()
   await page.waitForFunction(() => document.querySelector('#plugin-install input[type="file"]')?.files.length === 0)
   assert.equal(installs.length, 1)
   await waitUntil(() => deploymentRequests > previousDeploymentRequests && runtimeRequests > previousRuntimeRequests, 'Install must refresh deployments and runtime observations')
   assert.ok(deploymentRequests > previousDeploymentRequests, 'Install refreshes desired deployment state')
   assert.ok(runtimeRequests > previousRuntimeRequests, 'Install refreshes actual node state')
+
+  await deploymentCard.getByRole('button', { name: label('pluginLifecycle.configure'), exact: true }).click()
+  const configurationDialog = page.getByRole('dialog')
+  await configurationDialog.getByRole('textbox', { name: /^公开标签/ }).fill('Catalog renamed')
+  assert.equal(configurationReads.length, 1, 'Settings read configuration from its dedicated endpoint')
+  const layout = configurationDialog.getByLabel(/布局/)
+  assert.equal(await layout.inputValue(), '"compact"', 'The editor applies the manifest default')
+  const endpoint = configurationDialog.getByRole('textbox', { name: 'endpoint', exact: true })
+  assert.equal(await endpoint.count(), 0, 'Fields with unmet display conditions are hidden')
+  await layout.selectOption('"expanded"')
+  await endpoint.waitFor()
+  await layout.selectOption('"compact"')
+  await endpoint.waitFor({ state: 'detached' })
+  assert.equal(await configurationDialog.getByLabel(/API 密钥/).count(), 0, 'Credential-like fields are never rendered as form controls')
+  assert.equal(await configurationDialog.getByLabel(/密码/).count(), 0, 'Password fields are never rendered as form controls')
+  assert.equal(await configurationDialog.locator('textarea').count(), 0, 'Configuration has no raw editor')
+  await configurationDialog.getByRole('button', { name: label('pluginLifecycle.configEditor.addItem'), exact: true }).click()
+  await configurationDialog.getByRole('textbox', { name: /^请求头名称/ }).fill('x-client')
+  await configurationDialog.getByRole('textbox', { name: /^请求头值/ }).fill('ci')
+  await configurationDialog.getByRole('button', { name: label('pluginLifecycle.saveConfiguration'), exact: true }).click()
+  await configurationDialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(configurationUpdates, [{ displayName: 'Catalog renamed', layout: 'compact', headers: [{ name: 'x-client', value: 'ci' }] }])
+  assert.equal(deployment.grantedCapabilities.length, 2, 'Saving settings preserves the existing capability grants')
+  await deploymentCard.getByText(label('pluginLifecycle.status.enabled'), { exact: true }).waitFor()
 
   await page.getByText(label('pluginLifecycle.install.sources.repository'), { exact: true }).click()
   await page.getByRole('textbox', { name: label('pluginLifecycle.install.repository'), exact: true }).fill('https://github.com/example/catalog')
@@ -375,6 +414,9 @@ try {
     plugin_id: marketPlugin, plugin_version: '2.0.0', expected_generation: null,
     source: { kind: 'http_archive', archive_url: archiveUrl, sha256: digest },
   }])
+  const marketDeploymentCard = page.locator(`article[data-plugin-id="${marketPlugin}"]`)
+  await marketDeploymentCard.getByRole('heading', { name: 'Market fixture without settings', exact: true }).waitFor()
+  assert.equal(await marketDeploymentCard.getByRole('button', { name: label('pluginLifecycle.configure'), exact: true }).count(), 0, 'Plugins with no editable fields have no Configure button')
 
   await page.getByRole('button', { name: label('pluginLifecycle.provider.title'), exact: true }).click()
   const providerDialog = page.getByRole('dialog')
@@ -402,20 +444,7 @@ try {
   }])
   await page.getByText(label('pluginLifecycle.provider.bound').replace('{{count}}', '1'), { exact: true }).waitFor()
 
-  await page.getByRole('button', { name: label('pluginLifecycle.configure'), exact: true }).click()
-  const configurationDialog = page.getByRole('dialog')
-  await configurationDialog.getByRole('textbox', { name: /^公开标签/ }).fill('Catalog renamed')
-  assert.equal(configurationReads.length, 1, 'Settings read configuration from its dedicated endpoint')
-  await configurationDialog.getByRole('button', { name: label('pluginLifecycle.configEditor.addItem'), exact: true }).click()
-  await configurationDialog.getByRole('textbox', { name: /^请求头名称/ }).fill('x-client')
-  await configurationDialog.getByRole('textbox', { name: /^请求头值/ }).fill('ci')
-  await configurationDialog.getByRole('button', { name: label('pluginLifecycle.saveConfiguration'), exact: true }).click()
-  await configurationDialog.waitFor({ state: 'hidden' })
-  assert.equal(configurationUpdates.length, 1)
-  assert.deepEqual(configurationUpdates[0], { displayName: 'Catalog renamed', layout: 'compact', headers: [{ name: 'x-client', value: 'ci' }] })
-  assert.equal(deployment.grantedCapabilities.length, 2, 'Saving settings preserves the existing capability grants')
-
-  await page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }).click()
+  await deploymentCard.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }).click()
   const uninstallDialog = page.getByRole('dialog')
   await uninstallDialog.getByText(label('pluginLifecycle.removal.uninstallHint'), { exact: true }).waitFor()
   await uninstallDialog.getByRole('button', { name: label('pluginLifecycle.confirm'), exact: true }).click()
@@ -440,7 +469,16 @@ try {
   await runtimePanel.getByRole('button', { name: label('pluginLifecycle.refresh'), exact: true }).click()
   await runtimePanel.getByText('CI node A', { exact: true }).first().waitFor()
 
-  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'models', exact: true }).click()
+  const modelNavigation = page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'models', exact: true })
+  const noSources = page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/plugin-models/sources')
+  await modelNavigation.click()
+  await noSources
+  const catalogHeading = page.getByRole('heading', { name: label('pluginCatalog.title'), exact: true })
+  await catalogHeading.waitFor({ state: 'hidden' })
+  assert.equal(catalogCalls.length, 0, 'An empty source list does not query plugin models')
+  catalogAvailable = true
+  await page.reload()
+  await modelNavigation.click()
   await page.getByRole('heading', { name: label('pluginCatalog.title'), exact: true }).waitFor()
   const catalog = page.locator('section').filter({ has: page.getByRole('heading', { name: label('pluginCatalog.title'), exact: true }) })
   await catalog.locator('select').selectOption(artifact.pluginId)
@@ -477,12 +515,10 @@ try {
 
   sourceFailure = true
   await page.reload()
-  await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'models', exact: true }).click()
-  await page.getByText(label('pluginCatalog.sourceError'), { exact: true }).waitFor()
-  sourceFailure = false
-  await page.getByRole('button', { name: label('pluginCatalog.retry'), exact: true }).click()
-  await page.locator('section').filter({ has: page.getByRole('heading', { name: label('pluginCatalog.title'), exact: true }) }).locator('select').selectOption(artifact.pluginId)
-  await page.getByRole('heading', { name: 'Fixture text model', exact: true }).waitFor()
+  const failedSources = page.waitForResponse(response => new URL(response.url()).pathname === '/api/account/plugin-models/sources' && response.status() === 500)
+  await modelNavigation.click()
+  await failedSources
+  await catalogHeading.waitFor({ state: 'hidden' })
 
   await page.setViewportSize({ width: 1280, height: 1000 })
   await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'account-review', exact: true }).click()

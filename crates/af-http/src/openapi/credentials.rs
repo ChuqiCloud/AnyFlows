@@ -8,6 +8,7 @@ use utoipa::{OpenApi, ToSchema};
 use crate::{
     credential_health::{
         CredentialHealthRequest, CredentialHealthResponse, CredentialHealthSnapshot,
+        RoutingHealthRecoveryRequest, RoutingHealthRecoveryResponse,
     },
     credential_usage::{CredentialUsageSnapshot, CredentialUsageStatus, CredentialUsageWindow},
     management_credential_writes::{
@@ -398,6 +399,26 @@ fn batch_delete_admin_credentials() {}
 )]
 fn get_admin_credential_health() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/channels/{channel_id}/health/recover",
+    operation_id = "recoverAdminRoutingHealth",
+    tag = "凭据管理",
+    summary = "恢复自动停用的渠道或申请健康恢复试探",
+    params(("channel_id" = i64, Path, minimum = 1)),
+    request_body = RoutingHealthRecoveryRequest,
+    responses(
+        (status = 200, description = "恢复操作结果", body = RoutingHealthRecoveryResponse),
+        (status = 400, description = "请求或当前状态无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "渠道或凭据不存在", body = ManagementErrorBody),
+        (status = 500, description = "恢复操作失败", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn recover_admin_routing_health() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -410,7 +431,8 @@ fn get_admin_credential_health() {}
         update_admin_credential,
         delete_admin_credential,
         batch_delete_admin_credentials,
-        get_admin_credential_health
+        get_admin_credential_health,
+        recover_admin_routing_health
     ),
     components(schemas(
         AdminCredentialKindSchema,
@@ -429,6 +451,8 @@ fn get_admin_credential_health() {}
         CredentialHealthRequest,
         CredentialHealthResponse,
         CredentialHealthSnapshot,
+        RoutingHealthRecoveryRequest,
+        RoutingHealthRecoveryResponse,
         AdminCredentialResponse,
         CredentialUsageSnapshot,
         CredentialUsageStatus,

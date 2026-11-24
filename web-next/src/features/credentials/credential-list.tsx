@@ -52,8 +52,10 @@ export function CredentialList(props: CredentialListProps) {
   const deleteCatalog = sparkChannel ? deleteCatalogQuery.data ?? [] : props.credentials
   const shadowCount = deleteCatalog.filter((item) => item.parent_id === deleting?.id).length
   const catalog = deleteCatalogQuery.data ?? props.credentials
-  const healthQuery = useAdminCredentialHealth(props.channel.id, catalog.map((item) => item.id), props.active && deleteCatalogQuery.isSuccess)
-  const healthById = new Map(healthQuery.data?.map((item) => [item.credential_id, item]))
+  const scoringEnabled = props.channel.health_scoring !== false
+  const healthQuery = useAdminCredentialHealth(props.channel.id, catalog.map((item) => item.id), props.active && scoringEnabled && deleteCatalogQuery.isSuccess)
+  const health = scoringEnabled ? healthQuery.data : undefined
+  const healthById = new Map(health?.map((item) => [item.credential_id, item]))
   const healthFilter = filter === 'degraded' || filter === 'healthCooling'
   const visible = catalog.filter((item) => filter === 'all'
     || (filter === 'degraded' ? (healthById.get(item.id)?.weight_multiplier_micros ?? 1_000_000) < 1_000_000
@@ -114,11 +116,12 @@ export function CredentialList(props: CredentialListProps) {
           <Select
             aria-label={t('credentials.batch.status', { defaultValue: '按状态筛选' })}
             className="w-40"
-            isDisabled={!healthQuery.data}
             items={[
               { key: 'all', label: t('credentials.batch.all', { defaultValue: '全部状态' }) },
-              { key: 'degraded', label: t('credentials.health.degraded') },
-              { key: 'healthCooling', label: t('credentials.health.cooling') },
+              ...(health ? [
+                { key: 'degraded', label: t('credentials.health.degraded') },
+                { key: 'healthCooling', label: t('credentials.health.cooling') },
+              ] : []),
               ...['available', 'pending', 'authorizationPending', 'autoDisabled', 'cooling', 'disabled', 'paused'].map((value) => ({ key: value, label: t(`credentials.runtime.${value}`) })),
             ]}
             selectedKeys={[filter]}

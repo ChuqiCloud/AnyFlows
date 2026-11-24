@@ -115,6 +115,8 @@ pub struct RedisHealthEvent {
     target: RedisHealthTarget,
     failure: Option<RedisHealthFailure>,
     latency_millis: Option<u64>,
+    breaker_threshold: Option<u8>,
+    recovery_probe: bool,
 }
 
 impl RedisHealthEvent {
@@ -125,6 +127,8 @@ impl RedisHealthEvent {
             target,
             failure: None,
             latency_millis: None,
+            breaker_threshold: None,
+            recovery_probe: false,
         }
     }
 
@@ -135,6 +139,8 @@ impl RedisHealthEvent {
             target,
             failure: None,
             latency_millis: Some(latency_millis),
+            breaker_threshold: None,
+            recovery_probe: false,
         }
     }
 
@@ -145,6 +151,8 @@ impl RedisHealthEvent {
             target,
             failure: Some(failure),
             latency_millis: None,
+            breaker_threshold: None,
+            recovery_probe: false,
         }
     }
 
@@ -159,12 +167,43 @@ impl RedisHealthEvent {
             target,
             failure: Some(failure),
             latency_millis: Some(latency_millis),
+            breaker_threshold: None,
+            recovery_probe: false,
         }
     }
 
     #[must_use]
     pub const fn target(self) -> RedisHealthTarget {
         self.target
+    }
+
+    /// Override the default streak length. Zero records health without opening a breaker.
+    #[must_use]
+    pub const fn with_breaker_threshold(mut self, threshold: u8) -> Self {
+        self.breaker_threshold = Some(threshold);
+        self
+    }
+
+    pub(super) fn breaker_threshold(self, fallback: u32) -> u32 {
+        self.breaker_threshold.map_or(fallback, u32::from)
+    }
+
+    /// A recovery attempt may reopen a breaker before its original deadline.
+    #[must_use]
+    pub const fn with_recovery_probe(mut self, recovery_probe: bool) -> Self {
+        self.recovery_probe = recovery_probe;
+        self
+    }
+
+    pub(super) const fn is_recovery_probe(self) -> bool {
+        self.recovery_probe
+    }
+
+    pub(super) const fn allows_early_probe(self) -> bool {
+        matches!(
+            self.failure,
+            Some(RedisHealthFailure::Network | RedisHealthFailure::Server)
+        )
     }
 
     pub(super) const fn is_failure(self) -> bool {

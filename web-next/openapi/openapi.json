@@ -28878,6 +28878,110 @@
         ]
       }
     },
+    "/api/admin/channels/{channel_id}/health/recover": {
+      "post": {
+        "tags": [
+          "凭据管理"
+        ],
+        "summary": "恢复自动停用的渠道或申请健康恢复试探",
+        "operationId": "recoverAdminRoutingHealth",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutingHealthRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "恢复操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutingHealthRecoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求或当前状态无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道或凭据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "恢复操作失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:recover_admin_routing_health:execute"
+        ]
+      }
+    },
     "/api/admin/proxies": {
       "get": {
         "tags": [
@@ -40123,6 +40227,7 @@
           "auto_ban",
           "auto_ban_rules",
           "pool_mode",
+          "health_scoring",
           "responses_websocket_enabled",
           "responses_compact_mode",
           "responses_compact_model_mapping",
@@ -40203,6 +40308,9 @@
           "pool_mode": {
             "type": "boolean",
             "description": "外部账号池模式开启时不维护渠道级本地故障状态。"
+          },
+          "health_scoring": {
+            "type": "boolean"
           },
           "client_simulation_profile": {
             "oneOf": [
@@ -40528,6 +40636,12 @@
           "pool_mode": {
             "type": "boolean",
             "description": "外部账号池模式；省略时默认关闭。"
+          },
+          "health_scoring": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "client_simulation_profile": {
             "oneOf": [
@@ -40895,6 +41009,12 @@
               "null"
             ],
             "description": "省略或 null 表示保留原值。"
+          },
+          "health_scoring": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "client_simulation_profile": {
             "oneOf": [
@@ -50237,6 +50357,7 @@
           "credential_id",
           "penalty_micros",
           "cooling",
+          "cooldown_remaining_seconds",
           "weight_multiplier_micros"
         ],
         "properties": {
@@ -50251,6 +50372,11 @@
           },
           "cooling": {
             "type": "boolean"
+          },
+          "cooldown_remaining_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           },
           "weight_multiplier_micros": {
             "type": "integer",
@@ -56072,8 +56198,7 @@
         "required": [
           "artifact_digest",
           "enabled",
-          "granted_capabilities",
-          "config"
+          "granted_capabilities"
         ],
         "properties": {
           "artifact_digest": {
@@ -57808,6 +57933,35 @@
             "type": "string"
           },
           "supportsExternalReads": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoutingHealthRecoveryRequest": {
+        "type": "object",
+        "properties": {
+          "credential_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "RoutingHealthRecoveryResponse": {
+        "type": "object",
+        "required": [
+          "channel_reenabled",
+          "probe_requested"
+        ],
+        "properties": {
+          "channel_reenabled": {
+            "type": "boolean"
+          },
+          "probe_requested": {
             "type": "boolean"
           }
         }

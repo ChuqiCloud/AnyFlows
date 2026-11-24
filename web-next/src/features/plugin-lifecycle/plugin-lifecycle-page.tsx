@@ -6,7 +6,7 @@ import type { TFunction } from 'i18next'
 import { Link } from 'react-router-dom'
 
 import type { PluginArtifactResponse, PluginDeploymentResponse } from '@/lib/api/generated/types.gen'
-import { isPluginConfigurationValid, pluginConfigurationWithDefaults, PluginConfigEditor } from './plugin-config-editor'
+import { hasPluginConfigurationFields, isPluginConfigurationValid, pluginConfigurationWithDefaults, PluginConfigEditor } from './plugin-config-editor'
 import { PluginCapabilityConsole } from './plugin-capability-console'
 import { PluginInstallPanel } from './plugin-install-panel'
 import { PluginProviderEditor } from './plugin-provider-editor'
@@ -170,12 +170,10 @@ export function PluginLifecyclePage() {
   const [registrationError, setRegistrationError] = useState(false)
   const [readingManifest, setReadingManifest] = useState(false)
   const [grantTarget, setGrantTarget] = useState<PluginArtifactResponse>()
-  const [configurationMode, setConfigurationMode] = useState(false)
+  const [configurationTargetGeneration, setConfigurationTargetGeneration] = useState<number>()
+  const configurationMode = configurationTargetGeneration !== undefined
   const [grants, setGrants] = useState<string[]>([])
-  const [config, setConfig] = useState('{}')
-  const [configurationDraft, setConfigurationDraft] = useState<{ value: string; generation: number }>()
-  const parsedConfiguration = (() => { try { return JSON.parse(config) as unknown } catch { return undefined } })()
-  const configurationSchemaValid = Boolean(grantTarget && isPluginConfigurationValid(grantTarget.manifest.configSchema, parsedConfiguration))
+  const [configurationDraft, setConfigurationDraft] = useState<string>()
   const [revocationTarget, setRevocationTarget] = useState<number>()
   const [revocationReason, setRevocationReason] = useState('')
   const [historyPlugin, setHistoryPlugin] = useState<string>()
@@ -189,7 +187,7 @@ export function PluginLifecyclePage() {
   const [uninstallNotice, setUninstallNotice] = useState<number>()
   const [cleanupNotice, setCleanupNotice] = useState(false)
   const history = usePluginDeploymentHistory(historyPlugin)
-  const deploymentHistory = usePluginDeploymentHistory(grantTarget?.pluginId, generationRefresh)
+  const deploymentHistory = usePluginDeploymentHistory(configurationMode ? undefined : grantTarget?.pluginId, generationRefresh)
   const pluginConfiguration = usePluginPublicConfiguration(grantTarget?.pluginId, configurationMode)
   const artifactList = artifacts.data?.pages.flatMap((page) => page.artifacts) ?? []
   const deploymentList = deployments.data?.pages.flatMap((page) => page.deployments) ?? []
@@ -200,8 +198,9 @@ export function PluginLifecyclePage() {
   const generationKnown = deploymentHistory.isSuccess && !deploymentHistory.isFetching
   const currentGeneration = deploymentHistory.data?.reduce<number | null>((latest, entry) => Math.max(latest ?? 0, entry.generation), null) ?? null
   const configurationGeneration = pluginConfiguration.data?.generation
-  const configurationStale = configurationDraft !== undefined && configurationDraft.generation !== configurationGeneration
-  const settingsConfig = configurationDraft?.value ?? (grantTarget && pluginConfiguration.isSuccess && !pluginConfiguration.isFetching
+  const configurationStale = configurationMode && configurationGeneration !== undefined && configurationTargetGeneration !== configurationGeneration
+  const configurationReady = configurationMode && pluginConfiguration.isSuccess && !pluginConfiguration.isFetching && !configurationStale
+  const settingsConfig = configurationDraft ?? (grantTarget && configurationReady
     ? JSON.stringify(pluginConfigurationWithDefaults(grantTarget.manifest.configSchema, pluginConfiguration.data.configuration), null, 2)
     : '{}')
   const settingsValue: unknown = JSON.parse(settingsConfig)
@@ -242,24 +241,25 @@ export function PluginLifecyclePage() {
   const openGrant = (artifact: PluginArtifactResponse) => {
     setGenerationRefresh((current) => current + 1)
     setGrantTarget(artifact)
-    setConfigurationMode(false)
+    setConfigurationTargetGeneration(undefined)
     setConfigurationDraft(undefined)
     setGrants([])
-    setConfig(JSON.stringify(pluginConfigurationWithDefaults(artifact.manifest.configSchema, {}), null, 2))
   }
 
   const openConfiguration = (deployment: PluginDeploymentResponse) => {
     setGrantTarget(deployment.artifact)
-    setConfigurationMode(true)
+    setConfigurationTargetGeneration(deployment.generation)
     setConfigurationDraft(undefined)
-    setGrants(deployment.grantedCapabilities.map(({ id }) => id))
-    setConfig(JSON.stringify(pluginConfigurationWithDefaults(deployment.artifact.manifest.configSchema, {}), null, 2))
   }
 
-  const submitDeployment = async () => {
-    if (!grantTarget || grants.length === 0 || !generationKnown || !configurationSchemaValid) return
-    const parsedConfig: unknown = (() => { try { return JSON.parse(config) } catch { return undefined } })()
-    if (!parsedConfig || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) return
+  const closeDeploymentDialog = () => {
+    setGrantTarget(undefined)
+    setConfigurationTargetGeneration(undefined)
+    setConfigurationDraft(undefined)
+  }
+
+  const submitDeployment = () => {
+    if (!grantTarget || grants.length === 0 || !generationKnown) return
     const allowed = grantableCapabilities(grantTarget).filter((item) => grants.includes(item.id))
     deploy.mutate({
       pluginId: grantTarget.pluginId,
@@ -268,20 +268,19 @@ export function PluginLifecyclePage() {
         expected_generation: currentGeneration,
         enabled: true,
         granted_capabilities: allowed.map(({ id, version }) => ({ id, version })),
-        config: parsedConfig as Record<string, unknown>,
       },
-    }, { onSuccess: () => setGrantTarget(undefined) })
+    }, { onSuccess: closeDeploymentDialog })
   }
 
   const submitConfiguration = () => {
-    if (!grantTarget || !configurationGeneration || configurationStale || !settingsValid) return
+    if (!grantTarget || !configurationGeneration || !configurationReady || !settingsValid) return
     updateConfiguration.mutate({
       pluginId: grantTarget.pluginId,
       body: {
         expected_generation: configurationGeneration,
         configuration: settingsValue as Record<string, unknown>,
       },
-    }, { onSuccess: () => setGrantTarget(undefined) })
+    }, { onSuccess: closeDeploymentDialog })
   }
 
   const confirmRemoval = () => {
@@ -394,7 +393,7 @@ export function PluginLifecyclePage() {
       </ModalContent>
     </Modal>
 
-    <Modal isOpen={grantTarget !== undefined} size="2xl" scrollBehavior="inside" isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={(open) => { if (!open && !busy) { setGrantTarget(undefined); setConfigurationMode(false); setConfigurationDraft(undefined) } }}>
+    <Modal isOpen={grantTarget !== undefined} size="2xl" scrollBehavior="inside" isDismissable={!busy} isKeyboardDismissDisabled={busy} onOpenChange={(open) => { if (!open && !busy) closeDeploymentDialog() }}>
       <ModalContent>
         <ModalHeader>{t(configurationMode ? 'pluginLifecycle.configureTitle' : 'pluginLifecycle.deployTitle', { plugin: grantTarget?.pluginId ?? '' })}</ModalHeader>
         <ModalBody>
@@ -405,18 +404,17 @@ export function PluginLifecyclePage() {
           </> : <>
             {pluginConfiguration.isPending || pluginConfiguration.isFetching ? <Skeleton className="h-24 rounded-lg" /> : null}
             {pluginConfiguration.isError ? <ErrorBox text={t('pluginLifecycle.errors.configurationLoad')} retry={t('pluginLifecycle.refresh')} onRetry={() => void pluginConfiguration.refetch()} /> : null}
-            {pluginConfiguration.isSuccess && !pluginConfiguration.isFetching ? <p className="text-sm text-muted-foreground">{t('pluginLifecycle.configureHint', { generation: configurationGeneration ?? '—' })}</p> : null}
+            {configurationReady && grantTarget ? <>
+              <PluginConfigEditor schema={grantTarget.manifest.configSchema} value={settingsConfig} onChange={setConfigurationDraft} locale={i18n.resolvedLanguage ?? 'en'} />
+              {!settingsValid ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.configEditor.invalid')}</p> : null}
+              <p className="text-xs text-muted-foreground">{t('pluginLifecycle.configHint')}</p>
+            </> : null}
+            {configurationStale ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.provider.conflict')}</p> : null}
           </>}
-          {grantTarget && (!configurationMode || (pluginConfiguration.isSuccess && !pluginConfiguration.isFetching)) ? <PluginConfigEditor schema={grantTarget.manifest.configSchema} value={configurationMode ? settingsConfig : config} onChange={configurationMode ? (value) => {
-            if (configurationGeneration) setConfigurationDraft((previous) => ({ value, generation: previous?.generation ?? configurationGeneration }))
-          } : setConfig} locale={i18n.resolvedLanguage ?? 'en'} /> : null}
-          {configurationStale ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.provider.conflict')}</p> : null}
-          {(!configurationMode || (pluginConfiguration.isSuccess && !pluginConfiguration.isFetching)) && !(configurationMode ? settingsValid : configurationSchemaValid) ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.configEditor.invalid')}</p> : null}
-          <p className="text-xs text-muted-foreground">{t('pluginLifecycle.configHint')}</p>
-          {deploy.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.action')}</p> : null}
-          {updateConfiguration.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.configuration')}</p> : null}
+          {!configurationMode && deploy.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.action')}</p> : null}
+          {configurationMode && updateConfiguration.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.errors.configuration')}</p> : null}
         </ModalBody>
-        <ModalFooter><Button variant="light" isDisabled={busy} onPress={() => { setGrantTarget(undefined); setConfigurationMode(false); setConfigurationDraft(undefined) }}>{t('pluginLifecycle.cancel')}</Button><Button color="primary" isDisabled={busy || (configurationMode ? !configurationGeneration || !pluginConfiguration.isSuccess || pluginConfiguration.isFetching || configurationStale || !settingsValid : !generationKnown || grants.length === 0 || !configurationSchemaValid)} onPress={() => void (configurationMode ? submitConfiguration() : submitDeployment())}>{configurationMode ? (updateConfiguration.isPending ? t('pluginLifecycle.saving') : t('pluginLifecycle.saveConfiguration')) : (deploy.isPending ? t('pluginLifecycle.saving') : t('pluginLifecycle.deploy'))}</Button></ModalFooter>
+        <ModalFooter><Button variant="light" isDisabled={busy} onPress={closeDeploymentDialog}>{t('pluginLifecycle.cancel')}</Button><Button color="primary" isDisabled={busy || (configurationMode ? !configurationReady || !settingsValid : !generationKnown || grants.length === 0)} onPress={configurationMode ? submitConfiguration : submitDeployment}>{configurationMode ? (updateConfiguration.isPending ? t('pluginLifecycle.saving') : t('pluginLifecycle.saveConfiguration')) : (deploy.isPending ? t('pluginLifecycle.saving') : t('pluginLifecycle.deploy'))}</Button></ModalFooter>
       </ModalContent>
     </Modal>
   </main>
@@ -445,6 +443,7 @@ function DeploymentCard({ deployment, history, historyOpen, historyLoading, hist
   const uiViewsEnabled = deployment.enabled && Boolean(deployment.artifact.approval) && !deployment.artifact.revocation
     && hasRenderablePluginUiViews(deployment.artifact.manifest, 'plugin_management', locale)
   const manifest = deployment.artifact.manifest
+  const canConfigure = Boolean(deployment.artifact.approval) && !deployment.artifact.revocation && hasPluginConfigurationFields(manifest.configSchema)
   const displayName = pluginUiText(manifest.displayName, locale) ?? deployment.pluginId
   const description = pluginDescription(deployment, uiCards, locale, t('pluginLifecycle.deployments.noDescription'))
   const trust = t('official' in deployment.artifact && deployment.artifact.official === true
@@ -460,12 +459,12 @@ function DeploymentCard({ deployment, history, historyOpen, historyLoading, hist
         <p className="mt-2 break-all text-xs text-muted-foreground">{deployment.pluginId}</p>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
-        <Chip size="sm" color={deployment.enabled ? 'success' : 'default'} variant="flat">{deployment.enabled ? t('pluginLifecycle.status.enabled') : t('pluginLifecycle.status.disabled')}</Chip>
+        <Chip size="sm" color={deployment.enabled ? 'success' : deployment.needsConfiguration ? 'warning' : 'default'} variant="flat">{t(deployment.enabled ? 'pluginLifecycle.status.enabled' : deployment.needsConfiguration ? 'pluginLifecycle.status.needsConfiguration' : 'pluginLifecycle.status.disabled')}</Chip>
         <Chip size="sm" variant="flat">{trust}</Chip>
       </div>
     </div>
     <p className="mt-3 text-xs text-muted-foreground">v{deployment.artifact.pluginVersion} · g{deployment.generation}</p>
-    <Button className="mt-4 w-full" color="primary" isDisabled={busy} onPress={onConfigure}>{t('pluginLifecycle.configure')}</Button>
+    {canConfigure ? <Button className="mt-4 w-full" color="primary" isDisabled={busy} onPress={onConfigure}>{t('pluginLifecycle.configure')}</Button> : null}
     <details className="mt-3 border-t border-divider pt-3">
       <summary className="cursor-pointer text-sm font-medium">{t('pluginLifecycle.deployments.more')}</summary>
       <div className="mt-3 grid gap-3">

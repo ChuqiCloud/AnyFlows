@@ -571,6 +571,95 @@ async fn verify_health_contract(redis_url: &str, namespace: &str) {
     assert!(recovered.iter().all(|state| !state.is_cooling()));
     assert!(recovered.iter().all(|state| state.breaker_level() == 0));
 
+    // Readiness checks leave the opportunity free until an actual attempt claims it.
+    let probe_policy = || RedisHealthConfig::new(RedisConfig::new(redis_url), namespace).unwrap();
+    let node_a = RedisHealthStore::connect(probe_policy()).await.unwrap();
+    let node_b = RedisHealthStore::connect(probe_policy()).await.unwrap();
+    let recovery_channel = af_domain::ChannelId::new(96).unwrap();
+    let transient_id = CredentialId::new(96).unwrap();
+    let limited_id = CredentialId::new(97).unwrap();
+    let transient = RedisHealthTarget::Credential(transient_id);
+    let limited = RedisHealthTarget::Credential(limited_id);
+    let transient_failure =
+        RedisHealthEvent::failed(transient, RedisHealthFailure::Network).with_breaker_threshold(5);
+    let limited_failure = RedisHealthEvent::failed(limited, RedisHealthFailure::RateLimited);
+    node_a.apply(&[transient_failure; 4]).await.unwrap();
+    assert_eq!(
+        node_b.states(&[transient]).await.unwrap()[0].breaker_level(),
+        0
+    );
+    node_a.apply(&[transient_failure]).await.unwrap();
+    node_a.apply(&[limited_failure; 3]).await.unwrap();
+    for (id, scope) in [(transient_id, transient), (limited_id, limited)] {
+        assert_eq!(
+            node_b
+                .probe_priority(recovery_channel, id, id, &[scope], false)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+    node_a
+        .request_recovery(RedisHealthTarget::Channel(recovery_channel))
+        .await
+        .unwrap();
+    assert_eq!(
+        node_b
+            .probe_priority(recovery_channel, limited_id, limited_id, &[limited], true)
+            .await
+            .unwrap(),
+        0
+    );
+    node_a.request_recovery(limited).await.unwrap();
+    assert_eq!(
+        node_b
+            .probe_priority(recovery_channel, limited_id, limited_id, &[limited], false)
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        node_b
+            .probe_priority(
+                recovery_channel,
+                transient_id,
+                transient_id,
+                &[transient],
+                false
+            )
+            .await
+            .unwrap(),
+        2
+    );
+    let scopes = [transient];
+    let (first_claim, second_claim) = tokio::join!(
+        node_a.probe_priority(recovery_channel, transient_id, transient_id, &scopes, true),
+        node_b.probe_priority(recovery_channel, transient_id, transient_id, &scopes, true),
+    );
+    assert_eq!(first_claim.unwrap() + second_claim.unwrap(), 2);
+    let late = node_a.apply(&[transient_failure]).await.unwrap();
+    assert_eq!(late[0].breaker_level(), 1);
+    let failed_probe = node_a
+        .apply(&[transient_failure.with_recovery_probe(true)])
+        .await
+        .unwrap();
+    assert_eq!(failed_probe[0].breaker_level(), 2);
+    let recovered_probe = node_b
+        .apply(&[RedisHealthEvent::succeeded(transient)])
+        .await
+        .unwrap();
+    assert_eq!(recovered_probe[0].breaker_level(), 0);
+    assert!(recovered_probe[0].failures_micros() > 0);
+
+    // Sustained failures on a scoring-only channel must keep the Redis state readable.
+    let scoring_only = RedisHealthTarget::Channel(af_domain::ChannelId::new(98).unwrap());
+    let scored_failure = RedisHealthEvent::failed(scoring_only, RedisHealthFailure::Server)
+        .with_breaker_threshold(0);
+    node_a.apply(&[scored_failure; 70]).await.unwrap();
+    let score = node_b.states(&[scoring_only]).await.unwrap()[0];
+    assert_eq!(score.breaker_level(), 0);
+    assert!(score.penalty_micros() > 0);
+
     let decaying = RedisHealthTarget::Credential(CredentialId::new(83).unwrap());
     first
         .apply(&[RedisHealthEvent::failed(

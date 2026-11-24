@@ -160,8 +160,8 @@ pub(crate) struct PluginDeploymentRequest {
     enabled: bool,
     #[schema(max_items = 128)]
     granted_capabilities: Vec<PluginCapabilityGrantRequest>,
-    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
-    config: Value,
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema, required = false)]
+    config: Option<Value>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -2263,7 +2263,11 @@ async fn deploy(
     request: Result<Json<PluginDeploymentRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::PluginLifecycleInvalidRequest)?;
-    if contains_sensitive_config_fields(&request.config) {
+    if request
+        .config
+        .as_ref()
+        .is_some_and(contains_sensitive_config_fields)
+    {
         return Err(ManagementError::PluginLifecycleInvalidRequest);
     }
     let grants = request

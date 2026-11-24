@@ -130,7 +130,14 @@ impl AdminChannelCreateCommand {
         Ok(self)
     }
 
-    /// 设置创建渠道时是否启用外部账号池模式。
+    /// 设置渠道健康评分和熔断开关。
+    #[must_use]
+    pub fn with_health_scoring(mut self, enabled: bool) -> Self {
+        self.fields.health_scoring = Some(enabled);
+        self
+    }
+
+    /// 设置外部账号池模式。
     #[must_use]
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.fields.pool_mode = Some(enabled);
@@ -275,7 +282,14 @@ impl AdminChannelUpdateCommand {
         Ok(self)
     }
 
-    /// 更新外部账号池模式；未调用时由仓储保留原值。
+    /// 设置渠道健康评分和熔断开关。
+    #[must_use]
+    pub fn with_health_scoring(mut self, enabled: bool) -> Self {
+        self.fields.health_scoring = Some(enabled);
+        self
+    }
+
+    /// 设置外部账号池模式。
     #[must_use]
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.fields.pool_mode = Some(enabled);
@@ -346,6 +360,7 @@ struct AdminChannelWriteFields {
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
+    health_scoring: Option<bool>,
     client_simulation_profile: Option<Option<ClientSimulationProfile>>,
     client_simulation_risk_accepted: bool,
     client_simulation_body_profile: Option<Option<ClientSimulationBodyProfile>>,
@@ -438,6 +453,7 @@ impl AdminChannelWriteFields {
             header_override,
             settings,
             pool_mode: require_sensitive_fields.then_some(false),
+            health_scoring: None,
             client_simulation_profile: require_sensitive_fields.then_some(None),
             client_simulation_risk_accepted: false,
             client_simulation_body_profile: require_sensitive_fields.then_some(None),
@@ -526,6 +542,7 @@ impl AdminChannelWriteFields {
 
     fn into_record(self) -> AdminChannelWriteRecord {
         let pool_mode = self.pool_mode;
+        let health_scoring = self.health_scoring;
         let client_simulation_profile = self.client_simulation_profile;
         let client_simulation_risk_accepted = self.client_simulation_risk_accepted;
         let client_simulation_body_profile = self.client_simulation_body_profile;
@@ -554,6 +571,10 @@ impl AdminChannelWriteFields {
             self.tag,
         )
         .with_provider(self.provider);
+        let record = match health_scoring {
+            Some(enabled) => record.with_health_scoring(enabled),
+            None => record,
+        };
         let record = match pool_mode {
             Some(enabled) => record.with_pool_mode(enabled),
             None => record,

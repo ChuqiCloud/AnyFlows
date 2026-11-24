@@ -135,6 +135,10 @@ impl DatabaseAdminPluginLifecycleService {
                 .await
                 .map_err(crate::plugin_lifecycle::map_catalog_error)?
                 .ok_or(Error::NotFound)?;
+            let mut config = current.config;
+            if let Some(fields) = config.as_object_mut() {
+                fields.remove(crate::plugin_lifecycle::PLUGIN_SETUP_PENDING_FIELD);
+            }
             let disabled = self
                 .catalog_repository()
                 .uninstall(PluginDeploymentWrite {
@@ -143,7 +147,7 @@ impl DatabaseAdminPluginLifecycleService {
                     expected_generation: Some(expected_generation),
                     enabled: false,
                     granted_capabilities: current.granted_capabilities,
-                    config: current.config,
+                    config,
                     updated_by: principal.user_id(),
                     updated_at: current_timestamp()?,
                     request_id: request_id.to_owned(),

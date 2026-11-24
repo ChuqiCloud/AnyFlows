@@ -99,8 +99,15 @@ fn matching_channels(
     report: &RelayAttemptReport,
 ) -> Option<BTreeSet<ChannelId>> {
     let mut channels = BTreeSet::new();
+    let successful_channel = report
+        .successful_candidate_index()
+        .and_then(|index| targets.get(index))
+        .map(ChannelAutoBanAttemptTarget::channel_id);
     for failure in report.failures() {
         let target = targets.get(failure.candidate_index())?;
+        if failure.request_aborted() || successful_channel == Some(target.channel_id()) {
+            continue;
+        }
         if target.should_disable(
             failure.error(),
             failure.server_status(),

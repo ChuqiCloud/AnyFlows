@@ -599,6 +599,23 @@ impl IndexedWeightedScheduler {
         self.route_plan_with_health(group_id, model, &BTreeMap::new())
     }
 
+    /// 在同一快照内筛选实际使用渠道健康评分的候选。
+    pub fn health_scored_channel_ids(
+        &self,
+        channel_ids: &[ChannelId],
+    ) -> Result<Vec<ChannelId>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        Ok(channel_ids
+            .iter()
+            .copied()
+            .filter(|channel| {
+                snapshot
+                    .runtime_target(*channel)
+                    .is_some_and(|target| target.health_scoring() && !target.pool_mode())
+            })
+            .collect())
+    }
+
     /// 返回当前快照下最多 64 个候选渠道标识，供一次 Redis 健康批量读取使用。
     pub fn route_channel_ids(
         &self,
@@ -740,7 +757,7 @@ fn build_route_plan(
             !snapshot
                 .runtime_targets
                 .get(channel_id)
-                .is_some_and(|target| target.pool_mode())
+                .is_some_and(|target| target.pool_mode() || !target.health_scoring())
         })
         .map(|(channel_id, state)| (*channel_id, *state))
         .collect();

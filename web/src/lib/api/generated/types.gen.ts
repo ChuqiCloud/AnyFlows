@@ -231,6 +231,7 @@ export type AdminChannel = {
     auto_ban: boolean;
     auto_ban_rules: AdminChannelAutoBanRules;
     pool_mode: boolean;
+    health_scoring: boolean;
     client_simulation_profile?: null | ClientSimulationProfile;
     client_simulation_body_profile?: null | ClientSimulationBodyProfile;
     responses_websocket_enabled: boolean;
@@ -277,6 +278,7 @@ export type AdminChannelCreateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -327,6 +329,7 @@ export type AdminChannelUpdateRequest = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -1153,6 +1156,14 @@ export type AdminPaymentSettingsRequest = {
     refund_auto_submit_enabled: boolean;
     epay_quota_per_cny: number;
 };
+export type AdminPluginTaskListQuery = {
+    cursor?: string | null;
+    limit?: number | null;
+};
+export type AdminPluginTaskReconciliationRequest = {
+    actualUnits: number;
+    reason: string;
+};
 export type AdminProxyCleanupRequest = {
     target: string;
     mode: string;
@@ -1865,6 +1876,7 @@ export type CredentialHealthSnapshot = {
     credential_id: number;
     penalty_micros: number;
     cooling: boolean;
+    cooldown_remaining_seconds: number;
     weight_multiplier_micros: number;
 };
 export type CredentialModelItem = {
@@ -2948,6 +2960,7 @@ export type PluginDeploymentResponse = {
     generation: number;
     artifact: PluginArtifactResponse;
     enabled: boolean;
+    needsConfiguration: boolean;
     providerSelection?: null | PluginProviderSelectionBody;
     grantedCapabilities: Array<PluginCapabilityGrantResponse>;
     updatedBy: number;
@@ -3008,18 +3021,42 @@ export type PluginMarketSourceRequest = {
     path?: string | null;
 };
 export type PluginPackageInstallRequest = {
-    package: Blob | File;
+    package?: Blob | File | null;
+    repository?: string | null;
+    asset_name?: string | null;
     config?: string | null;
     expected_generation?: number | null;
+};
+export type PluginProviderEndpointBody = {
+    id: string;
+    url: string;
+    allowedPaths?: Array<string> | null;
+    allowedMethods?: Array<string>;
+    websocketEnabled?: boolean | null;
 };
 export type PluginProviderSelectionBody = {
     channelIds: Array<number>;
     models: Array<string>;
     priority: number;
+    upstreamResponseMode?: PluginProviderUpstreamResponseModeBody;
+    sessionEnabled?: boolean;
+    sessionTimeoutMs?: number;
+    endpoints?: Array<PluginProviderEndpointBody>;
 };
 export type PluginProviderSelectionRequest = {
     expected_generation: number;
     selection: PluginProviderSelectionBody;
+};
+export type PluginProviderUpstreamResponseModeBody = 'auto' | 'non_streaming' | 'streaming';
+export type PluginPublicConfigurationResponse = {
+    pluginId: string;
+    generation: number;
+    configuration: {
+        [key: string]: unknown;
+    };
+};
+export type PluginPublicConfigurationUpdateRequest = {
+    expected_generation: number;
 };
 export type PluginRouteInvocationResponse = {
     pluginId: string;
@@ -3253,6 +3290,13 @@ export type ReviewerResponse = {
     displayName: string;
     pluginVersion: string;
     supportsExternalReads: boolean;
+};
+export type RoutingHealthRecoveryRequest = {
+    credential_id?: number | null;
+};
+export type RoutingHealthRecoveryResponse = {
+    channel_reenabled: boolean;
+    probe_requested: boolean;
 };
 export type RuntimeDependency = {
     kind: string;
@@ -3956,6 +4000,7 @@ export type AdminChannelCreateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -4001,6 +4046,7 @@ export type AdminChannelUpdateRequestWritable = {
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
+    health_scoring?: boolean | null;
     client_simulation_profile: null | ClientSimulationProfile;
     client_simulation_risk_accepted: boolean;
     client_simulation_body_profile: null | ClientSimulationBodyProfile;
@@ -4250,7 +4296,7 @@ export type PluginDeploymentRequestWritable = {
     expected_generation?: number | null;
     enabled: boolean;
     granted_capabilities: Array<PluginCapabilityGrantRequest>;
-    config: {
+    config?: {
         [key: string]: unknown;
     };
 };
@@ -4262,6 +4308,12 @@ export type PluginMarketInstallHttpRequestWritable = {
         [key: string]: unknown;
     };
     expected_generation?: number | null;
+};
+export type PluginPublicConfigurationUpdateRequestWritable = {
+    expected_generation: number;
+    configuration: {
+        [key: string]: unknown;
+    };
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
@@ -11075,6 +11127,26 @@ export type GetAdminCredentialHealthResponses = {
     200: CredentialHealthResponse;
 };
 export type GetAdminCredentialHealthResponse = GetAdminCredentialHealthResponses[keyof GetAdminCredentialHealthResponses];
+export type RecoverAdminRoutingHealthData = {
+    body: RoutingHealthRecoveryRequest;
+    path: {
+        channel_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/health/recover';
+};
+export type RecoverAdminRoutingHealthErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type RecoverAdminRoutingHealthError = RecoverAdminRoutingHealthErrors[keyof RecoverAdminRoutingHealthErrors];
+export type RecoverAdminRoutingHealthResponses = {
+    200: RoutingHealthRecoveryResponse;
+};
+export type RecoverAdminRoutingHealthResponse = RecoverAdminRoutingHealthResponses[keyof RecoverAdminRoutingHealthResponses];
 export type ListAdminCredentialProxiesData = {
     body?: never;
     path?: never;
@@ -11892,6 +11964,7 @@ export type InstallAdminPluginPackageErrors = {
     400: ManagementError;
     401: ManagementError;
     403: ManagementError;
+    404: ManagementError;
     409: ManagementError;
     413: ManagementError;
     422: ManagementError;
@@ -12040,6 +12113,44 @@ export type InvokeAdminPluginTaskResponses = {
     200: PluginTaskInvocationResponse;
 };
 export type InvokeAdminPluginTaskResponse = InvokeAdminPluginTaskResponses[keyof InvokeAdminPluginTaskResponses];
+export type ListAdminUnknownPluginTasksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        cursor?: string;
+        limit?: number;
+    };
+    url: '/api/admin/plugins/tasks/unknown';
+};
+export type ListAdminUnknownPluginTasksErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminUnknownPluginTasksError = ListAdminUnknownPluginTasksErrors[keyof ListAdminUnknownPluginTasksErrors];
+export type ListAdminUnknownPluginTasksResponses = {
+    200: unknown;
+};
+export type ReconcileAdminUnknownPluginTaskData = {
+    body: AdminPluginTaskReconciliationRequest;
+    path: {
+        task_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/tasks/{task_id}/reconcile';
+};
+export type ReconcileAdminUnknownPluginTaskErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ReconcileAdminUnknownPluginTaskError = ReconcileAdminUnknownPluginTaskErrors[keyof ReconcileAdminUnknownPluginTaskErrors];
+export type ReconcileAdminUnknownPluginTaskResponses = {
+    200: unknown;
+};
 export type InvokeAdminPluginRouteDeleteData = {
     body?: never;
     path: {
@@ -12367,6 +12478,42 @@ export type ConfigureAdminPluginProviderSelectionResponses = {
     200: PluginDeploymentResponse;
 };
 export type ConfigureAdminPluginProviderSelectionResponse = ConfigureAdminPluginProviderSelectionResponses[keyof ConfigureAdminPluginProviderSelectionResponses];
+export type GetAdminPluginConfigurationData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/configuration';
+};
+export type GetAdminPluginConfigurationErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminPluginConfigurationError = GetAdminPluginConfigurationErrors[keyof GetAdminPluginConfigurationErrors];
+export type GetAdminPluginConfigurationResponses = {
+    200: PluginPublicConfigurationResponse;
+};
+export type GetAdminPluginConfigurationResponse = GetAdminPluginConfigurationResponses[keyof GetAdminPluginConfigurationResponses];
+export type ConfigureAdminPluginConfigurationData = {
+    body: PluginPublicConfigurationUpdateRequestWritable;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/configuration';
+};
+export type ConfigureAdminPluginConfigurationErrors = {
+    400: ManagementError;
+    409: ManagementError;
+};
+export type ConfigureAdminPluginConfigurationError = ConfigureAdminPluginConfigurationErrors[keyof ConfigureAdminPluginConfigurationErrors];
+export type ConfigureAdminPluginConfigurationResponses = {
+    200: PluginDeploymentResponse;
+};
+export type ConfigureAdminPluginConfigurationResponse = ConfigureAdminPluginConfigurationResponses[keyof ConfigureAdminPluginConfigurationResponses];
 export type SubmitModelPluginTaskData = {
     body: ModelPluginTaskRequest;
     path?: never;
