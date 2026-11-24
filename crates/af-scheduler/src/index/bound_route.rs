@@ -218,7 +218,8 @@ fn build_bound_route_plan(
         .filter(|(channel_id, _)| {
             !channels.iter().any(|candidate| {
                 candidate.candidate.channel_id() == **channel_id
-                    && candidate.runtime_target.pool_mode()
+                    && (candidate.runtime_target.pool_mode()
+                        || !candidate.runtime_target.health_scoring())
             })
         })
         .map(|(channel_id, state)| (*channel_id, *state))

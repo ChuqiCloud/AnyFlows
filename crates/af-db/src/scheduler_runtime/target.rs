@@ -491,6 +491,7 @@ pub struct SchedulerRuntimeTargetRecord {
     headers: Vec<SchedulerRuntimeHeader>,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    health_scoring: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
@@ -657,6 +658,7 @@ impl SchedulerRuntimeTargetRecord {
             headers,
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
+            health_scoring: true,
             client_simulation_profile: None,
             client_simulation_body_profile: None,
             client_profile: None,
@@ -813,6 +815,12 @@ impl SchedulerRuntimeTargetRecord {
     }
 
     /// 显式设置渠道是否跳过渠道级本地故障状态。
+    #[must_use]
+    pub fn with_health_scoring(mut self, enabled: bool) -> Self {
+        self.health_scoring = enabled;
+        self
+    }
+
     #[must_use]
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
         self.pool_mode = enabled;
@@ -981,6 +989,11 @@ impl SchedulerRuntimeTargetRecord {
     }
 
     /// 返回渠道是否把账号健康交由外部池管理。
+    #[must_use]
+    pub const fn health_scoring(&self) -> bool {
+        self.health_scoring
+    }
+
     #[must_use]
     pub const fn pool_mode(&self) -> bool {
         self.pool_mode

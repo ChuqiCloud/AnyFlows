@@ -87,6 +87,7 @@ pub struct AdminChannel {
     auto_ban: bool,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    health_scoring: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     responses_websocket_enabled: bool,
@@ -148,6 +149,7 @@ impl AdminChannel {
             auto_ban,
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
+            health_scoring: true,
             provider: None,
             client_simulation_profile: None,
             client_simulation_body_profile: None,
@@ -229,6 +231,12 @@ impl AdminChannel {
     pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
         &self.auto_ban_rules
     }
+    /// 返回是否启用运行时健康评分和熔断。
+    #[must_use]
+    pub const fn health_scoring(&self) -> bool {
+        self.health_scoring
+    }
+
     /// 返回是否启用外部账号池模式。
     #[must_use]
     pub const fn pool_mode(&self) -> bool {
@@ -364,6 +372,7 @@ impl AdminChannel {
         )
         .with_auto_ban_rules(record.auto_ban_rules().clone())
         .with_pool_mode(record.pool_mode())
+        .with_health_scoring(record.health_scoring())
         .with_provider(record.provider().map(str::to_owned))
         .with_client_simulation_profile(record.client_simulation_profile())
         .with_client_simulation_body_profile(record.client_simulation_body_profile())
@@ -426,6 +435,11 @@ impl AdminChannel {
         strategy: Option<crate::CredentialSelectionStrategy>,
     ) -> Self {
         self.credential_strategy = strategy;
+        self
+    }
+
+    fn with_health_scoring(mut self, enabled: bool) -> Self {
+        self.health_scoring = enabled;
         self
     }
 

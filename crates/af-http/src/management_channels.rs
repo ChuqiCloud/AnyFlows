@@ -87,6 +87,7 @@ pub(crate) struct AdminChannelResponse {
     auto_ban_rules: AdminChannelAutoBanRulesDto,
     /// 外部账号池模式开启时不维护渠道级本地故障状态。
     pool_mode: bool,
+    health_scoring: bool,
     /// 默认关闭的版本化客户端仿真档案。
     #[schema(value_type = Option<crate::openapi::schema::ClientSimulationProfileSchema>)]
     client_simulation_profile: Option<af_domain::ClientSimulationProfile>,
@@ -207,6 +208,7 @@ impl AdminChannelResponse {
             auto_ban: channel.auto_ban(),
             auto_ban_rules: AdminChannelAutoBanRulesDto::from(channel.auto_ban_rules()),
             pool_mode: channel.pool_mode(),
+            health_scoring: channel.health_scoring(),
             client_simulation_profile: channel.client_simulation_profile(),
             client_simulation_body_profile: channel.client_simulation_body_profile(),
             responses_websocket_enabled: channel.responses_websocket_enabled(),

@@ -128,7 +128,11 @@ fn try_runtime_target(
     .map(|target| target.with_auto_ban_rules(channel.auto_ban_rules().clone()))
     .map(|target| target.with_relay_settings(channel.relay_settings()))
     .map(|target| target.with_upstream_routing(channel.upstream_routing().clone()))
-    .map(|target| target.with_pool_mode(channel.pool_mode()))
+    .map(|target| {
+        target
+            .with_pool_mode(channel.pool_mode())
+            .with_health_scoring(channel.health_scoring())
+    })
     .and_then(|target| target.with_client_simulation_profile(channel.client_simulation_profile()))
     .and_then(|target| {
         target.with_client_simulation_body_profile(channel.client_simulation_body_profile())

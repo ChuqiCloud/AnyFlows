@@ -691,6 +691,60 @@ async fn compact_configuration_round_trips_and_clears_stale_probe_facts()
 }
 
 #[tokio::test]
+async fn health_scoring_round_trip_preserves_opt_out_on_partial_update()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let url = "https://api.example.com/v1";
+    let default = fixture
+        .repository
+        .create_channel(channel_record("default", url))
+        .await?;
+    let disabled = fixture
+        .repository
+        .create_channel(channel_record("disabled", url).with_health_scoring(false))
+        .await?;
+    assert!(default.health_scoring());
+    assert!(!disabled.health_scoring());
+
+    let (rows, _) = fixture.repository.list(None, 10).await?.into_parts();
+    assert!(
+        rows.iter()
+            .find(|row| row.channel_id() == default.channel_id())
+            .unwrap()
+            .health_scoring()
+    );
+    assert!(
+        !rows
+            .iter()
+            .find(|row| row.channel_id() == disabled.channel_id())
+            .unwrap()
+            .health_scoring()
+    );
+
+    let AdminChannelMutationOutcome::Mutated(preserved) = fixture
+        .repository
+        .update_channel(disabled.channel_id(), channel_update_record("renamed", url))
+        .await?
+    else {
+        panic!("channel should update")
+    };
+    assert!(!preserved.health_scoring());
+    let AdminChannelMutationOutcome::Mutated(enabled) = fixture
+        .repository
+        .update_channel(
+            disabled.channel_id(),
+            channel_update_record("renamed", url).with_health_scoring(true),
+        )
+        .await?
+    else {
+        panic!("channel should update")
+    };
+    assert!(enabled.health_scoring());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn pool_mode_round_trip_preserves_unknown_sensitive_settings() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let created = fixture

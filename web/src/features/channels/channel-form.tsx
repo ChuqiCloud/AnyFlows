@@ -264,6 +264,15 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
               <Controller control={form.control} name="poolMode" render={({ field }) => <Switch id="channel-pool-mode" checked={field.value} onCheckedChange={field.onChange} />} />
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
+              <div>
+                <Label htmlFor="channel-health-scoring">{t('channels.fields.healthScoring')}</Label>
+                <p id="channel-health-scoring-help" className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.healthScoringHint')}</p>
+              </div>
+              <Controller control={form.control} name="healthScoring" render={({ field }) => (
+                <Switch id="channel-health-scoring" aria-describedby="channel-health-scoring-help" checked={field.value} onCheckedChange={field.onChange} />
+              )} />
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
               <div><Label htmlFor="channel-auto-ban">{t('channels.fields.autoBan')}</Label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t(poolMode ? 'channels.form.autoBanPoolModeHint' : 'channels.form.autoBanHint')}</p></div>
               <Controller control={form.control} name="autoBan" render={({ field }) => <Switch id="channel-auto-ban" checked={field.value} disabled={poolMode} onCheckedChange={field.onChange} />} />
             </div>

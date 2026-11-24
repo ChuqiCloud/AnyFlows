@@ -495,7 +495,7 @@ impl ScheduledChatService {
             PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE),
         );
 
-        'channels: for candidate in route.candidates() {
+        'channels: for candidate in super::ordered_health_channels(&route, credential_health) {
             let target = candidate.runtime_target();
             if !target_matches_protocol(target, Protocol::XaiVideo)
                 || !target.parameter_overrides().is_empty()
@@ -582,12 +582,19 @@ impl ScheduledChatService {
                         target.relay_retry_limit(),
                         target.relay_retry_delay_ms(),
                     ));
-                if let Some(concurrency) = &self.concurrency {
-                    relay_target = relay_target.with_attempt_gate(concurrency.account_gate(
-                        runtime_credential.concurrency_owner_id(),
-                        runtime_credential.concurrency(),
-                        wait_plan.timeout(),
-                    ));
+                let recovery_probe =
+                    crate::credential_order::recovery_probe(runtime_credential, credential_health);
+                if recovery_probe {
+                    relay_target = relay_target.without_retry();
+                }
+                if let Some(gate) = self.credential_attempt_gate(
+                    target.channel_id(),
+                    runtime_credential,
+                    request.model().as_str(),
+                    wait_plan.timeout(),
+                    recovery_probe,
+                )? {
+                    relay_target = relay_target.with_attempt_gate(gate);
                 }
                 candidates.push(VideoTaskSubmissionCandidate::new(
                     relay_target,
@@ -615,6 +622,8 @@ impl ScheduledChatService {
                         oauth_has_refresh_token,
                         target.pool_mode(),
                     )?
+                    .with_health_policy(target, &eligible_credentials)
+                    .with_recovery_probe(recovery_probe)
                     .with_model(request.model().as_str())?,
                 );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
@@ -731,6 +740,7 @@ impl ScheduledChatService {
             oauth_has_refresh_token,
             target.pool_mode(),
         )?
+        .with_health_policy(&target, std::slice::from_ref(runtime_credential))
         .with_model(binding.target_snapshot.requested_model.as_str())?];
         let auto_ban_targets = [ChannelAutoBanAttemptTarget::new(
             target.channel_id(),

@@ -56,8 +56,10 @@ export function CredentialList(props: CredentialListProps) {
   const deleteCatalog = sparkChannel ? deleteCatalogQuery.data ?? [] : props.credentials
   const shadowCount = deleteCatalog.filter((item) => item.parent_id === deleting?.id).length
   const catalog = deleteCatalogQuery.data ?? props.credentials
-  const healthQuery = useAdminCredentialHealth(props.channel.id, catalog.map((item) => item.id), props.active && deleteCatalogQuery.isSuccess)
-  const healthById = new Map(healthQuery.data?.map((item) => [item.credential_id, item]))
+  const scoringEnabled = props.channel.health_scoring !== false
+  const healthQuery = useAdminCredentialHealth(props.channel.id, catalog.map((item) => item.id), props.active && scoringEnabled && deleteCatalogQuery.isSuccess)
+  const health = scoringEnabled ? healthQuery.data : undefined
+  const healthById = new Map(health?.map((item) => [item.credential_id, item]))
   const healthFilter = filter === 'degraded' || filter === 'healthCooling'
   const visible = catalog.filter((item) => filter === 'all'
     || (filter === 'degraded' ? (healthById.get(item.id)?.weight_multiplier_micros ?? 1_000_000) < 1_000_000
@@ -118,8 +120,8 @@ export function CredentialList(props: CredentialListProps) {
           <label className="flex items-center gap-2"><input type="checkbox" disabled={!bulkReady || visible.length === 0} checked={visible.length > 0 && visible.every((item) => selected.includes(item.id))} onChange={(event) => setSelected(event.target.checked ? visible.map((item) => item.id) : [])} />{t('credentials.batch.selectFiltered', { defaultValue: '全选筛选结果' })}</label>
           <select aria-label={t('credentials.batch.status', { defaultValue: '按状态筛选' })} value={filter} onChange={(event) => { setFilter(event.target.value); setSelected([]) }} className="rounded-md border border-[var(--hairline)] bg-transparent p-2">
             <option value="all">{t('credentials.batch.all', { defaultValue: '全部状态' })}</option>
-            <option value="degraded" disabled={!healthQuery.data}>{t('credentials.health.degraded')}</option>
-            <option value="healthCooling" disabled={!healthQuery.data}>{t('credentials.health.cooling')}</option>
+            <option value="degraded" disabled={!health}>{t('credentials.health.degraded')}</option>
+            <option value="healthCooling" disabled={!health}>{t('credentials.health.cooling')}</option>
             {['available', 'pending', 'authorizationPending', 'autoDisabled', 'cooling', 'disabled', 'paused'].map((value) => <option key={value} value={value}>{t(`credentials.runtime.${value}`)}</option>)}
           </select>
           <Button type="button" size="sm" variant="secondary" disabled={!bulkReady || !selectedItems.length || selectedItems.length > 2048} onClick={() => { setBatchError(false); setBatch(selectedItems) }}><Trash2 className="size-4" aria-hidden="true" />{t('credentials.batch.deleteSelected', { defaultValue: '删除所选（{{count}}）', count: selectedItems.length })}</Button>

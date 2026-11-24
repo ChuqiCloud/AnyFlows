@@ -12,8 +12,12 @@ use af_cache::{
     RedisHealthSnapshot, RedisHealthStore, RedisHealthTarget,
 };
 use af_domain::{ChannelId, CredentialId, RateLimitScope, UpstreamError};
-use af_relay::RelayAttemptReport;
+use af_relay::{
+    RelayAttemptGate, RelayAttemptGateError, RelayAttemptGateFuture, RelayAttemptPermit,
+    RelayAttemptReleaseFuture, RelayAttemptReport,
+};
 use af_scheduler::ChannelRoutingHealth;
+use futures_util::StreamExt;
 use thiserror::Error;
 
 use crate::credential_feedback::CredentialAttemptTarget;
@@ -30,11 +34,45 @@ pub(crate) trait SchedulerHealthStore: Send + Sync {
         targets: &'a [RedisHealthTarget],
     ) -> SchedulerHealthStoreFuture<'a, Vec<RuntimeHealthState>>;
 
+    fn probe_priority<'a>(
+        &'a self,
+        channel: ChannelId,
+        id: CredentialId,
+        owner: CredentialId,
+        targets: &'a [RedisHealthTarget],
+        claim: bool,
+    ) -> SchedulerHealthStoreFuture<'a, u8>;
+
+    fn request_recovery(&self, target: RedisHealthTarget) -> SchedulerHealthStoreFuture<'_, ()>;
+
     /// 按输入顺序原子应用一批成功或失败事件。
     fn apply<'a>(&'a self, events: &'a [RedisHealthEvent]) -> SchedulerHealthStoreFuture<'a, ()>;
 }
 
 impl SchedulerHealthStore for RedisHealthStore {
+    fn probe_priority<'a>(
+        &'a self,
+        channel: ChannelId,
+        id: CredentialId,
+        owner: CredentialId,
+        targets: &'a [RedisHealthTarget],
+        claim: bool,
+    ) -> SchedulerHealthStoreFuture<'a, u8> {
+        Box::pin(async move {
+            RedisHealthStore::probe_priority(self, channel, id, owner, targets, claim)
+                .await
+                .map_err(|_| SchedulerHealthRuntimeError::Store)
+        })
+    }
+
+    fn request_recovery(&self, target: RedisHealthTarget) -> SchedulerHealthStoreFuture<'_, ()> {
+        Box::pin(async move {
+            RedisHealthStore::request_recovery(self, target)
+                .await
+                .map_err(|_| SchedulerHealthRuntimeError::Store)
+        })
+    }
+
     fn states<'a>(
         &'a self,
         targets: &'a [RedisHealthTarget],
@@ -63,6 +101,9 @@ pub(crate) struct RuntimeHealthState {
     target: RedisHealthTarget,
     penalty_micros: u64,
     cooling: bool,
+    cooldown_remaining: Duration,
+    breaker_level: u8,
+    probe_priority: u8,
     recently_failed: bool,
     successes_micros: u64,
     failures_micros: u64,
@@ -76,6 +117,9 @@ impl RuntimeHealthState {
             target,
             penalty_micros,
             cooling,
+            cooldown_remaining: Duration::ZERO,
+            breaker_level: 0,
+            probe_priority: 0,
             recently_failed: false,
             successes_micros: 0,
             failures_micros: 0,
@@ -101,7 +145,24 @@ impl RuntimeHealthState {
     /// 返回目标是否仍处于熔断冷却期。
     #[must_use]
     pub(crate) const fn is_cooling(self) -> bool {
-        self.cooling
+        !self.is_recovery_probe() && (self.cooling || self.breaker_level > 0)
+    }
+
+    pub(crate) const fn is_recovery_probe(self) -> bool {
+        self.probe_priority > 0
+    }
+
+    pub(crate) const fn recovery_order(self) -> i8 {
+        match self.probe_priority {
+            2 => -1,
+            1 => 1,
+            _ => 0,
+        }
+    }
+
+    fn channel_routing_health(self) -> ChannelRoutingHealth {
+        self.routing_health()
+            .with_cooling(self.cooling && self.breaker_level == 0)
     }
 
     pub(crate) const fn recently_failed(self) -> bool {
@@ -132,6 +193,9 @@ impl RuntimeHealthState {
             target: self.target,
             penalty_micros: self.penalty_micros.max(model.penalty_micros),
             cooling: self.cooling || model.cooling,
+            cooldown_remaining: self.cooldown_remaining.max(model.cooldown_remaining),
+            breaker_level: self.breaker_level.max(model.breaker_level),
+            probe_priority: 0,
             recently_failed: self.recently_failed || model.recently_failed,
             successes_micros: quality.successes_micros,
             failures_micros: quality.failures_micros,
@@ -146,6 +210,9 @@ impl From<RedisHealthSnapshot> for RuntimeHealthState {
             target: snapshot.target(),
             penalty_micros: snapshot.penalty_micros(),
             cooling: snapshot.is_cooling(),
+            cooldown_remaining: snapshot.cooldown_remaining(),
+            breaker_level: snapshot.breaker_level(),
+            probe_priority: 0,
             recently_failed: snapshot.is_recently_failed(),
             successes_micros: snapshot.successes_micros(),
             failures_micros: snapshot.failures_micros(),
@@ -189,7 +256,10 @@ pub(crate) async fn load_channel_health(
             let [global, model] = states else {
                 return Err(SchedulerHealthRuntimeError::Invariant);
             };
-            Ok((channel_id, global.merge_model(*model).routing_health()))
+            Ok((
+                channel_id,
+                global.merge_model(*model).channel_routing_health(),
+            ))
         })
         .collect()
 }
@@ -222,6 +292,9 @@ pub(crate) async fn load_credential_health(
                     target: RedisHealthTarget::Credential(routing_id),
                     penalty_micros: local.penalty_micros.max(shared.penalty_micros),
                     cooling: local.cooling || shared.cooling,
+                    cooldown_remaining: local.cooldown_remaining.max(shared.cooldown_remaining),
+                    breaker_level: local.breaker_level.max(shared.breaker_level),
+                    probe_priority: 0,
                     recently_failed: local.recently_failed || shared.recently_failed,
                     successes_micros: local.successes_micros,
                     failures_micros: local.failures_micros,
@@ -261,10 +334,179 @@ pub(crate) async fn load_credential_model_health(
             let mut combined = local.merge_model(*model);
             combined.penalty_micros = combined.penalty_micros.max(shared.penalty_micros);
             combined.cooling |= shared.cooling;
+            combined.cooldown_remaining =
+                combined.cooldown_remaining.max(shared.cooldown_remaining);
+            combined.breaker_level = combined.breaker_level.max(shared.breaker_level);
             combined.recently_failed |= shared.recently_failed;
             Ok((routing_id.get(), combined))
         })
         .collect()
+}
+
+pub(crate) struct RecoveryProbeGate {
+    pub(crate) store: Arc<dyn SchedulerHealthStore>,
+    pub(crate) channel: ChannelId,
+    pub(crate) id: CredentialId,
+    pub(crate) owner: CredentialId,
+    pub(crate) model: RedisHealthModel,
+    pub(crate) inner: Option<Arc<dyn RelayAttemptGate>>,
+}
+
+struct RecoveryProbePermit {
+    inner: Option<Box<dyn RelayAttemptPermit>>,
+}
+
+impl RelayAttemptPermit for RecoveryProbePermit {
+    fn release(self: Box<Self>) -> RelayAttemptReleaseFuture {
+        Box::pin(async move {
+            if let Some(permit) = self.inner {
+                permit.release().await;
+            }
+        })
+    }
+}
+
+impl RelayAttemptGate for RecoveryProbeGate {
+    fn acquire(&self) -> RelayAttemptGateFuture<'_> {
+        Box::pin(async move {
+            let inner = match &self.inner {
+                Some(gate) => Some(gate.acquire().await?),
+                None => None,
+            };
+            let scopes = [
+                RedisHealthTarget::Credential(self.id),
+                RedisHealthTarget::CredentialShared(self.owner),
+                RedisHealthTarget::CredentialModel(self.id, self.model),
+            ];
+            match self
+                .store
+                .probe_priority(self.channel, self.id, self.owner, &scopes, true)
+                .await
+            {
+                Ok(1 | 2) => {
+                    Ok(Box::new(RecoveryProbePermit { inner }) as Box<dyn RelayAttemptPermit>)
+                }
+                Ok(_) | Err(_) => {
+                    if let Some(permit) = inner {
+                        permit.release().await;
+                    }
+                    Err(RelayAttemptGateError::Limited)
+                }
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RouteHealthCandidate {
+    pub(crate) channel: ChannelId,
+    pub(crate) id: CredentialId,
+    pub(crate) owner: CredentialId,
+    pub(crate) upstream: Arc<str>,
+    pub(crate) scoring: bool,
+}
+
+/// Keep ordinary candidates and add at most two recovery probes on independent upstreams.
+pub(crate) async fn load_route_credential_health(
+    store: &Arc<dyn SchedulerHealthStore>,
+    candidates: &[RouteHealthCandidate],
+    model: &str,
+) -> Result<BTreeMap<i64, RuntimeHealthState>, SchedulerHealthRuntimeError> {
+    let identities = candidates
+        .iter()
+        .filter(|candidate| candidate.scoring)
+        .map(|candidate| (candidate.id, candidate.owner))
+        .collect::<Vec<_>>();
+    let mut states = load_credential_model_health(store, &identities, model).await?;
+    let available_successes = candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.scoring
+                && states
+                    .get(&candidate.id.get())
+                    .is_some_and(|state| !state.is_cooling() && state.successes_micros > 0)
+        })
+        .map(|candidate| candidate.owner)
+        .collect::<BTreeSet<_>>();
+    let mut cooling = candidates
+        .iter()
+        .filter_map(|candidate| {
+            let state = states.get(&candidate.id.get())?;
+            (state.breaker_level > 0).then_some((candidate, *state))
+        })
+        .collect::<Vec<_>>();
+    cooling.sort_by_key(|(_, state)| {
+        (
+            state.successes_micros == 0,
+            state.cooldown_remaining,
+            state.penalty_micros,
+        )
+    });
+
+    let model =
+        RedisHealthModel::for_model(model).map_err(|_| SchedulerHealthRuntimeError::Invariant)?;
+    let probes = cooling
+        .into_iter()
+        .take(16)
+        .map(|(candidate, state)| (candidate.clone(), state))
+        .collect::<Vec<_>>();
+    let mut ready =
+        futures_util::stream::iter(probes.into_iter().map(|(candidate, state)| async move {
+            let scopes = [
+                RedisHealthTarget::Credential(candidate.id),
+                RedisHealthTarget::CredentialShared(candidate.owner),
+                RedisHealthTarget::CredentialModel(candidate.id, model),
+            ];
+            let readiness = store
+                .probe_priority(
+                    candidate.channel,
+                    candidate.id,
+                    candidate.owner,
+                    &scopes,
+                    false,
+                )
+                .await;
+            (candidate, state, readiness)
+        }))
+        .buffered(8)
+        .collect::<Vec<_>>()
+        .await;
+    ready.sort_by_key(|(_, state, priority)| {
+        (
+            std::cmp::Reverse(priority.as_ref().copied().unwrap_or_default()),
+            state.successes_micros == 0,
+        )
+    });
+
+    let mut probing_upstreams = BTreeSet::new();
+    let mut probing_owners = BTreeSet::new();
+    for (candidate, state, readiness) in ready {
+        if probing_upstreams.len() == 2 {
+            break;
+        }
+        if probing_upstreams.contains(candidate.upstream.as_ref())
+            || probing_owners.contains(&candidate.owner)
+            || (!probing_upstreams.is_empty() && state.successes_micros == 0)
+        {
+            continue;
+        }
+        match readiness {
+            Ok(priority) if priority == 2 || (priority == 1 && available_successes.len() < 2) => {
+                states
+                    .get_mut(&candidate.id.get())
+                    .ok_or(SchedulerHealthRuntimeError::Invariant)?
+                    .probe_priority = priority;
+                probing_upstreams.insert(candidate.upstream);
+                probing_owners.insert(candidate.owner);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(error_kind = error.as_str(), "无法读取健康恢复试探资格");
+                break;
+            }
+        }
+    }
+    Ok(states)
 }
 
 /// 最佳努力写入渠道与凭据双层反馈；失败不覆盖已确定的业务响应。
@@ -342,6 +584,17 @@ fn append_failure_with_latency(
     error: UpstreamError,
     latency_millis: u64,
 ) {
+    if !target.health_scoring() {
+        return;
+    }
+    let credential_event = |event: RedisHealthEvent| {
+        let event = event.with_recovery_probe(target.recovery_probe());
+        if target.single_credential() {
+            event.with_breaker_threshold(5)
+        } else {
+            event
+        }
+    };
     match error {
         UpstreamError::BadRequest => {}
         UpstreamError::AuthExpired
@@ -364,29 +617,39 @@ fn append_failure_with_latency(
         | UpstreamError::ProtocolError => {
             append_model_failure(events, target, error, latency_millis);
         }
-        UpstreamError::RateLimited { .. } => events.push(RedisHealthEvent::failed_with_latency(
-            RedisHealthTarget::Credential(target.credential_id()),
-            RedisHealthFailure::RateLimited,
-            latency_millis,
-        )),
-        UpstreamError::Overloaded { .. } => events.push(RedisHealthEvent::failed_with_latency(
-            RedisHealthTarget::Credential(target.credential_id()),
-            RedisHealthFailure::Overloaded,
-            latency_millis,
-        )),
+        UpstreamError::RateLimited { .. } => events.push(
+            RedisHealthEvent::failed_with_latency(
+                RedisHealthTarget::Credential(target.credential_id()),
+                RedisHealthFailure::RateLimited,
+                latency_millis,
+            )
+            .with_recovery_probe(target.recovery_probe()),
+        ),
+        UpstreamError::Overloaded { .. } => events.push(
+            RedisHealthEvent::failed_with_latency(
+                RedisHealthTarget::Credential(target.credential_id()),
+                RedisHealthFailure::Overloaded,
+                latency_millis,
+            )
+            .with_recovery_probe(target.recovery_probe()),
+        ),
         UpstreamError::Network { .. } | UpstreamError::ServerError { .. } => {
             let failure = health_failure(error).expect("网络和服务端错误必须有闭合健康分类");
-            events.push(RedisHealthEvent::failed_with_latency(
+            events.push(credential_event(RedisHealthEvent::failed_with_latency(
                 RedisHealthTarget::Credential(target.credential_id()),
                 failure,
                 latency_millis,
-            ));
+            )));
             if !target.pool_mode() {
-                events.push(RedisHealthEvent::failed_with_latency(
-                    RedisHealthTarget::Channel(target.channel_id()),
-                    failure,
-                    latency_millis,
-                ));
+                events.push(
+                    RedisHealthEvent::failed_with_latency(
+                        RedisHealthTarget::Channel(target.channel_id()),
+                        failure,
+                        latency_millis,
+                    )
+                    .with_recovery_probe(target.recovery_probe())
+                    .with_breaker_threshold(0),
+                );
             }
             append_model_failure(events, target, error, latency_millis);
         }
@@ -402,17 +665,33 @@ fn append_model_failure(
     let (Some(model), Some(failure)) = (target.model(), health_failure(error)) else {
         return;
     };
-    events.push(RedisHealthEvent::failed_with_latency(
+    let event = RedisHealthEvent::failed_with_latency(
         RedisHealthTarget::CredentialModel(target.credential_id(), model),
         failure,
         latency_millis,
-    ));
+    )
+    .with_recovery_probe(target.recovery_probe());
+    events.push(
+        if target.single_credential()
+            && matches!(
+                failure,
+                RedisHealthFailure::Network | RedisHealthFailure::Server
+            )
+        {
+            event.with_breaker_threshold(5)
+        } else {
+            event
+        },
+    );
     if !target.pool_mode() {
-        events.push(RedisHealthEvent::failed_with_latency(
-            RedisHealthTarget::ChannelModel(target.channel_id(), model),
-            failure,
-            latency_millis,
-        ));
+        events.push(
+            RedisHealthEvent::failed_with_latency(
+                RedisHealthTarget::ChannelModel(target.channel_id(), model),
+                failure,
+                latency_millis,
+            )
+            .with_breaker_threshold(0),
+        );
     }
 }
 
@@ -426,6 +705,9 @@ fn append_success_with_latency(
     target: CredentialAttemptTarget,
     latency_millis: u64,
 ) {
+    if !target.health_scoring() {
+        return;
+    }
     if !target.pool_mode() {
         events.push(RedisHealthEvent::succeeded_with_latency(
             RedisHealthTarget::Channel(target.channel_id()),
@@ -511,7 +793,11 @@ async fn load_exact_states(
         .collect()
 }
 
-pub(crate) struct AdminCredentialHealthRuntime(pub(crate) Arc<dyn SchedulerHealthStore>);
+pub(crate) struct AdminCredentialHealthRuntime {
+    pub(crate) store: Option<Arc<dyn SchedulerHealthStore>>,
+    pub(crate) channel_states: af_db::ChannelStateRepository,
+    pub(crate) channel_index: af_scheduler::InMemoryChannelIndex,
+}
 
 impl af_http::AdminCredentialHealthReader for AdminCredentialHealthRuntime {
     fn snapshots<'a>(
@@ -519,18 +805,70 @@ impl af_http::AdminCredentialHealthReader for AdminCredentialHealthRuntime {
         ids: &'a [(CredentialId, CredentialId)],
     ) -> af_http::CredentialHealthFuture<'a> {
         Box::pin(async move {
-            let states = load_credential_health(&self.0, ids).await.map_err(|_| ())?;
+            let Some(store) = &self.store else {
+                return Ok(None);
+            };
+            let states = load_credential_health(store, ids).await.map_err(|_| ())?;
             ids.iter()
                 .map(|(id, _)| {
                     let state = states.get(&id.get()).ok_or(())?;
                     Ok(af_http::CredentialHealthSnapshot {
                         credential_id: id.get(),
                         penalty_micros: state.penalty_micros,
-                        cooling: state.cooling,
+                        cooling: state.is_cooling(),
+                        cooldown_remaining_seconds: state.cooldown_remaining.as_secs()
+                            + u64::from(state.cooldown_remaining.subsec_nanos() != 0),
                         weight_multiplier_micros: state.weight_multiplier_micros(),
                     })
                 })
-                .collect()
+                .collect::<Result<_, _>>()
+                .map(Some)
+        })
+    }
+
+    fn request_recovery(
+        &self,
+        channel: ChannelId,
+        credential: Option<CredentialId>,
+        auto_disabled: bool,
+        health_scoring: bool,
+    ) -> af_http::ChannelRecoveryFuture<'_> {
+        Box::pin(async move {
+            let channel_reenabled = if auto_disabled {
+                use af_db::ChannelProbeRecoveryOutcome;
+                match self
+                    .channel_states
+                    .recover_manually(channel)
+                    .await
+                    .map_err(|_| ())?
+                {
+                    ChannelProbeRecoveryOutcome::Recovered => true,
+                    ChannelProbeRecoveryOutcome::AlreadyEnabled
+                    | ChannelProbeRecoveryOutcome::NotEligible
+                    | ChannelProbeRecoveryOutcome::StaleProbe => false,
+                }
+            } else {
+                false
+            };
+            let mut probe_requested = false;
+            if health_scoring && let Some(store) = &self.store {
+                let target = credential.map_or(
+                    RedisHealthTarget::Channel(channel),
+                    RedisHealthTarget::Credential,
+                );
+                match store.request_recovery(target).await {
+                    Ok(()) => probe_requested = true,
+                    Err(_) if channel_reenabled => {}
+                    Err(_) => return Err(()),
+                }
+            }
+            if channel_reenabled && let Err(error) = self.channel_index.refresh().await {
+                tracing::warn!(error = %error, "手动恢复渠道后刷新运行时索引失败，等待调度事件同步");
+            }
+            Ok(af_http::RoutingHealthRecoveryResponse {
+                channel_reenabled,
+                probe_requested,
+            })
         })
     }
 }
@@ -564,6 +902,24 @@ mod tests {
     }
 
     impl SchedulerHealthStore for BatchHealthStore {
+        fn probe_priority<'a>(
+            &'a self,
+            _channel: ChannelId,
+            _id: CredentialId,
+            _owner: CredentialId,
+            _targets: &'a [RedisHealthTarget],
+            _claim: bool,
+        ) -> SchedulerHealthStoreFuture<'a, u8> {
+            Box::pin(async { Ok(0) })
+        }
+
+        fn request_recovery(
+            &self,
+            _target: RedisHealthTarget,
+        ) -> SchedulerHealthStoreFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+
         fn states<'a>(
             &'a self,
             targets: &'a [RedisHealthTarget],
@@ -733,7 +1089,8 @@ mod tests {
                         RedisHealthTarget::ChannelModel(ChannelId::new(7).unwrap(), model),
                         classification,
                         4321,
-                    ),
+                    )
+                    .with_breaker_threshold(0),
                 ]
             );
         }
@@ -741,6 +1098,96 @@ mod tests {
         append_failure_with_latency(&mut events, target, UpstreamError::BadRequest, 99);
         assert!(events.is_empty());
         assert!(!format!("{target:?}").contains("model-a"));
+    }
+
+    #[test]
+    fn single_key_relaxes_only_network_and_server_breakers() {
+        let target = CredentialAttemptTarget::new(
+            ChannelId::new(7).unwrap(),
+            9,
+            CredentialKind::ApiKey,
+            false,
+            false,
+        )
+        .unwrap()
+        .with_model("model-a")
+        .unwrap()
+        .with_test_health_policy(true, true);
+        let credential = RedisHealthTarget::Credential(CredentialId::new(9).unwrap());
+        let channel = RedisHealthTarget::Channel(ChannelId::new(7).unwrap());
+        let credential_model = RedisHealthTarget::CredentialModel(
+            CredentialId::new(9).unwrap(),
+            target.model().unwrap(),
+        );
+        let channel_model =
+            RedisHealthTarget::ChannelModel(ChannelId::new(7).unwrap(), target.model().unwrap());
+
+        let mut network = Vec::new();
+        append_failure_with_latency(
+            &mut network,
+            target,
+            UpstreamError::Network {
+                kind: af_domain::NetworkFailureKind::Connect,
+            },
+            10,
+        );
+        assert_eq!(
+            network,
+            vec![
+                RedisHealthEvent::failed_with_latency(credential, RedisHealthFailure::Network, 10)
+                    .with_breaker_threshold(5),
+                RedisHealthEvent::failed_with_latency(channel, RedisHealthFailure::Network, 10)
+                    .with_breaker_threshold(0),
+                RedisHealthEvent::failed_with_latency(
+                    credential_model,
+                    RedisHealthFailure::Network,
+                    10,
+                )
+                .with_breaker_threshold(5),
+                RedisHealthEvent::failed_with_latency(
+                    channel_model,
+                    RedisHealthFailure::Network,
+                    10
+                )
+                .with_breaker_threshold(0),
+            ]
+        );
+
+        let mut model_rate_limit = Vec::new();
+        append_failure_with_latency(
+            &mut model_rate_limit,
+            target,
+            UpstreamError::rate_limited(RateLimitScope::Model),
+            10,
+        );
+        assert_eq!(
+            model_rate_limit,
+            vec![
+                RedisHealthEvent::failed_with_latency(
+                    credential_model,
+                    RedisHealthFailure::RateLimited,
+                    10,
+                ),
+                RedisHealthEvent::failed_with_latency(
+                    channel_model,
+                    RedisHealthFailure::RateLimited,
+                    10,
+                )
+                .with_breaker_threshold(0),
+            ]
+        );
+
+        let disabled = target.with_test_health_policy(false, true);
+        let mut disabled_events = Vec::new();
+        append_failure_with_latency(
+            &mut disabled_events,
+            disabled,
+            UpstreamError::Network {
+                kind: af_domain::NetworkFailureKind::Connect,
+            },
+            10,
+        );
+        assert!(disabled_events.is_empty());
     }
 
     #[test]

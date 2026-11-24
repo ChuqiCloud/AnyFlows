@@ -23,6 +23,7 @@ pub(crate) const RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY: &str =
 pub(crate) const AUTO_BAN_RULES_KEY: &str = "auto_ban_rules";
 /// 渠道 settings 中由管理与运行时共同维护的外部账号池模式键。
 pub(crate) const POOL_MODE_KEY: &str = "pool_mode";
+pub(crate) const HEALTH_SCORING_KEY: &str = "health_scoring";
 /// 渠道 settings 中显式选择的客户端仿真档案；缺失表示关闭。
 pub(crate) const CLIENT_SIMULATION_PROFILE_KEY: &str = "client_simulation_profile";
 /// 渠道 settings 中显式选择的客户端仿真正文档案；缺失表示关闭。
@@ -379,6 +380,28 @@ pub(crate) fn validate_responses_compact_model_mapping(
         && (channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses)
     {
         return Err(ChannelSettingsError);
+    }
+    Ok(())
+}
+
+pub(crate) fn health_scoring(settings: &Value) -> Result<bool, ChannelSettingsError> {
+    let object = settings.as_object().ok_or(ChannelSettingsError)?;
+    match object.get(HEALTH_SCORING_KEY) {
+        None => Ok(true),
+        Some(Value::Bool(enabled)) => Ok(*enabled),
+        Some(_) => Err(ChannelSettingsError),
+    }
+}
+
+pub(crate) fn set_health_scoring(
+    settings: &mut Value,
+    enabled: bool,
+) -> Result<(), ChannelSettingsError> {
+    let object = settings.as_object_mut().ok_or(ChannelSettingsError)?;
+    if enabled {
+        object.remove(HEALTH_SCORING_KEY);
+    } else {
+        object.insert(HEALTH_SCORING_KEY.to_owned(), Value::Bool(false));
     }
     Ok(())
 }
@@ -752,6 +775,22 @@ mod tests {
         assert!(
             responses_websocket_enabled(&json!({"responses_websocket_enabled": "true"})).is_err()
         );
+    }
+
+    #[test]
+    fn health_scoring_defaults_on_and_preserves_other_settings() {
+        assert!(health_scoring(&json!({})).unwrap());
+        assert!(!health_scoring(&json!({"health_scoring": false})).unwrap());
+        assert!(health_scoring(&json!({"health_scoring": "false"})).is_err());
+
+        let mut settings = json!({"private_extension": {"enabled": true}});
+        set_health_scoring(&mut settings, false).unwrap();
+        assert!(!health_scoring(&settings).unwrap());
+        assert_eq!(settings["private_extension"]["enabled"], true);
+        set_health_scoring(&mut settings, true).unwrap();
+        assert!(health_scoring(&settings).unwrap());
+        assert!(settings.get(HEALTH_SCORING_KEY).is_none());
+        assert_eq!(settings["private_extension"]["enabled"], true);
     }
 
     #[test]

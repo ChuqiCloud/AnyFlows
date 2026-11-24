@@ -456,6 +456,14 @@
     "empty": "没有匹配的厂商"
   },
   "channels": {
+    "recovery": {
+      "enable": "恢复渠道",
+      "probe": "恢复试探",
+      "failed": "恢复操作失败，请重试。",
+      "enabled": "渠道已重新启用。",
+      "requested": "已申请。在符合条件的请求中试探恢复。",
+      "unavailable": "当前未启用健康评分。"
+    },
     "title": "渠道管理",
     "subtitle": "维护对话、多模态、重排序与异步视频上游的路由参数、凭据和请求策略。",
     "scope": "支持 OpenAI、Anthropic、Gemini、Jina、Cohere 与 xAI 原生协议",
@@ -605,6 +613,7 @@
       "overrides": "请求转换",
       "relayExecution": "上游执行策略",
       "relayInherited": "留空继承全局默认值",
+      "healthScoringHint": "关闭后按配置的优先级和权重选路，继续遵守启停、限流和额度设置。",
       "autoBanHint": "发生确定性故障时允许运行时自动停用。",
       "autoBanPoolModeHint": "外部账号池模式开启时保留此配置，但不会自动停用渠道。",
       "autoBanRulesHint": "仅匹配精确 5xx 状态码和上游结构化 type、code、status；空规则不会停用渠道。",
@@ -648,6 +657,7 @@
       "status": "状态",
       "weight": "权重",
       "priority": "优先级",
+      "healthScoring": "健康评分与熔断",
       "autoBan": "允许自动停用",
       "autoBanRules": "自动停用规则",
       "autoBanStatusCodes": "HTTP 状态码",
@@ -998,6 +1008,8 @@
   },
   "credentials": {
     "health": {
+      "awaitingProbe": "等待恢复试探",
+      "cooldownRemaining_other": "健康冷却约剩 {{count}} 秒",
       "degraded": "健康降权",
       "cooling": "健康冷却中",
       "reduced": "有效权重 {{percent}}%",

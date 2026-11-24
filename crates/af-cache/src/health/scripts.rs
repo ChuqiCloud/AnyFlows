@@ -120,12 +120,11 @@ local half_life = tonumber(ARGV[1])
 local streak_window = tonumber(ARGV[2])
 local outcome_half_life = tonumber(ARGV[3])
 local state_ttl = tonumber(ARGV[4])
-local breaker_threshold = tonumber(ARGV[5])
-local cooldowns = {tonumber(ARGV[6]), tonumber(ARGV[7]), tonumber(ARGV[8])}
-local latency_baseline = tonumber(ARGV[9])
-local latency_alpha = tonumber(ARGV[10])
-local soft_base = tonumber(ARGV[11])
-local soft_max = tonumber(ARGV[12])
+local cooldowns = {tonumber(ARGV[5]), tonumber(ARGV[6]), tonumber(ARGV[7])}
+local latency_baseline = tonumber(ARGV[8])
+local latency_alpha = tonumber(ARGV[9])
+local soft_base = tonumber(ARGV[10])
+local soft_max = tonumber(ARGV[11])
 local time = redis.call('TIME')
 local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
 local result = {}
@@ -133,7 +132,6 @@ if not bounded_integer(half_life, max_safe_integer) or half_life == 0
     or not bounded_integer(streak_window, max_safe_integer) or streak_window == 0
     or not bounded_integer(outcome_half_life, max_safe_integer) or outcome_half_life == 0
     or not bounded_integer(state_ttl, max_safe_integer) or state_ttl == 0
-    or not bounded_integer(breaker_threshold, 64) or breaker_threshold == 0
     or not bounded_integer(cooldowns[1], max_safe_integer - now) or cooldowns[1] == 0
     or not bounded_integer(cooldowns[2], max_safe_integer - now) or cooldowns[2] == 0
     or not bounded_integer(cooldowns[3], max_safe_integer - now) or cooldowns[3] == 0
@@ -220,14 +218,19 @@ end
 -- entire batch before its first mutation, including all existing hashes.
 -- The application pass rereads state so duplicate keys retain event order.
 for index = 1, #KEYS do
-    local offset = 12 + ((index - 1) * 4)
+    local offset = 11 + ((index - 1) * 7)
     local is_failure = tonumber(ARGV[offset + 1])
     local added_penalty = tonumber(ARGV[offset + 2])
     local is_transient = tonumber(ARGV[offset + 3])
     local latency_millis = tonumber(ARGV[offset + 4])
+    local breaker_threshold = tonumber(ARGV[offset + 5])
+    local allows_early_probe = tonumber(ARGV[offset + 6])
+    local recovery_probe = tonumber(ARGV[offset + 7])
     if not bounded_integer(is_failure, 1) or not bounded_integer(added_penalty, 64000000)
         or not bounded_integer(is_transient, 1)
-        or not bounded_integer(latency_millis, 3600000) then
+        or not bounded_integer(latency_millis, 3600000)
+        or not bounded_integer(breaker_threshold, 64)
+        or not bounded_integer(allows_early_probe, 1) or not bounded_integer(recovery_probe, 1) then
         return redis.error_reply('invalid scheduler health event')
     end
     local penalty = read_state(KEYS[index])
@@ -241,14 +244,18 @@ for index = 1, #KEYS do
 end
 
 for index = 1, #KEYS do
-    local offset = 12 + ((index - 1) * 4)
+    local offset = 11 + ((index - 1) * 7)
     local is_failure = tonumber(ARGV[offset + 1])
     local added_penalty = tonumber(ARGV[offset + 2])
     local is_transient = tonumber(ARGV[offset + 3])
     local latency_millis = tonumber(ARGV[offset + 4])
+    local breaker_threshold = tonumber(ARGV[offset + 5])
+    local allows_early_probe = tonumber(ARGV[offset + 6])
+    local recovery_probe = tonumber(ARGV[offset + 7])
     local penalty, updated_at, streak, last_transient_at, level, cooldown_until,
         successes, failures, latency_ema, outcomes_updated_at, latency_updated_at, exists = read_state(KEYS[index])
     local soft_until, soft_failures = read_soft_state(KEYS[index])
+    local probe_at = tonumber(redis.call('HGET', KEYS[index], 'probe_at')) or cooldown_until
     local elapsed = math.max(0, now - updated_at)
     penalty = math.floor(penalty * math.pow(0.5, elapsed / half_life) + 0.5)
     if penalty < 1 then penalty = 0 end
@@ -282,6 +289,7 @@ for index = 1, #KEYS do
         last_transient_at = 0
         level = 0
         cooldown_until = 0
+        probe_at = 0
         soft_until = 0
         soft_failures = 0
     else
@@ -301,19 +309,28 @@ for index = 1, #KEYS do
                 end
                 soft_until = now + math.min(soft_max, soft_base * current)
             end
-            if cooldown_until > now then
+            if cooldown_until > now and recovery_probe == 0 then
+                if allows_early_probe == 0 then probe_at = cooldown_until end
                 -- 已经在冷却中的并发迟到失败只加分，不升级冷却层。
                 streak = 0
             else
-                if last_transient_at > 0 and (now - last_transient_at) <= streak_window then
+                if breaker_threshold == 0 then
+                    -- Channel scoring still uses the failure timestamp, but has no hard breaker.
+                    streak = 0
+                elseif last_transient_at > 0 and (now - last_transient_at) <= streak_window then
                     streak = streak + 1
                 else
                     streak = 1
                 end
                 last_transient_at = now
-                if streak >= breaker_threshold then
+                if breaker_threshold > 0 and (streak >= breaker_threshold or level > 0) then
                     level = math.min(level + 1, 3)
                     cooldown_until = now + cooldowns[level]
+                    redis.call('HSET', KEYS[index], 'opened_at', now)
+                    probe_at = cooldown_until
+                    if allows_early_probe == 1 then
+                        probe_at = now + math.min(cooldowns[level], math.max(15000, math.floor(cooldowns[level] / 4)))
+                    end
                     streak = 0
                 end
             end
@@ -329,6 +346,7 @@ for index = 1, #KEYS do
             'last_transient_at', last_transient_at,
             'level', level,
             'cooldown_until', cooldown_until,
+            'probe_at', probe_at,
             'successes', successes,
             'failures', failures,
             'latency_ema', latency_ema,
@@ -339,4 +357,51 @@ for index = 1, #KEYS do
     append_result(penalty, level, cooldown_until, successes, failures, latency_ema, soft_until)
 end
 return result
+"#;
+
+/// A marker has a separate TTL so concurrent requests cannot all take the same recovery slot.
+pub(super) const ADMIT_PROBE_SCRIPT: &str = r#"
+redis.replicate_commands()
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+if redis.call('EXISTS', KEYS[1]) ~= 0 then return 0 end
+local needs_probe = false
+local early_fallback = false
+local wait = 30000
+local manual_at = math.max(tonumber(redis.call('GET', KEYS[2])) or 0,
+    tonumber(redis.call('GET', KEYS[3])) or 0)
+for i = 4, #KEYS do
+    local values = redis.call('HMGET', KEYS[i], 'level', 'cooldown_until', 'probe_at', 'opened_at')
+    if tonumber(values[1]) and tonumber(values[1]) > 0 then
+        local until_ms = tonumber(values[2])
+        if not until_ms then return 0 end
+        local opened_at = tonumber(values[4])
+        local probe_at = tonumber(values[3]) or until_ms
+        local manually_requested = opened_at and manual_at >= opened_at and probe_at < until_ms
+        if now < probe_at and not manually_requested then return 0 end
+        needs_probe = true
+        early_fallback = early_fallback or (now < until_ms and not manually_requested)
+        wait = math.max(wait, math.min(300000, math.floor((until_ms - now) / 4)))
+    end
+end
+if not needs_probe then return 0 end
+if tonumber(ARGV[1]) == 1 then
+    redis.call('SET', KEYS[1], '1', 'PX', wait)
+end
+return early_fallback and 1 or 2
+"#;
+
+/// Mark current transient breakers for an earlier probe without clearing scores.
+pub(super) const REQUEST_RECOVERY_SCRIPT: &str = r#"
+redis.replicate_commands()
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('SET', KEYS[1], now, 'PX', 300000)
+local level = tonumber(redis.call('HGET', KEYS[2], 'level')) or 0
+local until_ms = tonumber(redis.call('HGET', KEYS[2], 'cooldown_until')) or 0
+if level > 0 and until_ms > now then
+    redis.call('HSET', KEYS[2], 'opened_at', tonumber(redis.call('HGET', KEYS[2], 'opened_at')) or now,
+        'probe_at', now)
+end
+return 1
 "#;

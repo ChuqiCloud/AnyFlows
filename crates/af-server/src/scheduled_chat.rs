@@ -23,8 +23,8 @@ use crate::{
     },
     debug_trace_runtime::{DebugTraceCapture, DebugTraceRuntime},
     health_runtime::{
-        RuntimeHealthState, SchedulerHealthStore, load_channel_health,
-        load_credential_model_health, persist_scheduler_health_feedback,
+        RouteHealthCandidate, RuntimeHealthState, SchedulerHealthStore, load_channel_health,
+        persist_scheduler_health_feedback,
     },
     responses_websocket_runtime::ResponsesWebSocketRuntime,
     sticky_session::{
@@ -413,7 +413,7 @@ impl ScheduledChatService {
             .map(|target| target.channel_id());
         let mut tool_plan = None;
         let mut health_filtered = false;
-        'channels: for candidate in route.candidates() {
+        'channels: for candidate in ordered_health_channels(&route, credential_health) {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
             if !target_matches_protocol(target, upstream_protocol) {
@@ -563,7 +563,6 @@ impl ScheduledChatService {
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
                 let secret_owner_id = runtime_credential.secret_owner_id();
-                let concurrency_owner_id = runtime_credential.concurrency_owner_id();
                 let client = self
                     .client_for_credential(target, runtime_credential)
                     .await?;
@@ -649,12 +648,21 @@ impl ScheduledChatService {
                 if let Some(profile) = target.client_profile() {
                     relay_candidate = relay_candidate.with_client_profile(profile.clone());
                 }
-                if let Some(concurrency) = &self.concurrency {
-                    relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
-                        concurrency_owner_id,
-                        runtime_credential.concurrency(),
-                        wait_plan.timeout(),
-                    ));
+                let recovery_probe =
+                    crate::credential_order::recovery_probe(runtime_credential, credential_health);
+                if recovery_probe {
+                    relay_candidate = relay_candidate
+                        .with_retry_limit(Some(0))
+                        .with_race_width(Some(1));
+                }
+                if let Some(gate) = self.credential_attempt_gate(
+                    target.channel_id(),
+                    runtime_credential,
+                    &routed_model,
+                    wait_plan.timeout(),
+                    recovery_probe,
+                )? {
+                    relay_candidate = relay_candidate.with_attempt_gate(gate);
                 }
                 if let (Some(pool), Some(session_scope)) = (
                     responses_websocket_pool.as_ref(),
@@ -685,6 +693,8 @@ impl ScheduledChatService {
                         oauth_has_refresh_token,
                         target.pool_mode(),
                     )?
+                    .with_health_policy(target, &eligible_credentials)
+                    .with_recovery_probe(recovery_probe)
                     .with_model(&routed_model)?,
                 );
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
@@ -915,6 +925,36 @@ impl ScheduledChatService {
             .map_err(|_| AfError::Internal)
     }
 
+    fn credential_attempt_gate(
+        &self,
+        channel: af_domain::ChannelId,
+        credential: &af_db::SchedulerRuntimeCredentialRecord,
+        model: &str,
+        timeout: std::time::Duration,
+        recovery_probe: bool,
+    ) -> Result<Option<Arc<dyn af_relay::RelayAttemptGate>>, AfError> {
+        let inner = self.concurrency.as_ref().map(|concurrency| {
+            concurrency.account_gate(
+                credential.concurrency_owner_id(),
+                credential.concurrency(),
+                timeout,
+            )
+        });
+        if !recovery_probe {
+            return Ok(inner);
+        }
+        let store = self.health.as_ref().ok_or(AfError::Internal)?;
+        let model = af_cache::RedisHealthModel::for_model(model).map_err(|_| AfError::Internal)?;
+        Ok(Some(Arc::new(crate::health_runtime::RecoveryProbeGate {
+            store: Arc::clone(store),
+            channel,
+            id: credential.routing_credential_id(),
+            owner: credential.shared_health_id(),
+            model,
+            inner,
+        })))
+    }
+
     async fn load_channel_health(
         &self,
         group_id: GroupId,
@@ -933,7 +973,11 @@ impl ScheduledChatService {
         let Some(store) = &self.health else {
             return Ok((channel_ids, BTreeMap::new()));
         };
-        let health = load_channel_health(store, &channel_ids, model)
+        let health_ids = self
+            .scheduler
+            .health_scored_channel_ids(&channel_ids)
+            .map_err(map_scheduler_error)?;
+        let health = load_channel_health(store, &health_ids, model)
             .await
             .map_err(|_| AfError::Internal)?;
         Ok((channel_ids, health))
@@ -948,8 +992,8 @@ impl ScheduledChatService {
         let Some(store) = &self.health else {
             return Ok(None);
         };
-        let credential_ids = collect_route_credentials(route, upstream_protocol, model)?;
-        load_credential_model_health(store, &credential_ids, model)
+        let candidates = collect_health_candidates(route, &[upstream_protocol], model, false)?;
+        crate::health_runtime::load_route_credential_health(store, &candidates, model)
             .await
             .map(Some)
             .map_err(|_| AfError::Internal)
@@ -964,9 +1008,8 @@ impl ScheduledChatService {
         let Some(store) = &self.health else {
             return Ok(None);
         };
-        let credential_ids =
-            collect_route_credentials_for_protocols(route, upstream_protocols, model)?;
-        load_credential_model_health(store, &credential_ids, model)
+        let candidates = collect_health_candidates(route, upstream_protocols, model, false)?;
+        crate::health_runtime::load_route_credential_health(store, &candidates, model)
             .await
             .map(Some)
             .map_err(|_| AfError::Internal)
@@ -1875,19 +1918,50 @@ fn route_availability(
     }
 }
 
+fn ordered_health_channels<'a>(
+    route: &'a IndexedRoutePlan,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> Vec<&'a af_scheduler::IndexedRouteCandidate> {
+    let mut candidates = route.candidates().iter().collect::<Vec<_>>();
+    if let Some(health) = health {
+        candidates.sort_by_key(|candidate| {
+            let mut has_normal = false;
+            let mut has_early_probe = false;
+            for credential in candidate.runtime_target().credentials() {
+                if let Some(state) = health.get(&credential.credential_id()) {
+                    match state.recovery_order() {
+                        -1 => return -1,
+                        1 => has_early_probe = true,
+                        _ => has_normal |= !state.is_cooling(),
+                    }
+                }
+            }
+            (has_early_probe && !has_normal) as i8
+        });
+    }
+    candidates
+}
+
+#[cfg(test)]
 fn collect_route_credentials(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
     model: &str,
 ) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
-    collect_route_credentials_for_protocols(route, &[upstream_protocol], model)
+    Ok(
+        collect_health_candidates(route, &[upstream_protocol], model, false)?
+            .into_iter()
+            .map(|candidate| (candidate.id, candidate.owner))
+            .collect(),
+    )
 }
 
-fn collect_route_credentials_for_protocols(
+fn collect_health_candidates(
     route: &IndexedRoutePlan,
     upstream_protocols: &[Protocol],
     model: &str,
-) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
+    compact: bool,
+) -> Result<Vec<RouteHealthCandidate>, AfError> {
     let mut credential_ids = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
     let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
@@ -1899,24 +1973,52 @@ fn collect_route_credentials_for_protocols(
         {
             continue;
         }
+        let upstream = if compact {
+            let Some(upstream) = target.schedulable_responses_compact_model(model) else {
+                continue;
+            };
+            upstream
+        } else {
+            target.mapped_model(model).unwrap_or(model)
+        };
+        let upstream_host: Arc<str> = target
+            .base_url()
+            .and_then(|base| url::Url::parse(base).ok())
+            .and_then(|base| {
+                base.host_str()
+                    .map(|host| host.trim_end_matches('.').to_ascii_lowercase())
+            })
+            .map_or_else(
+                || {
+                    Arc::<str>::from(format!(
+                        "{}:{}",
+                        target.channel_type().as_str(),
+                        target.channel_id().get()
+                    ))
+                },
+                Arc::<str>::from,
+            );
         for credential in target.credentials() {
             if credential.quota_dimension() != quota_dimension
-                || !target.allows_credential_model(
-                    credential,
-                    target.mapped_model(model).unwrap_or(model),
-                )
+                || !target.allows_credential_model(credential, upstream)
             {
                 continue;
-            }
-            if credential_ids.len() == RelayStateMachine::MAX_CANDIDATES {
-                break 'channels;
             }
             let credential_id =
                 CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?;
             if !unique.insert(credential_id) {
                 return Err(AfError::Internal);
             }
-            credential_ids.push((credential_id, credential.shared_health_id()));
+            credential_ids.push(RouteHealthCandidate {
+                channel: target.channel_id(),
+                id: credential_id,
+                owner: credential.shared_health_id(),
+                upstream: Arc::clone(&upstream_host),
+                scoring: target.health_scoring(),
+            });
+            if credential_ids.len() == RelayStateMachine::MAX_CANDIDATES {
+                break 'channels;
+            }
         }
     }
     Ok(credential_ids)
@@ -4445,6 +4547,24 @@ mod tests {
     }
 
     impl SchedulerHealthStore for CoolingChannelHealth {
+        fn request_recovery(
+            &self,
+            _target: af_cache::RedisHealthTarget,
+        ) -> crate::health_runtime::SchedulerHealthStoreFuture<'_, ()> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn probe_priority<'a>(
+            &'a self,
+            _channel: ChannelId,
+            _id: CredentialId,
+            _owner: CredentialId,
+            _targets: &'a [af_cache::RedisHealthTarget],
+            _claim: bool,
+        ) -> crate::health_runtime::SchedulerHealthStoreFuture<'a, u8> {
+            Box::pin(async { Ok(0) })
+        }
+
         fn states<'a>(
             &'a self,
             targets: &'a [af_cache::RedisHealthTarget],

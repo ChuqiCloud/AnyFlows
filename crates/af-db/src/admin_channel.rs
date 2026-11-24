@@ -23,7 +23,7 @@ use crate::{
         RESPONSES_COMPACT_MODE_KEY, RESPONSES_COMPACT_MODEL_MAPPING_KEY,
         RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
         RESPONSES_COMPACT_PROBE_RESULT_KEY, client_simulation_body_profile,
-        client_simulation_profile, parse_auto_ban_rules_value, pool_mode,
+        client_simulation_profile, health_scoring, parse_auto_ban_rules_value, pool_mode,
         relay_execution_settings_from_values, responses_compact_mode,
         responses_compact_model_mapping, responses_compact_probe_record,
         responses_websocket_enabled, validate_client_simulation_body_capability,
@@ -54,6 +54,7 @@ pub struct AdminChannelRecord {
     auto_ban: bool,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    health_scoring: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     responses_websocket_enabled: bool,
@@ -117,6 +118,7 @@ impl AdminChannelRecord {
             priority: model.priority,
             auto_ban: model.auto_ban,
             auto_ban_rules: auto_ban_rules_value,
+            health_scoring_state: health_scoring(&settings).map(i64::from).unwrap_or(-1),
             pool_mode_state: if settings_oversized {
                 -1
             } else {
@@ -244,6 +246,12 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
         &self.auto_ban_rules
+    }
+
+    /// 返回渠道是否启用运行时健康评分和熔断。
+    #[must_use]
+    pub const fn health_scoring(&self) -> bool {
+        self.health_scoring
     }
 
     /// 返回渠道是否把上游账号健康交由外部池管理。
@@ -597,6 +605,7 @@ struct AdminChannelRow {
     auto_ban: bool,
     auto_ban_rules: Option<JsonValue>,
     pool_mode_state: i64,
+    health_scoring_state: i64,
     client_simulation_profile: Option<JsonValue>,
     client_simulation_body_profile: Option<JsonValue>,
     models: Vec<String>,
@@ -639,6 +648,7 @@ impl AdminChannelRow {
             auto_ban: result.try_get("", "auto_ban")?,
             auto_ban_rules: result.try_get("", "auto_ban_rules")?,
             pool_mode_state: result.try_get("", "pool_mode")?,
+            health_scoring_state: result.try_get("", "health_scoring")?,
             client_simulation_profile: result.try_get("", "client_simulation_profile")?,
             client_simulation_body_profile: result.try_get("", "client_simulation_body_profile")?,
             models: Vec::new(),
@@ -816,6 +826,11 @@ impl AdminChannelRow {
             auto_ban: self.auto_ban,
             auto_ban_rules,
             pool_mode,
+            health_scoring: match self.health_scoring_state {
+                0 => false,
+                1 => true,
+                _ => return Err(AdminChannelRepositoryError::Invariant),
+            },
             client_simulation_profile,
             client_simulation_body_profile,
             responses_websocket_enabled,
@@ -1008,8 +1023,12 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("auto_ban_rules"),
         )
         .expr_as(
-            channel_pool_mode_projection(database_backend),
+            channel_boolean_projection(database_backend, "pool_mode", 0),
             Alias::new("pool_mode"),
+        )
+        .expr_as(
+            channel_boolean_projection(database_backend, "health_scoring", 1),
+            Alias::new("health_scoring"),
         )
         .expr_as(
             Expr::col((channels::Entity, channels::Column::Balance)),
@@ -1113,17 +1132,17 @@ fn channel_responses_websocket_projection(database_backend: DbBackend) -> Simple
     }
 }
 
-fn channel_pool_mode_projection(database_backend: DbBackend) -> SimpleExpr {
+fn channel_boolean_projection(database_backend: DbBackend, key: &str, default: u8) -> SimpleExpr {
     match database_backend {
-        DbBackend::Postgres => Expr::cust(
-            r#"CAST(CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'pool_mode') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'pool_mode') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'pool_mode')::boolean THEN 1 ELSE 0 END AS BIGINT)"#,
-        ),
-        DbBackend::MySql => Expr::cust(
-            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.pool_mode') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) = 'true' THEN 1 ELSE 0 END",
-        ),
-        DbBackend::Sqlite => Expr::cust(
-            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.pool_mode') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.pool_mode') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.pool_mode') = 1 THEN 1 ELSE 0 END"#,
-        ),
+        DbBackend::Postgres => Expr::cust(format!(
+            r#"CAST(CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? '{key}') THEN {default} WHEN jsonb_typeof("channels"."settings" -> '{key}') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> '{key}')::boolean THEN 1 ELSE 0 END AS BIGINT)"#,
+        )),
+        DbBackend::MySql => Expr::cust(format!(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.{key}') = 0 THEN {default} WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.{key}')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.{key}')) = 'true' THEN 1 ELSE 0 END",
+        )),
+        DbBackend::Sqlite => Expr::cust(format!(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.{key}') IS NULL THEN {default} WHEN json_type("channels"."settings", '$.{key}') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.{key}') = 1 THEN 1 ELSE 0 END"#,
+        )),
     }
 }
 

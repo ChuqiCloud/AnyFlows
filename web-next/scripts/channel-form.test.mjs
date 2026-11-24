@@ -75,6 +75,15 @@ test('外部账号池模式按结构化字段提交且默认关闭', () => {
   assert.equal(toCreateRequest({ ...defaults, name: 'Pool channel', poolMode: true }).pool_mode, true)
 })
 
+test('渠道健康评分默认开启，可以随创建和更新关闭', () => {
+  const defaults = defaultChannelValues()
+  assert.equal(defaults.healthScoring, true)
+  const values = { ...defaults, name: 'Manual routing', healthScoring: false }
+  assert.equal(toCreateRequest(values).health_scoring, false)
+  assert.equal(toUpdateRequest(values).health_scoring, false)
+  assert.equal(defaultChannelValues({ type: 'openai', health_scoring: false }).healthScoring, false)
+})
+
 test('客户端仿真仅允许 Anthropic 并要求首次启用确认风险', () => {
   const schema = buildChannelFormSchema('create', messages)
   const enabled = {

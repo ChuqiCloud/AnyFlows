@@ -4,7 +4,7 @@ use af_db::{SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord};
 use af_domain::CredentialQuotaDimension;
 use std::collections::{BTreeMap, BTreeSet};
 
-use af_domain::{AfError, CredentialId, Protocol};
+use af_domain::{AfError, Protocol};
 use af_scheduler::IndexedRoutePlan;
 
 use crate::{credential_order::CredentialLoad, health_runtime::RuntimeHealthState};
@@ -93,20 +93,9 @@ impl ScheduledChatService {
         let Some(store) = &self.health else {
             return Ok(None);
         };
-        let mut seen = BTreeSet::new();
-        let mut identities = Vec::new();
-        for credential in compact_credentials(route, model) {
-            let id =
-                CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?;
-            if !seen.insert(id) {
-                return Err(AfError::Internal);
-            }
-            identities.push((id, credential.shared_health_id()));
-            if identities.len() == af_relay::RelayStateMachine::MAX_CANDIDATES {
-                break;
-            }
-        }
-        crate::health_runtime::load_credential_model_health(store, &identities, model)
+        let candidates =
+            super::collect_health_candidates(route, &[Protocol::OpenAiResponses], model, true)?;
+        crate::health_runtime::load_route_credential_health(store, &candidates, model)
             .await
             .map(Some)
             .map_err(|_| AfError::Internal)

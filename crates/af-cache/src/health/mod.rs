@@ -7,7 +7,9 @@ use crate::{
     CacheError, CacheOperation, RedisFailureKind, config::validate_cache_key,
     redis_backend::RedisBackend,
 };
-use scripts::{APPLY_EVENTS_SCRIPT, READ_STATES_SCRIPT};
+use scripts::{
+    ADMIT_PROBE_SCRIPT, APPLY_EVENTS_SCRIPT, READ_STATES_SCRIPT, REQUEST_RECOVERY_SCRIPT,
+};
 
 pub use types::{
     HEALTH_PENALTY_SCALE, HEALTH_SAMPLE_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig,
@@ -100,7 +102,6 @@ impl RedisHealthStore {
             .arg(self.transient_streak_window_millis)
             .arg(self.outcome_half_life_millis)
             .arg(self.state_ttl_millis)
-            .arg(self.breaker_threshold)
             .arg(self.cooldown_millis[0])
             .arg(self.cooldown_millis[1])
             .arg(self.cooldown_millis[2])
@@ -113,7 +114,10 @@ impl RedisHealthStore {
                 .arg(if event.is_failure() { 1 } else { 0 })
                 .arg(event.penalty_micros())
                 .arg(if event.is_transient() { 1 } else { 0 })
-                .arg(event.latency_millis().min(3_600_000));
+                .arg(event.latency_millis().min(3_600_000))
+                .arg(event.breaker_threshold(self.breaker_threshold))
+                .arg(u8::from(event.allows_early_probe()))
+                .arg(u8::from(event.is_recovery_probe()));
         }
         let values: Vec<i64> = self
             .backend
@@ -124,6 +128,57 @@ impl RedisHealthStore {
             .map(|event| event.target())
             .collect::<Vec<_>>();
         decode_snapshots(CacheOperation::HealthWrite, &targets, &values)
+    }
+
+    /// Returns 0 when blocked, 1 for an early fallback, or 2 after cooldown or an administrator request.
+    /// With `claim` set, reserves the opportunity atomically across nodes and models.
+    pub async fn probe_priority(
+        &self,
+        channel: af_domain::ChannelId,
+        id: af_domain::CredentialId,
+        owner: af_domain::CredentialId,
+        targets: &[RedisHealthTarget],
+        claim: bool,
+    ) -> Result<u8, CacheError> {
+        validate_read_targets(targets)?;
+        if targets.is_empty() {
+            return Err(CacheError::InvalidHealthBatch);
+        }
+        let mut command = redis::cmd("EVAL");
+        command
+            .arg(ADMIT_PROBE_SCRIPT)
+            .arg(targets.len() + 3)
+            .arg(format!("{}:probe:{}", self.key_prefix, owner.get()))
+            .arg(format!(
+                "{}:manual",
+                self.target_key(RedisHealthTarget::Channel(channel))?
+            ))
+            .arg(format!(
+                "{}:manual",
+                self.target_key(RedisHealthTarget::Credential(id))?
+            ));
+        for target in targets {
+            command.arg(self.target_key(*target)?);
+        }
+        self.backend
+            .query(CacheOperation::HealthWrite, command.arg(u8::from(claim)))
+            .await
+    }
+
+    /// Allows an immediate recovery attempt for existing transient breakers in this scope.
+    pub async fn request_recovery(&self, target: RedisHealthTarget) -> Result<(), CacheError> {
+        let _: u64 = self
+            .backend
+            .query(
+                CacheOperation::HealthWrite,
+                redis::cmd("EVAL")
+                    .arg(REQUEST_RECOVERY_SCRIPT)
+                    .arg(2)
+                    .arg(format!("{}:manual", self.target_key(target)?))
+                    .arg(self.target_key(target)?),
+            )
+            .await?;
+        Ok(())
     }
 
     fn target_key(&self, target: RedisHealthTarget) -> Result<String, CacheError> {

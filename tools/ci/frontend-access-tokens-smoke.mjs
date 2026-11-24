@@ -246,9 +246,12 @@ try {
   await page.getByRole('button', { name: label('actions.revoke'), exact: true }).last().click()
   await page.getByText(label('empty.title'), { exact: true }).waitFor()
   assert.equal(revokeCalls, 1)
-  await page.getByRole('tab', { name: label('tabs.modelKeys'), exact: true }).click()
+  const [modelKeysResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/tokens' && response.request().method() === 'GET'),
+    page.getByRole('tab', { name: label('tabs.modelKeys'), exact: true }).click(),
+  ])
+  assert.equal(modelKeysResponse.ok(), true)
   await page.getByRole('heading', { name: commonLabel('apiKeys.title'), exact: true }).waitFor()
-  assert.ok(requests.some(item => item.path === '/api/tokens' && item.method === 'GET'))
   assert.equal(gatewayRequestCount, 1, 'Credential editing, revocation and tab changes send no additional gateway requests')
   assert.equal(await page.getByLabel(label('issued.secret'), { exact: true }).count(), 0, 'Switching credential tabs discards the one-time PAT secret')
 

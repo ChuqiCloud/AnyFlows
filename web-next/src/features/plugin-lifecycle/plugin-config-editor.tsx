@@ -143,16 +143,38 @@ function schemaHasSensitiveFields(schema: unknown, depth = 0): boolean {
   return schemaHasSensitiveFields(object.items, depth + 1)
 }
 
-function propertyEntries(schema: FieldSchema, locale: string) {
+function renderableField(schema: FieldSchema, depth: number): boolean {
+  if (depth > MAX_RENDER_DEPTH || (schema.enum !== undefined && !validEnum(schema.enum))) return false
+  switch (schemaType(schema)) {
+    case 'object':
+      return Object.entries(objectValue(schema.properties) ?? {}).some(([key, value]) => renderableProperty(key, value, depth + 1))
+    case 'array': {
+      const items = objectValue(schema.items) as FieldSchema | undefined
+      return Boolean(items && safeFieldName('', items) && renderableField(items, depth + 1))
+    }
+    case undefined: return false
+    default: return true
+  }
+}
+
+function renderableProperty(key: string, value: unknown, depth: number): value is FieldSchema {
+  const field = objectValue(value) as FieldSchema | undefined
+  return Boolean(safeConfigKey(key) && field && safeFieldName(key, field) && renderableField(field, depth))
+}
+
+export function hasPluginConfigurationFields(schema: unknown): boolean {
+  const root = objectValue(schema) as FieldSchema | undefined
+  return Boolean(root && schemaType(root) === 'object' && renderableField(root, 0))
+}
+
+function propertyEntries(schema: FieldSchema, locale: string, depth: number) {
   const properties = objectValue(schema.properties)
   if (!properties) return []
   const required = new Set(Array.isArray(schema.required)
     ? schema.required.filter((item): item is string => typeof item === 'string')
     : [])
-  return Object.entries(properties).flatMap(([key, value], index) => {
-    const field = objectValue(value) as FieldSchema | undefined
-    const type = field ? schemaType(field) : undefined
-    if (!safeConfigKey(key) || !field || !type || !safeFieldName(key, field) || (field.enum !== undefined && !validEnum(field.enum))) return []
+  return Object.entries(properties).flatMap(([key, field], index) => {
+    if (!renderableProperty(key, field, depth)) return []
     return [{
       key,
       field,
@@ -395,7 +417,7 @@ export function PluginConfigEditor({ schema, value, onChange, locale }: {
     }
 
     const parent = object ?? {}
-    const entries = propertyEntries(schemaNode, locale).filter(({ field }) => conditionMatches(field, parent))
+    const entries = propertyEntries(schemaNode, locale, depth + 1).filter(({ field }) => conditionMatches(field, parent))
     const groups = new Map<string, typeof entries>()
     for (const entry of entries) {
       const group = entry.group ?? ''

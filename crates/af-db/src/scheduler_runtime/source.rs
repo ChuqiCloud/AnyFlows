@@ -10,12 +10,13 @@ use thiserror::Error;
 use crate::{
     CredentialProxyScheme,
     channel_settings::{
-        auto_ban_rules, client_simulation_body_profile, client_simulation_profile, pool_mode,
-        relay_execution_settings, responses_compact_mode, responses_compact_model_mapping,
-        responses_compact_probe_result, responses_websocket_enabled,
-        validate_client_simulation_body_capability, validate_client_simulation_capability,
-        validate_responses_compact_capability, validate_responses_compact_model_mapping,
-        validate_responses_compact_probe_result, validate_responses_websocket_capability,
+        auto_ban_rules, client_simulation_body_profile, client_simulation_profile, health_scoring,
+        pool_mode, relay_execution_settings, responses_compact_mode,
+        responses_compact_model_mapping, responses_compact_probe_result,
+        responses_websocket_enabled, validate_client_simulation_body_capability,
+        validate_client_simulation_capability, validate_responses_compact_capability,
+        validate_responses_compact_model_mapping, validate_responses_compact_probe_result,
+        validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials, proxies},
@@ -44,6 +45,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     headers: Vec<(String, String)>,
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
+    health_scoring: bool,
     client_simulation_profile: Option<ClientSimulationProfile>,
     client_simulation_body_profile: Option<ClientSimulationBodyProfile>,
     client_profile: Option<af_domain::ClientProfileSnapshot>,
@@ -125,6 +127,8 @@ impl SchedulerRuntimeChannelSource {
         let auto_ban_rules =
             auto_ban_rules(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let pool_mode = pool_mode(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let health_scoring =
+            health_scoring(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let client_simulation_profile = client_simulation_profile(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_client_simulation_capability(channel_type, protocol, client_simulation_profile)
@@ -181,6 +185,7 @@ impl SchedulerRuntimeChannelSource {
             headers,
             auto_ban_rules,
             pool_mode,
+            health_scoring,
             client_simulation_profile,
             client_simulation_body_profile,
             client_profile: None,
@@ -305,6 +310,10 @@ impl SchedulerRuntimeChannelSource {
     }
 
     /// 返回渠道是否跳过渠道级本地故障状态。
+    pub(super) const fn health_scoring(&self) -> bool {
+        self.health_scoring
+    }
+
     pub(super) const fn pool_mode(&self) -> bool {
         self.pool_mode
     }

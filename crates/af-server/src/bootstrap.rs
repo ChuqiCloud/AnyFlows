@@ -3328,10 +3328,12 @@ impl Bootstrap<Supervised> {
             .merge(af_http::build_credential_health_router(
                 Arc::clone(&self.stage.infrastructure.session_authenticator),
                 Arc::clone(&self.stage.infrastructure.admin_channel_reader),
-                self.stage.scheduler_health.as_ref().map(|store| {
-                    Arc::new(crate::health_runtime::AdminCredentialHealthRuntime(
-                        Arc::clone(store),
-                    )) as Arc<dyn af_http::AdminCredentialHealthReader>
+                Arc::new(crate::health_runtime::AdminCredentialHealthRuntime {
+                    store: self.stage.scheduler_health.clone(),
+                    channel_index: self.stage._channel_index.clone(),
+                    channel_states: ChannelStateRepository::new(
+                        self.stage.infrastructure.infrastructure.database.clone(),
+                    ),
                 }),
             ))
             .merge(af_http::build_active_channel_monitor_router(

@@ -32,10 +32,10 @@ use crate::{
     channel_settings::{
         RelayChannelSettings, RelayChannelSettingsPatch, auto_ban_rules,
         clear_responses_compact_probe_record, client_simulation_body_profile,
-        client_simulation_profile, pool_mode, responses_compact_mode,
+        client_simulation_profile, health_scoring, pool_mode, responses_compact_mode,
         responses_compact_model_mapping, responses_websocket_enabled, set_auto_ban_rules,
-        set_client_simulation_body_profile, set_client_simulation_profile, set_pool_mode,
-        set_relay_execution_settings_patch, set_responses_compact_mode,
+        set_client_simulation_body_profile, set_client_simulation_profile, set_health_scoring,
+        set_pool_mode, set_relay_execution_settings_patch, set_responses_compact_mode,
         set_responses_compact_model_mapping, set_responses_websocket_enabled,
         validate_client_simulation_body_capability, validate_client_simulation_capability,
         validate_responses_compact_capability, validate_responses_compact_model_mapping,
@@ -75,6 +75,7 @@ pub struct AdminChannelWriteRecord {
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
+    health_scoring: Option<bool>,
     client_simulation_profile: Option<Option<ClientSimulationProfile>>,
     client_simulation_risk_accepted: bool,
     client_simulation_body_profile: Option<Option<ClientSimulationBodyProfile>>,
@@ -129,6 +130,7 @@ impl AdminChannelWriteRecord {
             settings: Some(settings),
             provider: None,
             pool_mode: Some(false),
+            health_scoring: None,
             client_simulation_profile: Some(None),
             client_simulation_risk_accepted: false,
             client_simulation_body_profile: Some(None),
@@ -183,6 +185,7 @@ impl AdminChannelWriteRecord {
             header_override,
             settings,
             pool_mode: None,
+            health_scoring: None,
             provider: None,
             client_simulation_profile: None,
             client_simulation_risk_accepted: false,
@@ -226,6 +229,13 @@ impl AdminChannelWriteRecord {
     ) -> Self {
         self.responses_compact_mode = Some(mode);
         self.responses_compact_model_mapping = Some(model_mapping);
+        self
+    }
+
+    /// 覆盖运行时健康评分和熔断开关。
+    #[must_use]
+    pub fn with_health_scoring(mut self, enabled: bool) -> Self {
+        self.health_scoring = Some(enabled);
         self
     }
 
@@ -647,6 +657,11 @@ impl AdminChannelRepository {
             .settings
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         set_provider(&mut settings, fields.provider)?;
+        if let Some(enabled) = fields.health_scoring {
+            set_health_scoring(&mut settings, enabled)
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        }
+        health_scoring(&settings).map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let pool_mode = fields
             .pool_mode
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
@@ -858,9 +873,16 @@ impl AdminChannelRepository {
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned)
         });
+        let effective_health_scoring = match fields.health_scoring {
+            Some(enabled) => enabled,
+            None => health_scoring(&current_settings)
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?,
+        };
         let mut settings = fields.settings.unwrap_or(current_settings);
         crate::channel_opencode_entry(fields.channel_type, &settings)?;
         set_provider(&mut settings, provider)?;
+        set_health_scoring(&mut settings, effective_health_scoring)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_pool_mode(&mut settings, effective_pool_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_client_simulation_profile(&mut settings, effective_client_simulation_profile)
@@ -1362,6 +1384,7 @@ struct ValidatedChannelFields {
     header_override: Option<HeaderOverrides>,
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
+    health_scoring: Option<bool>,
     client_simulation_profile: Option<Option<ClientSimulationProfile>>,
     client_simulation_risk_accepted: bool,
     client_simulation_body_profile: Option<Option<ClientSimulationBodyProfile>>,
@@ -1503,6 +1526,7 @@ fn validate_channel_fields(
         settings: record.settings,
         provider: record.provider,
         pool_mode: record.pool_mode,
+        health_scoring: record.health_scoring,
         client_simulation_profile: record.client_simulation_profile,
         client_simulation_risk_accepted: record.client_simulation_risk_accepted,
         client_simulation_body_profile: record.client_simulation_body_profile,

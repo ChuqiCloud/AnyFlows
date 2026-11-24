@@ -151,7 +151,7 @@
       "repositoryHint": "Enter a public GitHub repository URL to download a prebuilt package from its latest stable release.",
       "assetName": "Release filename (optional)",
       "assetNameHint": "A unique .afplugin package is selected automatically. If there are multiple candidates, enter the filename for your server.",
-      "submit": "Install and enable",
+      "submit": "Install",
       "installing": "Installing…",
       "success": "{{plugin}} {{version}} is installed and enabled.",
       "successNeedsConfiguration": "{{plugin}} {{version}} is installed. Open Configure on its card and fill the required fields to enable it.",
@@ -159,13 +159,13 @@
         "packageType": "Choose an .afplugin or ZIP plugin package.",
         "repositoryUrl": "Enter a public GitHub repository URL such as https://github.com/owner/plugin.",
         "repositoryNotFound": "Could not find the repository, a stable release, or the selected package. Check the URL and release files.",
-        "invalidRepositoryPackage": "Could not select or validate the package. If there are multiple candidates, enter the filename under Optional configuration.",
+        "invalidRepositoryPackage": "Could not select or validate the package. If there are multiple candidates, enter the release filename.",
         "repositoryUnavailable": "GitHub or the plugin runtime is temporarily unavailable. Retry later or upload the downloaded package.",
         "sessionExpired": "Your session has expired. Sign in again and retry.",
         "conflict": "The deployment changed while installing. Refresh and retry so the current version is preserved.",
         "needsReview": "This plugin requests an external read, write, or capability without valid schemas. Use Advanced to review and grant it explicitly.",
         "tooLarge": "The plugin package exceeds the service's size limit. Check the package contents.",
-        "invalidPackage": "The package or configuration did not pass validation. Check the package format, supported version, and required configuration.",
+        "invalidPackage": "The package did not pass validation. Check the format and supported versions.",
         "forbidden": "Your account does not have permission to install plugins.",
         "failed": "The installation did not complete. Retry shortly; if it keeps failing, check the package and service logs."
       }
@@ -178,16 +178,15 @@
     "loading": "Loading…",
     "checkingGeneration": "Checking the current deployment generation…",
     "currentGeneration": "Current deployment generation: {{generation}}",
-    "deploy": "Configure deployment",
+    "deploy": "Grant and deploy",
     "deployTitle": "Deploy {{plugin}}",
     "configure": "Configure",
     "configureTitle": "Configure {{plugin}}",
-    "configureHint": "Saving creates a new deployment generation (current g{{generation}}) and reloads the plugin on each node. Existing capability grants are retained.",
     "saveConfiguration": "Save configuration",
     "disable": "Disable",
     "rollback": "Roll back to this version",
-    "grantsHint": "Select only the read capabilities required for this deployment. Grants are recorded as a separate deployment fact.",
-    "configHint": "Only enter public settings that the plugin can read. Saving creates a new deployment generation. Store keys, passwords, and other credentials through plugin credential management.",
+    "grantsHint": "Select the permissions this plugin needs.",
+    "configHint": "Use plugin credential management for keys and passwords.",
     "configEditor": {
       "value": "Input value",
       "emptyForm": "There are no fields to fill in.",
@@ -222,6 +221,7 @@
       "revoked": "Revoked",
       "enabled": "Enabled",
       "disabled": "Disabled",
+      "needsConfiguration": "Needs configuration",
       "unverified": "Administrator-installed · publisher unverified",
       "signed": "Publisher signature verified",
       "official": "Official plugin"
@@ -881,6 +881,14 @@
     }
   },
   "channels": {
+    "recovery": {
+      "enable": "Restore channel",
+      "probe": "Request recovery probe",
+      "failed": "Recovery failed. Try again.",
+      "enabled": "Channel re-enabled.",
+      "requested": "Recovery requested. An eligible call will probe the upstream.",
+      "unavailable": "Health scoring is unavailable."
+    },
     "title": "Channels",
     "subtitle": "Maintain routing, credentials, and request policies for chat, multimodal, rerank, and asynchronous video upstreams.",
     "activeMonitor": {
@@ -1096,6 +1104,7 @@
       "overrides": "Request transformation",
       "relayExecution": "Upstream execution",
       "relayInherited": "Blank inherits the global default",
+      "healthScoringHint": "When off, routing uses configured priorities and weights. Status, rate limits and quotas still apply.",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
       "autoBanPoolModeHint": "This setting is preserved in external pool mode, but the channel is not automatically disabled.",
       "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",
@@ -1139,6 +1148,7 @@
       "status": "Status",
       "weight": "Weight",
       "priority": "Priority",
+      "healthScoring": "Health scoring and circuit breaking",
       "autoBan": "Allow automatic disabling",
       "autoBanRules": "Automatic-disable rules",
       "autoBanStatusCodes": "HTTP status codes",
@@ -1560,6 +1570,9 @@
   },
   "credentials": {
     "health": {
+      "awaitingProbe": "Awaiting recovery probe",
+      "cooldownRemaining_other": "Health cooldown has about {{count}} seconds remaining",
+      "cooldownRemaining_one": "Health cooldown has about {{count}} second remaining",
       "degraded": "Reduced health weight",
       "cooling": "Health cooldown",
       "reduced": "Effective weight {{percent}}%",
@@ -9523,7 +9536,6 @@
     "source": "Catalog source",
     "chooseSource": "Choose a source",
     "sourceLabel": "Source: {{source}} · deployment {{generation}}",
-    "noSources": "No catalog plugin is available.",
     "sourceError": "Could not load catalog sources.",
     "modelsError": "This source could not return a valid model page. Retry shortly or choose another source.",
     "search": "Search this source",

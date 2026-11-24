@@ -117,6 +117,40 @@ async fn probe_recovery_only_reenables_auto_disabled_live_channels() -> Result<(
 }
 
 #[tokio::test]
+async fn manual_recovery_preserves_an_administrator_disable() -> Result<(), Box<dyn Error>> {
+    let pool = test_pool().await?;
+    let automatic = channel("automatic", Status::AutoDisabled, true)
+        .insert(pool.connection())
+        .await?;
+    let manual = channel("manual", Status::Disabled, true)
+        .insert(pool.connection())
+        .await?;
+    insert_ability(&pool, automatic.id, false, "recovery-model").await?;
+    insert_ability(&pool, manual.id, false, "recovery-model").await?;
+    let repository = ChannelStateRepository::new(pool.clone());
+
+    assert_eq!(
+        repository
+            .recover_manually(ChannelId::new(automatic.id)?)
+            .await?,
+        ChannelProbeRecoveryOutcome::Recovered
+    );
+    assert_eq!(
+        repository
+            .recover_manually(ChannelId::new(manual.id)?)
+            .await?,
+        ChannelProbeRecoveryOutcome::NotEligible
+    );
+    assert_status(&pool, automatic.id, Status::Enabled).await?;
+    assert_status(&pool, manual.id, Status::Disabled).await?;
+    assert_ability_enabled(&pool, automatic.id, true).await?;
+    assert_ability_enabled(&pool, manual.id, false).await?;
+    assert_eq!(channel_outbox_count(&pool, automatic.id).await?, 1);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn stale_probe_cannot_overwrite_a_newer_auto_disable_state() -> Result<(), Box<dyn Error>> {
     let pool = test_pool().await?;
     let automatic = channel("automatic", Status::AutoDisabled, true)
