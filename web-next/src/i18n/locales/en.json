@@ -1488,55 +1488,74 @@
     }
   },
   "channelModels": {
-    "title": "Channel models",
+    "title": "Manage channel models",
     "summary": {
-      "models_one": "{{count}} connected model",
-      "models_other": "{{count}} connected models",
-      "groups_one": "{{count}} routing group",
-      "groups_other": "{{count}} routing groups",
       "mapping_one": "{{count}} mapping",
       "mapping_other": "{{count}} mappings"
     },
     "sections": {
-      "connected": "Connected models",
-      "connectedHint": "This page controls which models this channel may serve. Maintain model metadata, capabilities, and prices in the model catalog.",
+      "connected": "Models",
       "mapping": "Model mapping",
-      "mappingHint": "The left side is the public model name and the right side is the upstream model name. Same-name models need no mapping.",
+      "mappingHint": "Clients use the public model name. Requests go to the matching upstream model. Leave this empty when the names match.",
       "groups": "Routing groups",
-      "groupsHint": "Models and groups must be configured together before this channel can enter routing.",
-      "discovery": "Discover upstream models",
-      "discoveryHint": "Uses the current channel credentials to read the upstream list. This is a preview and never overwrites existing configuration."
+      "groupsHint": "Choose which groups can use the models on this channel.",
+      "advanced": "Advanced settings",
+      "advancedHint": "Upstream model limits and credential coverage",
+      "upstreamPolicy": "Upstream model limits"
     },
     "actions": {
       "back": "Back to channels",
       "credentials": "Manage credentials",
-      "refresh": "Refresh",
+      "refresh": "Reload channel",
       "discover": "Get upstream models",
-      "discovering": "Loading…",
+      "discovering": "Fetching…",
+      "add": "Add",
       "addSelected": "Add selected ({{count}})",
-      "close": "Close preview",
-      "save": "Save model configuration",
+      "close": "Close",
+      "save": "Save changes",
       "saving": "Saving…",
-      "cancel": "Back",
+      "retry": "Retry",
       "models": "Manage models"
+    },
+    "modelInput": {
+      "label": "Model ID",
+      "placeholder": "Enter a model ID",
+      "hint": "Paste multiple IDs separated by commas or line breaks."
     },
     "discovery": {
       "candidates": "Models available to add ({{count}})",
-      "empty": "The upstream did not return any new models.",
-      "unsupported": "Automatic discovery is not supported for this protocol. You can still add models manually.",
-      "upstream": "Upstream model"
+      "empty": "No new models to add.",
+      "upstream": "Upstream name {{model}}",
+      "search": "Search models",
+      "noMatch": "No matching models.",
+      "selectVisible": "Select all results shown",
+      "limit": "A channel supports up to 512 models. Select fewer models."
     },
-    "mapping": { "empty": "No model mappings configured." },
-    "feedback": { "saved": "Channel model configuration saved." },
+    "mapping": {
+      "optional": "Optional",
+      "publicName": "Public model name",
+      "upstreamName": "Upstream model name",
+      "empty": "Requests use the same model names upstream."
+    },
+    "feedback": {
+      "saved": "Changes saved.",
+      "unsaved": "Unsaved changes",
+      "finishAdding": "Add the model you entered or clear the input.",
+      "added_one": "Added {{count}} model. Save changes to apply it.",
+      "added_other": "Added {{count}} models. Save changes to apply them.",
+      "discard": "You have unsaved changes. Leave this page?"
+    },
     "validation": {
-      "routing": "Models and routing groups must both be empty or both be configured.",
-      "limit": "The model or group limit was exceeded. Remove some entries and try again.",
-      "configuration": "Model names and mappings must be unique, non-empty, and within the allowed length."
+      "pickGroup": "Choose at least one routing group.",
+      "addModel": "Add at least one model or remove all groups.",
+      "limit": "Use up to 512 models and 64 groups, with at most 4096 model and group combinations.",
+      "models": "Check the model IDs. Each ID can be up to 255 bytes.",
+      "mapping": "Enter both names and use each public name once. Each name can be up to 256 bytes. Use at most 512 mappings and 64 KB in total."
     },
     "errors": {
-      "load": "Channel model configuration could not be loaded.",
-      "save": "Channel model configuration could not be saved.",
-      "discovery": "Upstream model discovery failed. Check the credential and channel connectivity."
+      "load": "Could not load the channel.",
+      "save": "Could not save. Your changes are still here. Try again.",
+      "discovery": "Could not get models. Check the channel address and credentials, then try again."
     }
   },
   "credentials": {

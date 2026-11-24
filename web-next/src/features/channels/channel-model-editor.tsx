@@ -1,36 +1,35 @@
 import type { ClipboardEvent, KeyboardEvent } from 'react'
-import { useState } from 'react'
-import { Chip, Input } from '@heroui/react'
+import { Button, Chip, Input } from '@heroui/react'
 import { useTranslation } from 'react-i18next'
 
 type ChannelModelEditorProps = {
   id: string
   value: string[]
+  draft: string
+  onDraftChange: (value: string) => void
   invalid?: boolean
+  disabled?: boolean
   onChange: (value: string[]) => void
 }
 
-/** 用徽标维护模型集合，并支持批量粘贴和键盘快速录入。 */
-export function ChannelModelEditor({ id, value, invalid, onChange }: ChannelModelEditorProps) {
+export function ChannelModelEditor({ id, value, draft, onDraftChange, invalid, disabled, onChange }: ChannelModelEditorProps) {
   const { t } = useTranslation()
-  const [draft, setDraft] = useState('')
 
   const append = (raw: string) => {
     const additions = raw
       .split(/[\n,]/)
       .map((item) => item.trim())
       .filter(Boolean)
-    if (additions.length === 0) return
+    if (disabled || additions.length === 0) return
     onChange([...new Set([...value, ...additions])])
-    setDraft('')
+    onDraftChange('')
   }
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'Enter' || event.key === ',') {
       event.preventDefault()
       append(draft)
-    } else if (event.key === 'Backspace' && draft === '' && value.length > 0) {
-      onChange(value.slice(0, -1))
     }
   }
 
@@ -42,45 +41,35 @@ export function ChannelModelEditor({ id, value, invalid, onChange }: ChannelMode
   }
 
   return (
-    <div
-      className="rounded-lg border border-input bg-[var(--surface-sunken)] p-2 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"
-      aria-invalid={invalid}
-    >
+    <div className="grid min-w-0 gap-2">
+      <div className="flex items-start gap-2">
+        <Input id={id} size="sm" aria-label={t('channelModels.modelInput.label')} placeholder={t('channelModels.modelInput.placeholder')}
+          aria-describedby={`${id}-hint`} isDisabled={disabled} isInvalid={invalid}
+          value={draft} onValueChange={onDraftChange} onKeyDown={handleKeyDown} onPaste={handlePaste} />
+        <Button type="button" size="sm" variant="bordered" className="shrink-0"
+          isDisabled={disabled || value.length >= 512 || !draft.trim()} onPress={() => append(draft)}>{t('channelModels.actions.add')}</Button>
+      </div>
+      <p id={`${id}-hint`} className="text-xs text-muted-foreground">{t('channelModels.modelInput.hint')}</p>
       {value.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
+        <div className="flex max-h-48 flex-wrap content-start gap-1.5 overflow-y-auto">
           {value.map((model) => (
             <Chip
               key={model}
               classNames={{
-                base: 'h-7 max-w-full shrink-0 !flex-nowrap bg-info/10 pl-2 text-info',
+                base: 'h-7 max-w-full shrink-0 !flex-nowrap',
                 content: 'min-w-0 truncate whitespace-nowrap font-mono',
                 closeButton: 'inline-flex size-5 shrink-0 self-center items-center justify-center [&>svg]:block',
               }}
               size="sm"
+              title={model}
               variant="flat"
-              onClose={() => onChange(value.filter((item) => item !== model))}
+              onClose={disabled ? undefined : () => onChange(value.filter((item) => item !== model))}
             >
               {model}
             </Chip>
           ))}
         </div>
       ) : null}
-      {/* 输入区无边框，外层容器已经承担边框与聚焦态。 */}
-      <Input
-        classNames={{
-          base: 'shadow-none',
-          inputWrapper: 'h-7 min-h-7 border-0 bg-transparent px-1 shadow-none data-[hover=true]:bg-transparent group-data-[focus=true]:bg-transparent',
-          input: 'font-mono text-xs',
-        }}
-        id={id}
-        isDisabled={value.length >= 512}
-        placeholder={t('channels.form.modelPlaceholder')}
-        value={draft}
-        onBlur={() => append(draft)}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-      />
     </div>
   )
 }
