@@ -33,7 +33,7 @@
           "archiveUrl": "https://github.com/example/anyflows-provider/releases/download/v1.2.0/provider.afplugin",
           "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
           "commit": "0123456789abcdef0123456789abcdef01234567",
-          "engines": { "anyflows": ">=0.3.0-beta.11" },
+          "engines": { "anyflows": ">=0.3.0-beta.12" },
           "capabilities": ["provider.lifecycle"],
           "publishedAt": "2026-11-19T00:00:00Z"
         }

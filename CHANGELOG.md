@@ -1,3 +1,32 @@
+## 0.3.0-beta.12 - 2026-11-24
+
+本版本基于 `v0.3.0-beta.11`，完善插件运行链路、上游 Provider 适配、模型定价和管理页面。
+
+### 新增
+
+- 邮件设置支持按邮件类型配置 HTML 模板、变量和预览，同时保留纯文本正文。([#141](https://github.com/ChuqiCloud/AnyFlows/pull/141))
+- 插件异步任务支持进程重启后恢复、取消重试、结果存储隔离、过期清理和最终结算，并补齐多语言 SDK 的状态处理。([#142](https://github.com/ChuqiCloud/AnyFlows/pull/142))
+- 管理员可直接输入公开 GitHub 仓库地址安装插件的预构建 Release 包，服务端校验来源、大小和摘要，不执行仓库脚本。([#143](https://github.com/ChuqiCloud/AnyFlows/pull/143))
+- Provider 支持配置自动、强制非流式和强制流式三种上游响应模式，Relay 按绑定策略读取上游响应并保持客户端协议。([#144](https://github.com/ChuqiCloud/AnyFlows/pull/144))
+- Provider 支持多步会话，可创建线程、轮询结果并在宿主控制下完成请求限制、超时和结果转换。([#145](https://github.com/ChuqiCloud/AnyFlows/pull/145))
+- Provider 会话支持通用 WebSocket，包含凭据认证帧、文本和二进制收发、批量收帧及安全关闭流程。([#146](https://github.com/ChuqiCloud/AnyFlows/pull/146))
+
+### 改进
+
+- 插件安装和配置页面改为卡片和表单操作，Provider 渠道绑定可直接填写端点并选择授权范围。([#147](https://github.com/ChuqiCloud/AnyFlows/pull/147))
+- 渠道模型管理页面集中模型、分组和保存入口，支持逐个添加、批量粘贴和筛选上游结果，减少重复操作。([#148](https://github.com/ChuqiCloud/AnyFlows/pull/148))
+- 模型价格支持按次计费，并可从完整模型目录匹配参考价后逐项应用到本地模型。([模型定价提交](https://github.com/ChuqiCloud/AnyFlows/commit/c48bd8aaf2166f4c87b821bc3526e3cc36c03443))
+- 全量接入 LobeHub 厂商和模型目录，补充彩色厂商图标、模型标识和目录导入能力。([LobeHub 目录提交](https://github.com/ChuqiCloud/AnyFlows/commit/c48bd8aaf2166f4c87b821bc3526e3cc36c03443))
+
+### 升级与兼容
+
+- 本版本新增按次模型定价、HTML 邮件模板、插件存储过期索引，以及插件存储二进制 key 排序和大小写规则相关数据库迁移。升级前备份数据库、配置和计费 WAL，首次启动时自动执行迁移。
+- Provider 端点、会话和 WebSocket 能力必须由管理员在渠道绑定中明确授权。多节点部署继续从共享制品库恢复同一插件版本，并分别检查节点就绪状态。
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.11...v0.3.0-beta.12](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.11...v0.3.0-beta.12)。
+
 ## 0.3.0-beta.11 - 2026-11-20
 
 本版本基于 `v0.3.0-beta.10`，增加插件安装与集群部署、外部平台账户管理，以及模型级渠道健康评分。

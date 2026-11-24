@@ -293,7 +293,7 @@ try {
         break
       }
       case '/api/admin/software':
-        data = { edition: 'community', version: '0.3.0-beta.11', core_version: '0.3.0-beta.11', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.11', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
+        data = { edition: 'community', version: '0.3.0-beta.12', core_version: '0.3.0-beta.12', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.12', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
         break
       default:
         errors.push(`Unexpected API: ${path} (${role})`)
