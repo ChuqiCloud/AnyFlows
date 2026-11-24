@@ -117,6 +117,7 @@ function TokensCell({ row }: { row: RequestLogRow }) {
 function UsageLogTableRow({ row, showPrincipal, formatQuota, onSelect, onFailedSelect, onUserSelect }: Pick<UsageLogTableProps, 'showPrincipal' | 'formatQuota' | 'onSelect' | 'onFailedSelect' | 'onUserSelect'> & { row: RequestLogRow }) {
   const { t, i18n } = useTranslation()
   const failed = isFailedCallLog(row)
+  const effort = failed ? null : row.reasoning_effort
   const principal = showPrincipal ? (failed ? (isAdminFailedCallLog(row) ? row : undefined) : (isAdminUsageLog(row) ? row : undefined)) : undefined
   const userLabel = principal?.username || (principal?.user_id != null ? `#${principal.user_id}` : t('usageLogs.failed.unknownUser'))
   const open = () => (failed ? onFailedSelect(row) : onSelect(row))
@@ -148,9 +149,10 @@ function UsageLogTableRow({ row, showPrincipal, formatQuota, onSelect, onFailedS
         ) : <span className="text-muted-foreground">-</span>}
       </td>
       <td className={cell}>
-        <div className="flex w-fit flex-col gap-0.5">
+        <div className="flex w-fit items-center gap-2">
           <ModelBadge model={row.model} />
           <span className="text-xs text-muted-foreground">{row.protocol ? t(`usageLogs.protocol.${row.protocol}`) : t('usageLogs.values.legacy')}</span>
+          {effort ? <span className="text-xs text-muted-foreground" title={t('usageLogs.detailFields.reasoningEffort')}>{effort === 'extra_high' ? 'xhigh' : effort}</span> : null}
         </div>
       </td>
       <td className={cell}><StreamCell row={row} /></td>

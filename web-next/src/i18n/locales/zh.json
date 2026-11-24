@@ -3562,7 +3562,7 @@
       "billingMode": "计费方式",
       "usageSource": "用量来源",
       "usageSemantics": "缓存计费方式",
-      "reasoningEffort": "思考等级",
+      "reasoningEffort": "思考强度",
       "reasoningBudget": "推理预算",
       "user": "用户",
       "token": "API Key",
