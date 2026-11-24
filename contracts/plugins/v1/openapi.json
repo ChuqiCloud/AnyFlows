@@ -1215,6 +1215,9 @@
           "contractRange": {
             "$ref": "#/components/schemas/ContractVersionRange"
           },
+          "description": {
+            "$ref": "#/components/schemas/PluginUiText"
+          },
           "displayName": {
             "maxLength": 128,
             "type": "string"

@@ -347,6 +347,7 @@ impl DatabaseAdminPluginLifecycleService {
         &self,
         channel: i64,
         credential: i64,
+        endpoint_id: Option<&str>,
         method: &str,
         path: &str,
         body: Option<Value>,
@@ -370,10 +371,43 @@ impl DatabaseAdminPluginLifecycleService {
             PluginCredentialOperation::Sign {
                 method: method.into(),
                 path: path.into(),
+                endpoint_id: endpoint_id.map(str::to_owned),
                 body,
             },
             None,
             "plugin-relay-sign",
+        )
+        .await
+        .map(Some)
+    }
+
+    /// Ask the bound credential adapter for private WebSocket auth frames.
+    /// The result is consumed by Relay and must never be returned to a Provider plugin.
+    pub async fn authenticate_bound_plugin_websocket(
+        &self,
+        channel: i64,
+        credential: i64,
+        request: Value,
+    ) -> Result<Option<PluginCredentialResult>, AdminPluginLifecycleError> {
+        let Some(record) = self
+            .data_plane()?
+            .records
+            .get("credential", &format!("{channel}:{credential}"))
+            .await
+            .map_err(persistence_error)?
+        else {
+            return Ok(None);
+        };
+        if record.state != "active" {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
+        self.credential_operation(
+            &record.plugin_id,
+            channel,
+            credential,
+            PluginCredentialOperation::WebSocketAuth { request },
+            None,
+            "plugin-relay-websocket-auth",
         )
         .await
         .map(Some)

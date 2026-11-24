@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::{fmt, pin::Pin, time::Duration};
 
 use bytes::Bytes;
@@ -34,6 +35,16 @@ pub enum WebSocketFrame {
     Ping,
     /// Pong 控制帧。
     Pong,
+}
+
+/// Bounded result of one multi-frame receive operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WebSocketReceiveBatch {
+    pub frames: Vec<WebSocketFrame>,
+    pub closed: bool,
+    pub timed_out: bool,
+    /// A frame that exceeded this batch's payload budget remains queued for a later read.
+    pub more_pending: bool,
 }
 
 impl fmt::Debug for WebSocketFrame {
@@ -139,6 +150,7 @@ pub struct WebSocketConnection {
     inner: Option<WebSocketStream<Upgraded>>,
     io_timeout: Duration,
     max_message_bytes: usize,
+    pending_frames: VecDeque<WebSocketFrame>,
 }
 
 impl WebSocketConnection {
@@ -151,6 +163,7 @@ impl WebSocketConnection {
             inner: Some(inner),
             io_timeout,
             max_message_bytes,
+            pending_frames: VecDeque::new(),
         }
     }
 
@@ -224,11 +237,80 @@ impl WebSocketConnection {
             .await
     }
 
+    /// Receive a bounded batch, retaining any frame that does not fit the caller's budget.
+    pub async fn receive_batch_with_timeout(
+        &mut self,
+        receive_timeout: Duration,
+        max_messages: usize,
+        max_payload_bytes: usize,
+    ) -> Result<WebSocketReceiveBatch, WebSocketTransportError> {
+        if max_messages == 0 || max_payload_bytes == 0 {
+            return Err(WebSocketTransportError::InvalidRequestTarget);
+        }
+        let deadline = tokio::time::Instant::now() + receive_timeout;
+        let mut frames = Vec::with_capacity(max_messages.min(32));
+        let mut payload_bytes = 0_usize;
+        let mut closed = false;
+        let mut timed_out = false;
+        let mut more_pending = false;
+
+        while frames.len() < max_messages {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                timed_out = true;
+                break;
+            }
+            match self.receive_with_timeout_policy(remaining, false).await {
+                Err(WebSocketTransportError::ReceiveTimeout) => {
+                    timed_out = true;
+                    break;
+                }
+                Err(error) => return Err(error),
+                Ok(None) => {
+                    closed = true;
+                    break;
+                }
+                Ok(Some(frame)) => {
+                    let frame_bytes = match &frame {
+                        WebSocketFrame::Text(bytes) | WebSocketFrame::Binary(bytes) => bytes.len(),
+                        WebSocketFrame::Ping | WebSocketFrame::Pong => 0,
+                    };
+                    if payload_bytes.saturating_add(frame_bytes) > max_payload_bytes {
+                        self.pending_frames.push_front(frame);
+                        more_pending = true;
+                        break;
+                    }
+                    payload_bytes = payload_bytes.saturating_add(frame_bytes);
+                    frames.push(frame);
+                    if payload_bytes >= max_payload_bytes {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // The bounded receive stops once its caller budget is reached. The flag
+        // means another receive may be useful; it does not promise data is queued.
+        if frames.len() >= max_messages || payload_bytes >= max_payload_bytes {
+            more_pending = true;
+        }
+
+        Ok(WebSocketReceiveBatch {
+            frames,
+            closed,
+            timed_out,
+            more_pending,
+        })
+    }
+
     async fn receive_with_timeout_policy(
         &mut self,
         receive_timeout: Duration,
         close_on_timeout: bool,
     ) -> Result<Option<WebSocketFrame>, WebSocketTransportError> {
+        if let Some(frame) = self.pending_frames.pop_front() {
+            return Ok(Some(frame));
+        }
         let result = {
             let stream = self.inner.as_mut().ok_or(WebSocketTransportError::Closed)?;
             timeout(receive_timeout, stream.next()).await
@@ -686,6 +768,44 @@ mod tests {
                 .unwrap(),
             Some(WebSocketFrame::Text(Bytes::from_static(b"after-timeout")))
         );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn bounded_receive_batch_returns_multiple_frames_and_keeps_the_next_batch() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut websocket = accept_async(stream).await.unwrap();
+            for text in ["one", "two", "three"] {
+                websocket
+                    .send(Message::Text(Utf8Bytes::from(text)))
+                    .await
+                    .unwrap();
+            }
+            websocket.close(None).await.unwrap();
+        });
+
+        let mut connection = loopback_client(ProxyConfig::direct())
+            .connect_websocket(&format!("ws://{address}/batch"), HeaderMap::new())
+            .await
+            .unwrap();
+        let first = connection
+            .receive_batch_with_timeout(Duration::from_secs(1), 2, 32)
+            .await
+            .unwrap();
+        assert_eq!(first.frames.len(), 2);
+        assert!(first.more_pending);
+        let second = connection
+            .receive_batch_with_timeout(Duration::from_secs(1), 2, 32)
+            .await
+            .unwrap();
+        assert_eq!(
+            second.frames,
+            vec![WebSocketFrame::Text(Bytes::from_static(b"three"))]
+        );
+        assert!(second.closed);
         server.await.unwrap();
     }
 

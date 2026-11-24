@@ -30,6 +30,7 @@ const artifact = {
   id: 1, pluginId: 'org.example.catalog', pluginVersion: '1.0.0', digest,
   manifest: {
     pluginId: 'org.example.catalog', pluginVersion: '1.0.0', displayName: 'CI model directory',
+    description: { en: 'A sample model directory for smoke checks.', zh: '用于冒烟检查的模型目录示例。' },
     capabilities: [{ id: 'catalog.models.read', version: 1, access: 'read', sideEffect: 'none' }],
     uiContributions: [
       {
@@ -67,7 +68,15 @@ const artifact = {
       type: 'object', additionalProperties: false, required: ['displayName'],
       properties: {
         displayName: { type: 'string', title: { en: 'Public label', zh: '公开标签' }, maxLength: 40 },
-        layout: { type: 'string', title: { en: 'Layout', zh: '布局' }, enum: ['compact', 'expanded'] },
+        layout: { type: 'string', title: { en: 'Layout', zh: '布局' }, enum: ['compact', 'expanded'], default: 'compact' },
+        endpoint: { type: 'string', format: 'uri', 'x-ui-group': { en: 'Connection', zh: '连接' }, 'x-ui-visible-when': { field: 'layout', equals: 'expanded' } },
+        headers: {
+          type: 'array', maxItems: 4, 'x-ui-group': { en: 'Connection', zh: '连接' },
+          items: { type: 'object', required: ['name', 'value'], properties: {
+            name: { type: 'string', title: { en: 'Header name', zh: '请求头名称' } },
+            value: { type: 'string', format: 'textarea', title: { en: 'Header value', zh: '请求头值' } },
+          } },
+        },
         apiKey: { type: 'string', title: { en: 'API key', zh: 'API 密钥' } },
         password: { type: 'string', title: { en: 'Password', zh: '密码' } },
       },
@@ -77,12 +86,15 @@ const artifact = {
   createdAt: now, approval: { approvedBy: 1, approvedAt: now, requestId: 'ci-approved' }, revocation: null,
 }
 const revoked = { ...artifact, id: 2, pluginId: 'org.example.revoked', digest: 'cd'.repeat(32), signerKeyId: '', official: false, revocation: { revokedBy: 1, revokedAt: now, requestId: 'ci-revoked' } }
-let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled: true, grantedCapabilities: [{ id: 'catalog.models.read', version: 1 }, { id: 'provider.lifecycle', version: 1 }], updatedBy: 1, updatedAt: now, requestId: 'ci-deployment' }
+let publicConfiguration = { displayName: 'Catalog', layout: 'compact', headers: [] }
+let deployment = { pluginId: artifact.pluginId, generation: 4, artifact, enabled: true, needsConfiguration: false, grantedCapabilities: [{ id: 'catalog.models.read', version: 1 }, { id: 'provider.lifecycle', version: 1 }], updatedBy: 1, updatedAt: now, requestId: 'ci-deployment' }
 const marketPlugin = 'org.example.market'
 const marketIndex = 'https://example.org/plugins.json'
 const archiveUrl = 'https://example.org/market.afplugin'
 const marketInstalls = []
 const providerSelections = []
+const configurationUpdates = []
+const configurationReads = []
 let source = { pluginId: artifact.pluginId, pluginVersion: '1.0.0', displayName: 'CI model directory', generation: 4, supportsSearch: true }
 const model = { id: 'fixture-text', displayName: 'Fixture text model', provider: 'example', description: 'Plugin reference entry', contextWindow: 32768, inputModalities: ['text'], outputModalities: ['text'], tags: ['fixture'] }
 const catalogCalls = [], installs = [], uninstalls = [], cleanups = [], requests = [], errors = []
@@ -166,7 +178,7 @@ try {
     if (path === '/api/model-providers') return respond({ providers: [] })
     assert.equal(request.headers().authorization, 'Bearer ci-plugin', `${method} ${path} must use the current session`)
     if (path === '/api/admin/plugins/artifacts' && method === 'GET') return respond({ artifacts: [artifact, revoked], nextBeforeId: null })
-    if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; return respond({ deployments: [deployment], nextCursor: null }) }
+    if (path === '/api/admin/plugins/deployments' && method === 'GET') { deploymentRequests += 1; assert.equal(Object.hasOwn(deployment, 'config'), false); return respond({ deployments: [deployment], nextCursor: null }) }
     if (path === '/api/admin/plugins/tasks/unknown' && method === 'GET') return respond({ tasks: [], nextCursor: null })
     if (path === '/api/admin/plugins/events/results' && method === 'GET') return respond({ results: [{ deliveryId: 31, pluginId: 'org.example.events', eventKind: 'channel.health.changed', deploymentGeneration: 4, capabilityId: 'events.channel-health.changed.consume', capabilityVersion: 1, attemptCount: 1, status: 'delivered', completedAt: now, summary: 'Channel 12 recovered.', result: { summary: 'Channel 12 recovered.', status: 'info' } }], nextBeforeId: null })
     if (path === `/api/admin/plugins/${artifact.pluginId}/deployment/history` && method === 'GET') return respond([])
@@ -189,6 +201,18 @@ try {
       providerSelections.push(body.selection)
       deployment = { ...deployment, generation: deployment.generation + 1, providerSelection: body.selection }
       return respond(deployment)
+    }
+    if (path === `/api/admin/plugins/${artifact.pluginId}/configuration` && method === 'PUT') {
+      const body = request.postDataJSON()
+      assert.equal(body.expected_generation, deployment.generation)
+      configurationUpdates.push(body.configuration)
+      publicConfiguration = body.configuration
+      deployment = { ...deployment, generation: deployment.generation + 1 }
+      return respond(deployment)
+    }
+    if (path === `/api/admin/plugins/${artifact.pluginId}/configuration` && method === 'GET') {
+      configurationReads.push(path)
+      return respond({ pluginId: deployment.pluginId, generation: deployment.generation, configuration: publicConfiguration })
     }
     if (path === '/api/admin/plugins/runtime' && method === 'GET') {
       runtimeRequests += 1
@@ -268,8 +292,12 @@ try {
   assert.equal(await runtimePanel.getByText(label('pluginLifecycle.runtime.readyNodes').replace('{{ready}}', '3').replace('{{total}}', '3'), { exact: true }).count(), 0, 'An old generation or failed process cannot count as ready')
   await page.getByRole('heading', { name: label('pluginLifecycle.events.title'), exact: true }).waitFor()
   await page.getByText('Channel 12 recovered.', { exact: true }).waitFor()
-  const deploymentCard = page.locator('article').filter({ has: page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }) })
+  const deploymentCard = page.locator('article[data-plugin-id="org.example.catalog"]')
+  await deploymentCard.getByRole('heading', { name: 'CI model directory', exact: true }).waitFor()
+  await deploymentCard.getByText('用于冒烟检查的模型目录示例。', { exact: true }).waitFor()
+  await deploymentCard.getByRole('button', { name: label('pluginLifecycle.configure'), exact: true }).waitFor()
   await deploymentCard.getByText(label('pluginLifecycle.status.official'), { exact: true }).waitFor()
+  await deploymentCard.getByText(label('pluginLifecycle.deployments.more'), { exact: true }).click()
   const contributionSection = deploymentCard.getByRole('region', { name: label('pluginLifecycle.ui.section'), exact: true })
   await contributionSection.getByRole('heading', { name: '插件概览', exact: true }).waitFor()
   await contributionSection.getByText('插件提供的静态说明。', { exact: true }).waitFor()
@@ -287,9 +315,14 @@ try {
     await page.locator(`[data-plugin-ui-views="${slot}"]`).getByText(slot, { exact: true }).waitFor()
   }
   await page.getByRole('navigation', { name: 'CI views' }).getByRole('button', { name: 'plugins', exact: true }).click()
+  await deploymentCard.getByText(label('pluginLifecycle.deployments.more'), { exact: true }).click()
   const advanced = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: label('pluginLifecycle.advanced') }) })
   assert.equal(await advanced.getAttribute('open'), null, 'Normal installation keeps manual fields folded')
   await advanced.locator('summary').first().click()
+  await advanced.getByRole('button', { name: label('pluginLifecycle.artifacts.register'), exact: true }).click()
+  await advanced.getByLabel(label('pluginLifecycle.fields.manifest'), { exact: true }).waitFor()
+  assert.equal(await advanced.locator('textarea').count(), 0, 'Manual registration takes a manifest file')
+  await advanced.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
   await page.getByRole('button', { name: label('pluginLifecycle.deploy'), exact: true }).first().click()
   const configDialog = page.getByRole('dialog')
   await configDialog.getByRole('textbox', { name: /公开标签/ }).waitFor()
@@ -298,23 +331,23 @@ try {
   assert.equal(await layout.inputValue(), '"compact"', 'JSON Schema enum values render as safe host-owned options')
   assert.equal(await configDialog.getByLabel(/API 密钥/).count(), 0, 'Credential-like fields are never rendered as form controls')
   assert.equal(await configDialog.getByLabel(/密码/).count(), 0, 'Password fields are never rendered as form controls')
-  await configDialog.getByText(label('pluginLifecycle.configEditor.advanced'), { exact: true }).click()
-  await configDialog.getByText(label('pluginLifecycle.configEditor.hint'), { exact: true }).waitFor()
+  assert.equal(await configDialog.locator('textarea').count(), 0, 'Deployment configuration has no raw editor')
   await configDialog.getByRole('button', { name: label('pluginLifecycle.cancel'), exact: true }).click()
   await configDialog.waitFor({ state: 'hidden' })
   await advanced.locator('summary').first().click()
 
-  await page.locator('input[type="file"]').setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a plugin') })
+  const packageFile = page.locator('#plugin-install input[type="file"]')
+  await packageFile.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('not a plugin') })
   await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()
   await page.getByText(label('pluginLifecycle.install.errors.packageType'), { exact: true }).waitFor()
   assert.equal(installs.length, 0, 'Invalid package names fail before any upload')
-  await page.locator('input[type="file"]').setInputFiles({ name: 'catalog.afplugin', mimeType: 'application/zip', buffer: Buffer.from('mock ZIP bytes; intercepted by CI') })
+  await packageFile.setInputFiles({ name: 'catalog.afplugin', mimeType: 'application/zip', buffer: Buffer.from('mock ZIP bytes; intercepted by CI') })
   const installed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/plugins/install' && response.request().method() === 'POST')
   const previousDeploymentRequests = deploymentRequests, previousRuntimeRequests = runtimeRequests
   await page.getByRole('button', { name: label('pluginLifecycle.install.submit'), exact: true }).click()
   await installed
   await page.getByText(label('pluginLifecycle.install.success').replace('{{plugin}}', artifact.pluginId).replace('{{version}}', artifact.pluginVersion), { exact: true }).waitFor()
-  await page.waitForFunction(() => document.querySelector('input[type="file"]')?.files.length === 0)
+  await page.waitForFunction(() => document.querySelector('#plugin-install input[type="file"]')?.files.length === 0)
   assert.equal(installs.length, 1)
   await waitUntil(() => deploymentRequests > previousDeploymentRequests && runtimeRequests > previousRuntimeRequests, 'Install must refresh deployments and runtime observations')
   assert.ok(deploymentRequests > previousDeploymentRequests, 'Install refreshes desired deployment state')
@@ -347,13 +380,40 @@ try {
   const providerDialog = page.getByRole('dialog')
   await providerDialog.getByRole('checkbox', { name: 'Fixture upstream · #12' }).check()
   await providerDialog.getByRole('textbox', { name: label('pluginLifecycle.provider.models'), exact: true }).fill('fixture-text')
+  await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.addModel'), exact: true }).click()
   await providerDialog.getByRole('spinbutton', { name: label('pluginLifecycle.provider.priority'), exact: true }).fill('4')
+  await providerDialog.getByRole('checkbox', { name: new RegExp(label('pluginLifecycle.provider.sessionEnabled')) }).check()
+  const addEndpoint = providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.addEndpoint'), exact: true })
+  await addEndpoint.click()
+  const upstream = providerDialog.getByRole('group', { name: label('pluginLifecycle.provider.endpointNumber').replace('{{number}}', '1'), exact: true })
+  await upstream.getByRole('textbox', { name: label('pluginLifecycle.provider.endpointId'), exact: true }).fill('api')
+  await upstream.getByRole('textbox', { name: label('pluginLifecycle.provider.endpointUrl'), exact: true }).fill('https://api.example.org')
+  await upstream.getByRole('textbox', { name: new RegExp(label('pluginLifecycle.provider.endpointPath')) }).fill('/v1')
+  await upstream.getByRole('button', { name: label('pluginLifecycle.provider.addPath'), exact: true }).click()
+  await upstream.getByRole('checkbox', { name: 'POST', exact: true }).check()
   await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.upstreamResponseMode'), exact: true }).click()
   await page.getByText(label('pluginLifecycle.provider.responseModes.nonStreaming'), { exact: true }).last().click()
   await providerDialog.getByRole('button', { name: label('pluginLifecycle.provider.save'), exact: true }).click()
   await providerDialog.waitFor({ state: 'hidden' })
-  assert.deepEqual(providerSelections, [{channelIds: [12], models: ['fixture-text'], priority: 4, sessionEnabled: false, sessionTimeoutMs: 30000, webSocketEndpoints: [], upstreamResponseMode: 'non_streaming'}])
+  assert.deepEqual(providerSelections, [{
+    channelIds: [12], models: ['fixture-text'], priority: 4, sessionEnabled: true, sessionTimeoutMs: 30000,
+    endpoints: [{ id: 'api', url: 'https://api.example.org', allowedPaths: ['/v1'], allowedMethods: ['POST'], websocketEnabled: false }],
+    upstreamResponseMode: 'non_streaming',
+  }])
   await page.getByText(label('pluginLifecycle.provider.bound').replace('{{count}}', '1'), { exact: true }).waitFor()
+
+  await page.getByRole('button', { name: label('pluginLifecycle.configure'), exact: true }).click()
+  const configurationDialog = page.getByRole('dialog')
+  await configurationDialog.getByRole('textbox', { name: /^公开标签/ }).fill('Catalog renamed')
+  assert.equal(configurationReads.length, 1, 'Settings read configuration from its dedicated endpoint')
+  await configurationDialog.getByRole('button', { name: label('pluginLifecycle.configEditor.addItem'), exact: true }).click()
+  await configurationDialog.getByRole('textbox', { name: /^请求头名称/ }).fill('x-client')
+  await configurationDialog.getByRole('textbox', { name: /^请求头值/ }).fill('ci')
+  await configurationDialog.getByRole('button', { name: label('pluginLifecycle.saveConfiguration'), exact: true }).click()
+  await configurationDialog.waitFor({ state: 'hidden' })
+  assert.equal(configurationUpdates.length, 1)
+  assert.deepEqual(configurationUpdates[0], { displayName: 'Catalog renamed', layout: 'compact', headers: [{ name: 'x-client', value: 'ci' }] })
+  assert.equal(deployment.grantedCapabilities.length, 2, 'Saving settings preserves the existing capability grants')
 
   await page.getByRole('button', { name: label('pluginLifecycle.removal.uninstall'), exact: true }).click()
   const uninstallDialog = page.getByRole('dialog')

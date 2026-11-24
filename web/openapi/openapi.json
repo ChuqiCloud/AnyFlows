@@ -35228,6 +35228,158 @@
         ]
       }
     },
+    "/api/admin/plugins/{plugin_id}/configuration": {
+      "get": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "读取插件公开配置供设置表单编辑",
+        "operationId": "getAdminPluginConfiguration",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前部署代次与敏感字段过滤后的插件公开配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginPublicConfigurationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "缺少插件管理权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "插件部署不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:get_admin_plugin_configuration:execute"
+        ]
+      },
+      "put": {
+        "tags": [
+          "插件生命周期"
+        ],
+        "summary": "更新插件公开配置并保留当前能力授权",
+        "operationId": "configureAdminPluginConfiguration",
+        "parameters": [
+          {
+            "name": "plugin_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginPublicConfigurationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已更新插件配置并生成新部署代次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDeploymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "配置不符合插件 Schema 或包含敏感字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "部署代次已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "admin:configure_admin_plugin_configuration:execute"
+        ]
+      }
+    },
     "/v1/plugin-tasks": {
       "post": {
         "tags": [
@@ -55963,6 +56115,7 @@
           "generation",
           "artifact",
           "enabled",
+          "needsConfiguration",
           "grantedCapabilities",
           "updatedBy",
           "updatedAt",
@@ -55980,6 +56133,9 @@
             "$ref": "#/components/schemas/PluginArtifactResponse"
           },
           "enabled": {
+            "type": "boolean"
+          },
+          "needsConfiguration": {
             "type": "boolean"
           },
           "providerSelection": {
@@ -56318,6 +56474,46 @@
           }
         }
       },
+      "PluginProviderEndpointBody": {
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "allowedPaths": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1
+          },
+          "allowedMethods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 7
+          },
+          "websocketEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "PluginProviderSelectionBody": {
         "type": "object",
         "required": [
@@ -56355,10 +56551,10 @@
             "maximum": 360000,
             "minimum": 1000
           },
-          "webSocketEndpoints": {
+          "endpoints": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PluginProviderWebSocketEndpointBody"
+              "$ref": "#/components/schemas/PluginProviderEndpointBody"
             },
             "maxItems": 16
           }
@@ -56391,18 +56587,43 @@
           "streaming"
         ]
       },
-      "PluginProviderWebSocketEndpointBody": {
+      "PluginPublicConfigurationResponse": {
         "type": "object",
         "required": [
-          "id",
-          "url"
+          "pluginId",
+          "generation",
+          "configuration"
         ],
         "properties": {
-          "id": {
+          "pluginId": {
             "type": "string"
           },
-          "url": {
-            "type": "string"
+          "generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "configuration": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "PluginPublicConfigurationUpdateRequest": {
+        "type": "object",
+        "required": [
+          "expected_generation",
+          "configuration"
+        ],
+        "properties": {
+          "expected_generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "configuration": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
           }
         },
         "additionalProperties": false

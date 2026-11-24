@@ -19,6 +19,8 @@ from typing import Any, BinaryIO
 
 MAX_PROVIDER_SESSION_VALUE_BYTES = 256 * 1024
 MAX_PROVIDER_SESSION_WEBSOCKET_FRAME_BYTES = 128 * 1024
+MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES = 16
+MAX_PLUGIN_CREDENTIAL_WEBSOCKET_FRAME_BYTES = 16 * 1024
 
 
 class PluginError(Exception):
@@ -624,7 +626,7 @@ class Plugin:
 
     @staticmethod
     def _validate_provider_result(value: Any) -> None:
-        if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code", "session_id", "state", "action"}:
+        if not isinstance(value, dict) or set(value) - {"kind", "models", "next_cursor", "method", "path", "endpoint_id", "headers", "body", "response", "class", "code", "retryable", "delay_ms", "reason_code", "session_id", "state", "action"}:
             raise PluginError("invalid_response")
         kind = value.get("kind")
         if kind == "models":
@@ -635,10 +637,39 @@ class Plugin:
                 if not isinstance(model, dict) or not isinstance(model.get("id"), str) or not 1 <= len(model["id"].encode("utf-8")) <= 128:
                     raise PluginError("invalid_response")
         elif kind == "request":
-            if not isinstance(value.get("method"), str) or not isinstance(value.get("path"), str) or not value["path"].startswith("/") or value.get("body") is None:
+            endpoint_id = value.get("endpoint_id")
+            method = value.get("method")
+            if endpoint_id is not None and (not isinstance(endpoint_id, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", endpoint_id)):
+                raise PluginError("invalid_response")
+            path = value.get("path")
+            path_only = path.split("?", 1)[0] if isinstance(path, str) else ""
+            if (
+                not isinstance(method, str)
+                or method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+                or not isinstance(path, str)
+                or not path_only.startswith("/")
+                or path_only.startswith("//")
+                or len(path.encode("utf-8")) > 2048
+                or any(ord(char) < 32 or ord(char) == 127 or char in "#\\%" for char in path_only)
+                or any(segment in {".", ".."} for segment in path_only.split("/"))
+                or value.get("body") is None
+            ):
                 raise PluginError("invalid_response")
             if not isinstance(value.get("headers", {}), dict) or len(value.get("headers", {})) > 64:
                 raise PluginError("invalid_response")
+            for name, header_value in value.get("headers", {}).items():
+                if (
+                    not isinstance(name, str)
+                    or not name
+                    or len(name) > 128
+                    or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+                    or not isinstance(header_value, str)
+                    or len(header_value) > 8192
+                    or not header_value.isascii()
+                    or any(ord(char) < 32 or ord(char) == 127 for char in header_value)
+                    or (endpoint_id is None and name.lower() in {"authorization", "cookie"})
+                ):
+                    raise PluginError("invalid_response")
         elif kind == "session":
             if (
                 not isinstance(value.get("session_id"), str)
@@ -654,11 +685,13 @@ class Plugin:
             action = value["action"]
             action_kind = action.get("kind")
             action_fields = {
-                "request": {"kind", "method", "path", "headers", "body", "stream"},
+                "request": {"kind", "method", "path", "endpoint_id", "headers", "body", "stream"},
                 "web_socket_connect": {"kind", "endpoint_id", "path", "headers"},
                 "web_socket_send_text": {"kind", "text"},
                 "web_socket_send_binary": {"kind", "data_base64"},
                 "web_socket_receive": {"kind", "timeout_ms"},
+                "web_socket_receive_batch": {"kind", "timeout_ms", "max_messages"},
+                "web_socket_authenticate": {"kind", "request"},
                 "web_socket_close": {"kind"},
                 "wait": {"kind", "delay_ms"},
                 "complete": {"kind", "response"},
@@ -670,6 +703,8 @@ class Plugin:
                 "web_socket_send_text": {"kind", "text"},
                 "web_socket_send_binary": {"kind", "data_base64"},
                 "web_socket_receive": {"kind", "timeout_ms"},
+                "web_socket_receive_batch": {"kind", "timeout_ms", "max_messages"},
+                "web_socket_authenticate": {"kind", "request"},
                 "web_socket_close": {"kind"},
                 "wait": {"kind", "delay_ms"},
                 "complete": {"kind", "response"},
@@ -684,14 +719,19 @@ class Plugin:
             ):
                 raise PluginError("invalid_response")
             if action_kind == "request":
+                endpoint_id = action.get("endpoint_id")
+                path = action.get("path")
+                path_only = path.split("?", 1)[0] if isinstance(path, str) else ""
                 if (
                     not isinstance(action.get("method"), str)
                     or action["method"] not in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
-                    or not isinstance(action.get("path"), str)
-                    or not action["path"].startswith("/")
-                    or action["path"].startswith("//")
-                    or len(action["path"].encode("utf-8")) > 2048
-                    or any(ord(char) < 32 or ord(char) == 127 or char in "#\\" for char in action["path"])
+                    or not isinstance(path, str)
+                    or not path_only.startswith("/")
+                    or path_only.startswith("//")
+                    or len(path.encode("utf-8")) > 2048
+                    or any(ord(char) < 32 or ord(char) == 127 or char in "#\\%" for char in path_only)
+                    or any(segment in {".", ".."} for segment in path_only.split("/"))
+                    or (endpoint_id is not None and (not isinstance(endpoint_id, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", endpoint_id)))
                     or action.get("body") is None
                     or action.get("stream", False) is not False
                     or not isinstance(action.get("headers", {}), dict)
@@ -708,7 +748,8 @@ class Plugin:
                     or not path.startswith("/")
                     or path.startswith("//")
                     or len(path.encode("utf-8")) > 2048
-                    or any(ord(char) < 32 or ord(char) == 127 or char in "#\\" for char in path)
+                    or any(ord(char) < 32 or ord(char) == 127 or char in "#\\%" for char in path.split("?", 1)[0])
+                    or any(segment in {".", ".."} for segment in path.split("?", 1)[0].split("/"))
                     or not isinstance(action.get("headers", {}), dict)
                     or len(action.get("headers", {})) > 64
                 ):
@@ -732,6 +773,22 @@ class Plugin:
                     raise PluginError("invalid_response")
             elif action_kind == "web_socket_receive":
                 if type(action.get("timeout_ms")) is not int or not 1 <= action["timeout_ms"] <= 30_000:
+                    raise PluginError("invalid_response")
+            elif action_kind == "web_socket_receive_batch":
+                if (
+                    type(action.get("timeout_ms")) is not int
+                    or not 1 <= action["timeout_ms"] <= 30_000
+                    or type(action.get("max_messages")) is not int
+                    or not 1 <= action["max_messages"] <= MAX_PROVIDER_SESSION_WEBSOCKET_BATCH_FRAMES
+                ):
+                    raise PluginError("invalid_response")
+            elif action_kind == "web_socket_authenticate":
+                auth_request = action.get("request")
+                if (
+                    not isinstance(auth_request, dict)
+                    or auth_request.get("challenge") is None
+                    or Plugin._json_size(auth_request) > 16 * 1024
+                ):
                     raise PluginError("invalid_response")
             elif action_kind == "web_socket_close":
                 pass
@@ -783,6 +840,26 @@ class Plugin:
                 raise PluginError("invalid_response")
             if any(str(name).lower() in {"host", "cookie", "content-length", "proxy-authorization", "connection", "transfer-encoding", "upgrade"} for name in value["headers"]):
                 raise PluginError("invalid_response")
+        elif kind == "web_socket_auth":
+            frames = value.get("frames")
+            if set(value) != {"kind", "frames"} or not isinstance(frames, list) or not 1 <= len(frames) <= 8:
+                raise PluginError("invalid_response")
+            for frame in frames:
+                if not isinstance(frame, dict):
+                    raise PluginError("invalid_response")
+                if frame.get("kind") == "text":
+                    if set(frame) != {"kind", "text"} or not isinstance(frame.get("text"), str) or len(frame["text"].encode("utf-8")) > MAX_PLUGIN_CREDENTIAL_WEBSOCKET_FRAME_BYTES:
+                        raise PluginError("invalid_response")
+                elif frame.get("kind") == "binary":
+                    encoded = frame.get("data_base64")
+                    if set(frame) != {"kind", "data_base64"} or not isinstance(encoded, str) or len(encoded) > ((MAX_PLUGIN_CREDENTIAL_WEBSOCKET_FRAME_BYTES + 2) // 3) * 4:
+                        raise PluginError("invalid_response")
+                    try:
+                        decoded = base64.b64decode(encoded, validate=True)
+                    except (binascii.Error, ValueError, TypeError):
+                        raise PluginError("invalid_response") from None
+                    if len(decoded) > MAX_PLUGIN_CREDENTIAL_WEBSOCKET_FRAME_BYTES:
+                        raise PluginError("invalid_response")
         elif kind == "balance":
             if set(value) - {"kind", "amount", "currency", "as_of_unix_ms"} or not isinstance(value.get("amount"), str) or not isinstance(value.get("currency"), str):
                 raise PluginError("invalid_response")
@@ -912,7 +989,7 @@ class Plugin:
             credential = operation["credential"]
             if (
                 not isinstance(credential, dict)
-                or credential.get("kind") not in {"bound", "login", "refresh", "revoke", "sign", "balance"}
+                or credential.get("kind") not in {"bound", "login", "refresh", "revoke", "sign", "web_socket_auth", "balance"}
                 or self._json_size(credential) > self.max_response_bytes
             ):
                 raise ProtocolError("invalid credential operation")

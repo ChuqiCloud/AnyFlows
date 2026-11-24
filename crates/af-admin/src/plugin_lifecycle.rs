@@ -51,6 +51,7 @@ use crate::{
 
 pub const DEFAULT_PLUGIN_CATALOG_PAGE_SIZE: u32 = 50;
 const PLUGIN_PERMISSION: PlatformPermission = PlatformPermission::PluginsManage;
+const PLUGIN_SETUP_PENDING_FIELD: &str = "pluginSetupPending";
 const PLUGIN_EVENT_CALL_BUDGET: Duration = Duration::from_secs(5);
 const PLUGIN_CUSTOM_CAPABILITY_CALL_BUDGET: Duration = Duration::from_secs(30);
 const PLUGIN_CUSTOM_CAPABILITY_MAX_BYTES: u32 = 1024 * 1024;
@@ -68,15 +69,58 @@ const MAX_MARKET_REDIRECTS: usize = 3;
 /// Host metadata shares the deployment record so routing and config update
 /// atomically. Preserve legacy manifests that explicitly declare these fields.
 fn plugin_public_configuration(configuration: &Value, schema: &Value) -> Value {
+    if plugin_configuration_contains_sensitive_fields(configuration) {
+        return json!({});
+    }
     let mut public = configuration.clone();
     if let Some(fields) = public.as_object_mut() {
-        for key in ["providerSelection", "taskPricing"] {
-            if schema["properties"].get(key).is_none() {
+        for key in [
+            "providerSelection",
+            "taskPricing",
+            PLUGIN_SETUP_PENDING_FIELD,
+        ] {
+            if key == PLUGIN_SETUP_PENDING_FIELD || schema["properties"].get(key).is_none() {
                 fields.remove(key);
             }
         }
     }
     public
+}
+
+fn plugin_configuration_contains_sensitive_fields(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.iter().any(|(name, value)| {
+            let normalized = name
+                .bytes()
+                .filter(|byte| byte.is_ascii_alphanumeric())
+                .map(char::from)
+                .collect::<String>()
+                .to_ascii_lowercase();
+            [
+                "password",
+                "secret",
+                "credential",
+                "authorization",
+                "apikey",
+                "accesstoken",
+                "refreshtoken",
+                "idtoken",
+                "privatekey",
+                "cookie",
+                "bearer",
+                "clientsecret",
+            ]
+            .iter()
+            .any(|marker| normalized.contains(marker))
+                || normalized == "token"
+                || normalized.ends_with("token")
+                || plugin_configuration_contains_sensitive_fields(value)
+        }),
+        Value::Array(items) => items
+            .iter()
+            .any(plugin_configuration_contains_sensitive_fields),
+        _ => false,
+    }
 }
 
 pub(crate) fn deployment_public_configuration(deployment: &PluginDeploymentRecord) -> Value {
@@ -561,11 +605,37 @@ pub struct AdminPluginDeployment {
     generation: i64,
     artifact: AdminPluginArtifact,
     enabled: bool,
+    needs_configuration: bool,
     granted_capabilities: Vec<AdminPluginCapabilityGrant>,
     provider_selection: Option<PluginProviderSelection>,
     updated_by: i64,
     updated_at: i64,
     request_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPluginPublicConfiguration {
+    plugin_id: String,
+    generation: i64,
+    configuration: Value,
+}
+
+impl AdminPluginPublicConfiguration {
+    #[must_use]
+    pub fn plugin_id(&self) -> &str {
+        &self.plugin_id
+    }
+
+    #[must_use]
+    pub const fn generation(&self) -> i64 {
+        self.generation
+    }
+
+    #[must_use]
+    pub const fn configuration(&self) -> &Value {
+        &self.configuration
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -582,16 +652,28 @@ pub struct PluginProviderSelection {
     pub session_enabled: bool,
     #[serde(default = "default_provider_session_timeout_ms")]
     pub session_timeout_ms: u32,
-    #[serde(default, rename = "webSocketEndpoints", alias = "websocketEndpoints")]
-    pub websocket_endpoints: Vec<PluginProviderWebSocketEndpoint>,
+    #[serde(default, alias = "webSocketEndpoints", alias = "websocketEndpoints")]
+    pub endpoints: Vec<PluginProviderEndpoint>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PluginProviderWebSocketEndpoint {
+pub struct PluginProviderEndpoint {
     pub id: String,
     pub url: String,
+    #[serde(default = "default_provider_endpoint_paths")]
+    pub allowed_paths: Vec<String>,
+    #[serde(default)]
+    pub allowed_methods: Vec<String>,
+    #[serde(default)]
+    pub websocket_enabled: bool,
 }
+
+fn default_provider_endpoint_paths() -> Vec<String> {
+    vec!["/".to_owned()]
+}
+
+pub type PluginProviderWebSocketEndpoint = PluginProviderEndpoint;
 
 fn default_provider_session_timeout_ms() -> u32 {
     30_000
@@ -609,11 +691,35 @@ pub enum PluginProviderUpstreamResponseMode {
 impl PluginProviderSelection {
     pub fn from_config(config: &Value) -> Option<Self> {
         let selection = config.get("providerSelection")?.as_object()?;
-        let websocket_endpoints = selection
-            .get("webSocketEndpoints")
-            .or_else(|| selection.get("websocketEndpoints"))
-            .cloned()
-            .unwrap_or_else(|| json!([]));
+        let endpoints = selection.get("endpoints").cloned().unwrap_or_else(|| {
+            selection
+                .get("webSocketEndpoints")
+                .or_else(|| selection.get("websocketEndpoints"))
+                .and_then(Value::as_array)
+                .map(|legacy| {
+                    Value::Array(
+                        legacy
+                            .iter()
+                            .map(|endpoint| {
+                                let id = endpoint.get("id").cloned().unwrap_or(Value::Null);
+                                let (url, websocket_enabled) = endpoint
+                                    .get("url")
+                                    .and_then(Value::as_str)
+                                    .map(|url| (json!(url), true))
+                                    .unwrap_or((Value::Null, true));
+                                json!({
+                                    "id": id,
+                                    "url": url,
+                                    "allowedPaths": ["/"],
+                                    "allowedMethods": [],
+                                    "websocketEnabled": websocket_enabled
+                                })
+                            })
+                            .collect(),
+                    )
+                })
+                .unwrap_or_else(|| json!([]))
+        });
         serde_json::from_value(json!({
             "channelIds": selection.get("channelIds").cloned().unwrap_or_else(|| json!([])),
             "models": selection.get("models").cloned().unwrap_or_else(|| json!([])),
@@ -621,7 +727,7 @@ impl PluginProviderSelection {
             "upstreamResponseMode": selection.get("upstreamResponseMode").cloned().unwrap_or_else(|| json!("auto")),
             "sessionEnabled": selection.get("sessionEnabled").cloned().unwrap_or(json!(false)),
             "sessionTimeoutMs": selection.get("sessionTimeoutMs").cloned().unwrap_or_else(|| json!(default_provider_session_timeout_ms())),
-            "webSocketEndpoints": websocket_endpoints
+            "endpoints": endpoints
         }))
         .ok()
     }
@@ -645,13 +751,11 @@ impl PluginProviderSelection {
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
-        if !(1_000..=360_000).contains(&self.session_timeout_ms)
-            || self.websocket_endpoints.len() > 16
-        {
+        if !(1_000..=360_000).contains(&self.session_timeout_ms) || self.endpoints.len() > 16 {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
         let mut endpoint_ids = std::collections::BTreeSet::new();
-        for endpoint in &self.websocket_endpoints {
+        for endpoint in &self.endpoints {
             if endpoint.id.is_empty()
                 || endpoint.id.len() > 64
                 || !endpoint.id.as_bytes()[0].is_ascii_lowercase()
@@ -662,9 +766,32 @@ impl PluginProviderSelection {
             {
                 return Err(AdminPluginLifecycleError::InvalidInput);
             }
+            if endpoint.allowed_paths.is_empty()
+                || endpoint.allowed_paths.len() > 64
+                || endpoint
+                    .allowed_paths
+                    .iter()
+                    .any(|path| validate_provider_endpoint_path(path).is_err())
+                || endpoint.allowed_methods.len() > 7
+                || !endpoint.allowed_methods.iter().all(|method| {
+                    matches!(
+                        method.as_str(),
+                        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+                    )
+                })
+                || endpoint
+                    .allowed_methods
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    != endpoint.allowed_methods.len()
+                || (endpoint.allowed_methods.is_empty() && !endpoint.websocket_enabled)
+            {
+                return Err(AdminPluginLifecycleError::InvalidInput);
+            }
             let url = url::Url::parse(&endpoint.url)
                 .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-            if url.scheme() != "wss"
+            if !matches!(url.scheme(), "https" | "wss")
                 || url.host_str().is_none()
                 || url.username() != ""
                 || url.password().is_some()
@@ -673,6 +800,8 @@ impl PluginProviderSelection {
                 || !matches!(url.path(), "" | "/")
                 || url.port() == Some(0)
                 || matches!(url.host(), Some(url::Host::Ipv4(_) | url::Host::Ipv6(_)))
+                || (url.scheme() == "wss"
+                    && (!endpoint.websocket_enabled || !endpoint.allowed_methods.is_empty()))
             {
                 return Err(AdminPluginLifecycleError::InvalidInput);
             }
@@ -681,13 +810,36 @@ impl PluginProviderSelection {
     }
 }
 
+fn validate_provider_endpoint_path(path: &str) -> Result<(), AdminPluginLifecycleError> {
+    if path.is_empty()
+        || path.len() > 2_048
+        || !path.starts_with('/')
+        || path.starts_with("//")
+        || path.contains(['?', '#', '\\', '%'])
+        || path
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+        || path.split('/').any(|segment| matches!(segment, "." | ".."))
+    {
+        Err(AdminPluginLifecycleError::InvalidInput)
+    } else {
+        Ok(())
+    }
+}
+
 impl AdminPluginDeployment {
     fn from_record(record: PluginDeploymentRecord) -> Self {
+        let needs_configuration = record
+            .config
+            .get(PLUGIN_SETUP_PENDING_FIELD)
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         Self {
             plugin_id: record.plugin_id,
             generation: record.generation,
             artifact: AdminPluginArtifact::from_record(record.artifact),
             enabled: record.enabled,
+            needs_configuration,
             provider_selection: PluginProviderSelection::from_config(&record.config),
             granted_capabilities: record
                 .granted_capabilities
@@ -718,6 +870,11 @@ impl AdminPluginDeployment {
     #[must_use]
     pub const fn enabled(&self) -> bool {
         self.enabled
+    }
+
+    #[must_use]
+    pub const fn needs_configuration(&self) -> bool {
+        self.needs_configuration
     }
 
     #[must_use]
@@ -790,11 +947,11 @@ impl fmt::Debug for AdminPluginDeployment {
             .field("generation", &self.generation)
             .field("artifact", &self.artifact)
             .field("enabled", &self.enabled)
+            .field("config", &"<redacted>")
             .field("granted_capabilities", &self.granted_capabilities)
             .field("updated_by", &self.updated_by)
             .field("updated_at", &self.updated_at)
             .field("request_id", &self.request_id)
-            .field("config", &"<redacted>")
             .finish()
     }
 }
@@ -1567,6 +1724,9 @@ impl DatabaseAdminPluginLifecycleService {
         request_id: &str,
     ) -> Result<AdminPluginCredentialInvocationResult, AdminPluginLifecycleError> {
         self.authorize(principal).await?;
+        if matches!(&operation, PluginCredentialOperation::WebSocketAuth { .. }) {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
         let credential = credential_id
             .parse::<i64>()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
@@ -1589,6 +1749,9 @@ impl DatabaseAdminPluginLifecycleService {
                 request_id,
             )
             .await?;
+        if matches!(&result, PluginCredentialResult::WebSocketAuth { .. }) {
+            return Err(AdminPluginLifecycleError::Forbidden);
+        }
         // Signing material is only consumed on the internal Relay path.
         if let PluginCredentialResult::Signed {
             headers,
@@ -2121,22 +2284,7 @@ impl DatabaseAdminPluginLifecycleService {
         {
             return Err(AdminPluginLifecycleError::InvalidInput);
         }
-        let config = match request.config {
-            Some(config) => config,
-            None => {
-                let current = self
-                    .repository
-                    .get_deployment(&plugin_id)
-                    .await
-                    .map_err(map_catalog_error)?;
-                if current.as_ref().map(|deployment| deployment.generation)
-                    != request.expected_generation
-                {
-                    return Err(AdminPluginLifecycleError::Conflict);
-                }
-                current.map_or_else(|| json!({}), |deployment| deployment.config)
-            }
-        };
+        let config = request.config;
         let source = request.source.clone().into_contract();
         source
             .validate()
@@ -2188,7 +2336,7 @@ impl DatabaseAdminPluginLifecycleService {
             .install_package_authorized(
                 principal,
                 upload,
-                Some(config),
+                config,
                 request.expected_generation,
                 true,
                 request_id,
@@ -2305,15 +2453,38 @@ impl DatabaseAdminPluginLifecycleService {
         {
             return Err(AdminPluginLifecycleError::Conflict);
         }
-        let config = config.unwrap_or_else(|| current.map_or_else(|| json!({}), |row| row.config));
+        let configuration_was_provided = config.is_some();
+        let existing_config = current.as_ref().map(|row| row.config.clone());
+        let config = config.unwrap_or_else(|| existing_config.clone().unwrap_or_else(|| json!({})));
         manifest
             .validate()
             .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
-        validate_public_plugin_configuration(
+        let configuration_is_valid = validate_public_plugin_configuration(
             &manifest.config_schema,
             &plugin_public_configuration(&config, &manifest.config_schema),
         )
-        .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        .is_ok();
+        let may_defer_configuration = current.as_ref().is_none_or(|row| {
+            row.config
+                .get(PLUGIN_SETUP_PENDING_FIELD)
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        });
+        let install_unconfigured =
+            !configuration_was_provided && may_defer_configuration && !configuration_is_valid;
+        if !configuration_is_valid && !install_unconfigured {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let config = if install_unconfigured {
+            let mut pending = existing_config.unwrap_or_else(|| json!({}));
+            let fields = pending
+                .as_object_mut()
+                .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+            fields.insert(PLUGIN_SETUP_PENDING_FIELD.to_owned(), json!(true));
+            pending
+        } else {
+            config
+        };
         let capability_count = manifest.capabilities.len();
         let grants = manifest
             .capabilities
@@ -2420,7 +2591,7 @@ impl DatabaseAdminPluginLifecycleService {
             artifact.plugin_id().to_owned(),
             artifact.digest().to_owned(),
             deployment_expected_generation,
-            true,
+            !install_unconfigured,
             grants,
             config,
         )?;
@@ -2919,6 +3090,28 @@ impl DatabaseAdminPluginLifecycleService {
             .map_err(map_catalog_error)
     }
 
+    pub async fn get_public_plugin_configuration(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+    ) -> Result<Option<AdminPluginPublicConfiguration>, AdminPluginLifecycleError> {
+        self.authorize(principal).await?;
+        self.repository
+            .get_deployment(plugin_id)
+            .await
+            .map(|record| {
+                record.map(|record| AdminPluginPublicConfiguration {
+                    plugin_id: record.plugin_id,
+                    generation: record.generation,
+                    configuration: plugin_public_configuration(
+                        &record.config,
+                        &record.artifact.manifest["configSchema"],
+                    ),
+                })
+            })
+            .map_err(map_catalog_error)
+    }
+
     /// Persist a host-verified artifact. Raw executable paths and trust keys are
     /// not accepted by this API; verification happens before this service call.
     pub async fn register_verified_artifact(
@@ -3254,6 +3447,68 @@ impl DatabaseAdminPluginLifecycleService {
         self.deploy(principal, command, request_id).await
     }
 
+    pub async fn configure_public_plugin_configuration(
+        &self,
+        principal: SessionPrincipal,
+        plugin_id: &str,
+        expected_generation: i64,
+        public_configuration: Value,
+        request_id: &str,
+    ) -> Result<AdminPluginDeployment, AdminPluginLifecycleError> {
+        if !public_configuration.is_object()
+            || plugin_configuration_contains_sensitive_fields(&public_configuration)
+        {
+            return Err(AdminPluginLifecycleError::InvalidInput);
+        }
+        let current = self
+            .repository
+            .get_deployment(plugin_id)
+            .await
+            .map_err(map_catalog_error)?
+            .ok_or(AdminPluginLifecycleError::NotFound)?;
+        if current.generation != expected_generation {
+            return Err(AdminPluginLifecycleError::Conflict);
+        }
+        let manifest: PluginManifest = serde_json::from_value(current.artifact.manifest.clone())
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        manifest
+            .validate()
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+        validate_public_plugin_configuration(&manifest.config_schema, &public_configuration)
+            .map_err(|_| AdminPluginLifecycleError::InvalidInput)?;
+
+        let mut config = public_configuration;
+        let fields = config
+            .as_object_mut()
+            .ok_or(AdminPluginLifecycleError::InvalidInput)?;
+        let setup_pending = current
+            .config
+            .get(PLUGIN_SETUP_PENDING_FIELD)
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        fields.remove(PLUGIN_SETUP_PENDING_FIELD);
+        for key in ["providerSelection", "taskPricing"] {
+            if manifest.config_schema["properties"].get(key).is_none()
+                && let Some(value) = current.config.get(key)
+            {
+                fields.insert(key.to_owned(), value.clone());
+            }
+        }
+        let command = PluginDeploymentCommand::new(
+            plugin_id.to_owned(),
+            current.artifact.digest,
+            Some(expected_generation),
+            current.enabled || setup_pending,
+            current
+                .granted_capabilities
+                .into_iter()
+                .map(AdminPluginCapabilityGrant::from)
+                .collect(),
+            config,
+        )?;
+        self.deploy(principal, command, request_id).await
+    }
+
     pub async fn deploy(
         &self,
         principal: SessionPrincipal,
@@ -3273,6 +3528,9 @@ impl DatabaseAdminPluginLifecycleService {
         let config_validation = async {
             if !command.enabled {
                 return Ok(());
+            }
+            if plugin_configuration_contains_sensitive_fields(&command.config) {
+                return Err(AdminPluginLifecycleError::InvalidInput);
             }
             let artifact = self
                 .repository
@@ -3859,6 +4117,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn public_plugin_configuration_hides_host_fields_and_sensitive_values() {
+        assert_eq!(
+            plugin_public_configuration(
+                &json!({
+                    "displayName": "Catalog",
+                    "providerSelection": {"channelIds": [12]},
+                    "taskPricing": {"units": 3}
+                }),
+                &json!({"properties": {"displayName": {"type": "string"}}}),
+            ),
+            json!({"displayName": "Catalog"})
+        );
+        assert_eq!(
+            plugin_public_configuration(
+                &json!({"displayName": "Catalog", "apiKey": "should-not-be-returned"}),
+                &json!({"properties": {"displayName": {"type": "string"}}}),
+            ),
+            json!({})
+        );
+    }
+
+    #[test]
     fn provider_selection_defaults_legacy_deployments_to_automatic_response_mode() {
         let selection = PluginProviderSelection::from_config(&json!({
             "providerSelection": {
@@ -3890,41 +4170,72 @@ mod tests {
         .unwrap();
         assert!(session_enabled.session_enabled);
         assert_eq!(session_enabled.session_timeout_ms, 30_000);
+
+        let legacy_websocket = PluginProviderSelection::from_config(&json!({
+            "providerSelection": {
+                "channelIds": [12],
+                "sessionEnabled": true,
+                "webSocketEndpoints": [
+                    { "id": "legacy-realtime", "url": "wss://realtime.example.invalid" }
+                ]
+            }
+        }))
+        .unwrap();
+        assert_eq!(legacy_websocket.endpoints[0].allowed_paths, vec!["/"]);
+        assert!(legacy_websocket.endpoints[0].websocket_enabled);
+        assert!(legacy_websocket.validate().is_ok());
     }
 
     #[test]
-    fn provider_websocket_endpoint_configuration_uses_the_public_field_name_and_wss_only() {
+    fn provider_endpoint_configuration_carries_scoped_https_and_websocket_grants() {
         let selection = PluginProviderSelection::from_config(&json!({
             "providerSelection": {
                 "channelIds": [12],
                 "sessionEnabled": true,
                 "sessionTimeoutMs": 60000,
-                "webSocketEndpoints": [
-                    { "id": "capy-realtime", "url": "wss://realtime.example.invalid" }
+                "endpoints": [
+                    {
+                        "id": "capy-api",
+                        "url": "https://api.example.invalid",
+                        "allowedPaths": ["/v1", "/oauth"],
+                        "allowedMethods": ["GET", "POST"],
+                        "websocketEnabled": false
+                    },
+                    {
+                        "id": "capy-realtime",
+                        "url": "wss://realtime.example.invalid",
+                        "allowedPaths": ["/realtime"],
+                        "allowedMethods": [],
+                        "websocketEnabled": true
+                    }
                 ]
             }
         }))
         .unwrap();
         assert_eq!(selection.session_timeout_ms, 60_000);
-        assert_eq!(selection.websocket_endpoints.len(), 1);
+        assert_eq!(selection.endpoints.len(), 2);
         assert!(selection.validate().is_ok());
         assert!(
             serde_json::to_value(&selection)
                 .unwrap()
-                .get("webSocketEndpoints")
+                .get("endpoints")
                 .is_some()
         );
 
         for url in [
             "ws://realtime.example.invalid",
             "wss://127.0.0.1",
-            "wss://user:secret@realtime.example.invalid",
-            "wss://realtime.example.invalid/path",
+            "https://user:secret@realtime.example.invalid",
+            "https://realtime.example.invalid/path",
         ] {
             let mut invalid = selection.clone();
-            invalid.websocket_endpoints[0].url = url.to_owned();
+            invalid.endpoints[0].url = url.to_owned();
             assert!(invalid.validate().is_err());
         }
+
+        let mut path_escape = selection.clone();
+        path_escape.endpoints[0].allowed_paths = vec!["/v1/../admin".to_owned()];
+        assert!(path_escape.validate().is_err());
     }
 
     fn capability(

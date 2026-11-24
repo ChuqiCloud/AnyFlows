@@ -102,6 +102,7 @@ pub fn schema_document() -> Value {
                 "required": ["pluginId", "pluginVersion", "contractRange", "capabilities", "authenticationModes", "limits", "configSchema"],
                 "properties": {
                     "pluginId": { "type": "string", "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$", "maxLength": 128 },
+                    "description": { "$ref": "#/$defs/PluginUiText" },
                     "displayName": { "type": "string", "maxLength": 128 },
                     "pluginVersion": { "$ref": "#/$defs/PluginVersion" },
                     "contractRange": { "$ref": "#/$defs/ContractVersionRange" },
@@ -893,10 +894,20 @@ mod tests {
             .unwrap(),
             openapi_document()
         );
+        assert_eq!(
+            schema_document()["$defs"]["PluginManifest"]["properties"]["description"]["$ref"],
+            "#/$defs/PluginUiText"
+        );
+        assert_eq!(
+            openapi_document()["components"]["schemas"]["PluginManifest"]["properties"]["description"]
+                ["$ref"],
+            "#/components/schemas/PluginUiText"
+        );
 
         let manifest = PluginManifest {
             plugin_id: PluginId::new("org.example.account-source").unwrap(),
             display_name: "Example Account Source".to_owned(),
+            description: None,
             plugin_version: PluginVersion::new("1.2.0").unwrap(),
             contract_range: ContractVersionRange::new(
                 ContractVersion::new(1, 0),

@@ -1568,6 +1568,7 @@ mod tests {
         let manifest = PluginManifest {
             plugin_id: PluginId::new(plugin_id).unwrap(),
             display_name: "Generic catalog connector".to_owned(),
+            description: None,
             plugin_version: PluginVersion::new("1.0.0").unwrap(),
             contract_range: ContractVersionRange::new(
                 ContractVersion::new(1, 0),
@@ -1699,6 +1700,7 @@ mod tests {
             manifest: PluginManifest {
                 plugin_id: PluginId::new(plugin_id).unwrap(),
                 display_name: plugin_id.to_owned(),
+                description: None,
                 plugin_version: PluginVersion::new("1.0.0").unwrap(),
                 contract_range: ContractVersionRange::new(
                     ContractVersion::new(1, 0),
@@ -2052,6 +2054,7 @@ mod tests {
             manifest: PluginManifest {
                 plugin_id: PluginId::new("net.example.mismatch").unwrap(),
                 display_name: "Mismatch mock".to_owned(),
+                description: None,
                 plugin_version: PluginVersion::new("1.0.0").unwrap(),
                 contract_range: ContractVersionRange::new(
                     ContractVersion::new(1, 0),

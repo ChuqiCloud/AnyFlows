@@ -57,6 +57,17 @@ fn plugin_task_reconciliation_is_admin_only_and_uses_registered_operations() {
 }
 
 #[test]
+fn plugin_configuration_read_has_a_dedicated_admin_token_scope() {
+    let route = policy("GET", "/api/admin/plugins/{plugin_id}/configuration")
+        .expect("plugin configuration read route has a PAT policy");
+    assert!(route.admin_only && !route.session_only);
+    assert_eq!(
+        route.required_scopes,
+        ["admin:get_admin_plugin_configuration:execute"]
+    );
+}
+
+#[test]
 fn personal_access_token_policies_cover_actual_management_router_registrations() {
     let raw = serde_json::to_value(crate::openapi::raw_openapi_document()).unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

@@ -63,6 +63,9 @@ pub struct PluginManifest {
     pub plugin_id: PluginId,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub display_name: String,
+    /// Optional localized summary shown in the installed-plugin card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<PluginUiText>,
     pub plugin_version: PluginVersion,
     pub contract_range: ContractVersionRange,
     pub capabilities: Vec<CapabilityDeclaration>,
@@ -314,6 +317,10 @@ impl PluginManifest {
             || self.capabilities.len() > 128
             || self.display_name.len() > 128
             || self.display_name.chars().any(char::is_control)
+            || self
+                .description
+                .as_ref()
+                .is_some_and(|description| !description.validate())
             || self.authentication_modes.is_empty()
             || self.authentication_modes.len() > 16
             || self
@@ -565,6 +572,7 @@ mod tests {
         PluginManifest {
             plugin_id: PluginId::new("org.example.schema-test").unwrap(),
             display_name: "Schema test".to_owned(),
+            description: None,
             plugin_version: PluginVersion::new("1.0.0").unwrap(),
             contract_range: ContractVersionRange::new(
                 ContractVersion::new(1, 0),
@@ -825,6 +833,18 @@ mod tests {
         let mut empty_display_name = manifest(serde_json::json!({ "type": "object" }));
         empty_display_name.display_name.clear();
         assert_eq!(empty_display_name.validate(), Ok(()));
+
+        let mut described = manifest(serde_json::json!({ "type": "object" }));
+        described.description = Some(PluginUiText {
+            en: Some("Search and browse catalog models.".to_owned()),
+            zh: Some("搜索和浏览模型目录。".to_owned()),
+        });
+        assert_eq!(described.validate(), Ok(()));
+        described.description.as_mut().unwrap().zh = Some("<script>不安全</script>".to_owned());
+        assert_eq!(
+            described.validate(),
+            Err(ContractValidationError::InvalidManifest)
+        );
         let mut duplicate_auth_modes = manifest(serde_json::json!({ "type": "object" }));
         duplicate_auth_modes
             .authentication_modes

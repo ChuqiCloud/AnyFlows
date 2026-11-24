@@ -4,9 +4,11 @@ import { apiClient } from '@/lib/api'
 import {
   approveAdminPluginArtifact,
   configureAdminPluginProviderSelection,
+  configureAdminPluginConfiguration,
   deployAdminPluginArtifact,
   disableAdminPluginDeployment,
   fetchPluginMarketIndex,
+  getAdminPluginConfiguration,
   listAdminPluginArtifacts,
   listAdminPluginDeployments,
   listAdminPluginDeploymentHistory,
@@ -21,6 +23,7 @@ import type {
   PluginDeploymentRequestWritable,
   PluginMarketInstallHttpRequestWritable,
   PluginProviderSelectionRequest,
+  PluginPublicConfigurationUpdateRequestWritable,
 } from '@/lib/api/generated/types.gen'
 
 const root = ['admin-plugin-lifecycle'] as const
@@ -339,6 +342,21 @@ export function usePluginDeploymentHistory(pluginId: string | undefined, refresh
   })
 }
 
+export function usePluginPublicConfiguration(pluginId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: [...root, 'configuration', pluginId],
+    enabled: Boolean(pluginId) && enabled,
+    queryFn: async ({ signal }) => {
+      if (!pluginId) throw new Error('pluginId is required')
+      const { data } = await getAdminPluginConfiguration({ client: apiClient, path: { plugin_id: pluginId }, signal })
+      return data
+    },
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  })
+}
+
 export type PluginCapabilityInvocationResult = {
   pluginId: string
   deploymentGeneration: number
@@ -523,6 +541,24 @@ export function useDeployPluginArtifact() {
       path: { plugin_id: pluginId },
       body,
     }),
+    onSuccess: () => invalidate(client),
+  })
+}
+
+export function useUpdatePluginConfiguration() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ pluginId, body }: {
+      pluginId: string
+      body: PluginPublicConfigurationUpdateRequestWritable
+    }) => {
+      const { data } = await configureAdminPluginConfiguration({
+        client: apiClient,
+        path: { plugin_id: pluginId },
+        body,
+      })
+      return data
+    },
     onSuccess: () => invalidate(client),
   })
 }

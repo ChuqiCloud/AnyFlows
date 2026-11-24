@@ -2956,6 +2956,7 @@ export type PluginDeploymentResponse = {
     generation: number;
     artifact: PluginArtifactResponse;
     enabled: boolean;
+    needsConfiguration: boolean;
     providerSelection?: null | PluginProviderSelectionBody;
     grantedCapabilities: Array<PluginCapabilityGrantResponse>;
     updatedBy: number;
@@ -3022,6 +3023,13 @@ export type PluginPackageInstallRequest = {
     config?: string | null;
     expected_generation?: number | null;
 };
+export type PluginProviderEndpointBody = {
+    id: string;
+    url: string;
+    allowedPaths?: Array<string> | null;
+    allowedMethods?: Array<string>;
+    websocketEnabled?: boolean | null;
+};
 export type PluginProviderSelectionBody = {
     channelIds: Array<number>;
     models: Array<string>;
@@ -3029,16 +3037,22 @@ export type PluginProviderSelectionBody = {
     upstreamResponseMode?: PluginProviderUpstreamResponseModeBody;
     sessionEnabled?: boolean;
     sessionTimeoutMs?: number;
-    webSocketEndpoints?: Array<PluginProviderWebSocketEndpointBody>;
+    endpoints?: Array<PluginProviderEndpointBody>;
 };
 export type PluginProviderSelectionRequest = {
     expected_generation: number;
     selection: PluginProviderSelectionBody;
 };
 export type PluginProviderUpstreamResponseModeBody = 'auto' | 'non_streaming' | 'streaming';
-export type PluginProviderWebSocketEndpointBody = {
-    id: string;
-    url: string;
+export type PluginPublicConfigurationResponse = {
+    pluginId: string;
+    generation: number;
+    configuration: {
+        [key: string]: unknown;
+    };
+};
+export type PluginPublicConfigurationUpdateRequest = {
+    expected_generation: number;
 };
 export type PluginRouteInvocationResponse = {
     pluginId: string;
@@ -4281,6 +4295,12 @@ export type PluginMarketInstallHttpRequestWritable = {
         [key: string]: unknown;
     };
     expected_generation?: number | null;
+};
+export type PluginPublicConfigurationUpdateRequestWritable = {
+    expected_generation: number;
+    configuration: {
+        [key: string]: unknown;
+    };
 };
 export type RegistrationEmailVerificationRequestWritable = {
     email: string;
@@ -12425,6 +12445,42 @@ export type ConfigureAdminPluginProviderSelectionResponses = {
     200: PluginDeploymentResponse;
 };
 export type ConfigureAdminPluginProviderSelectionResponse = ConfigureAdminPluginProviderSelectionResponses[keyof ConfigureAdminPluginProviderSelectionResponses];
+export type GetAdminPluginConfigurationData = {
+    body?: never;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/configuration';
+};
+export type GetAdminPluginConfigurationErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminPluginConfigurationError = GetAdminPluginConfigurationErrors[keyof GetAdminPluginConfigurationErrors];
+export type GetAdminPluginConfigurationResponses = {
+    200: PluginPublicConfigurationResponse;
+};
+export type GetAdminPluginConfigurationResponse = GetAdminPluginConfigurationResponses[keyof GetAdminPluginConfigurationResponses];
+export type ConfigureAdminPluginConfigurationData = {
+    body: PluginPublicConfigurationUpdateRequestWritable;
+    path: {
+        plugin_id: string;
+    };
+    query?: never;
+    url: '/api/admin/plugins/{plugin_id}/configuration';
+};
+export type ConfigureAdminPluginConfigurationErrors = {
+    400: ManagementError;
+    409: ManagementError;
+};
+export type ConfigureAdminPluginConfigurationError = ConfigureAdminPluginConfigurationErrors[keyof ConfigureAdminPluginConfigurationErrors];
+export type ConfigureAdminPluginConfigurationResponses = {
+    200: PluginDeploymentResponse;
+};
+export type ConfigureAdminPluginConfigurationResponse = ConfigureAdminPluginConfigurationResponses[keyof ConfigureAdminPluginConfigurationResponses];
 export type SubmitModelPluginTaskData = {
     body: ModelPluginTaskRequest;
     path?: never;

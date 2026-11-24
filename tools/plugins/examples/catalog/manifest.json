@@ -1,6 +1,10 @@
 {
   "pluginId": "org.anyflows.example-catalog",
   "displayName": "Example model catalogue",
+  "description": {
+    "zh": "提供可搜索和分页浏览的模型目录示例。",
+    "en": "An example model catalogue with search and pagination."
+  },
   "pluginVersion": "1.0.0",
   "contractRange": {
     "minimum": {"major": 1, "minor": 0},

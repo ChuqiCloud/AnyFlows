@@ -168,6 +168,26 @@ class PluginSdkTests(unittest.TestCase):
         self.assertEqual(response["result"]["kind"], "provider")
         self.assertEqual(response["result"]["value"], session)
 
+    def test_provider_cleanup_request_can_use_a_granted_endpoint_auth_header(self):
+        cleanup = {
+            "kind": "request", "method": "POST", "endpoint_id": "capy-api",
+            "path": "/app/orgs/org/jams/delete",
+            "headers": {"authorization": "Bearer jwt", "cookie": "__client=session"},
+            "body": {"jamIds": ["child"]},
+        }
+        Plugin._validate_provider_result(cleanup)
+        unscoped = copy.deepcopy(cleanup)
+        unscoped.pop("endpoint_id")
+        with self.assertRaises(PluginError):
+            Plugin._validate_provider_result(unscoped)
+        for invalid in (
+            {**cleanup, "method": "TRACE"},
+            {**cleanup, "path": "/app/../private"},
+            {**cleanup, "path": "//other.example/app"},
+        ):
+            with self.assertRaises(PluginError):
+                Plugin._validate_provider_result(invalid)
+
     def test_provider_websocket_session_actions_are_bounded(self):
         session = {
             "kind": "session",
@@ -192,6 +212,29 @@ class PluginSdkTests(unittest.TestCase):
         }
         with self.assertRaises(PluginError):
             Plugin._validate_provider_result(oversized)
+
+        batch = copy.deepcopy(session)
+        batch["action"] = {
+            "kind": "web_socket_receive_batch", "timeout_ms": 1000, "max_messages": 16,
+        }
+        Plugin._validate_provider_result(batch)
+        batch["action"]["max_messages"] = 17
+        with self.assertRaises(PluginError):
+            Plugin._validate_provider_result(batch)
+
+        auth = copy.deepcopy(session)
+        auth["action"] = {
+            "kind": "web_socket_authenticate", "request": {"challenge": {"nonce": "n"}},
+        }
+        Plugin._validate_provider_result(auth)
+
+    def test_credential_websocket_auth_result_is_bounded(self):
+        Plugin._validate_credential_result({
+            "kind": "web_socket_auth",
+            "frames": [{"kind": "text", "text": '{"type":"auth","token":"secret"}'}],
+        })
+        with self.assertRaises(PluginError):
+            Plugin._validate_credential_result({"kind": "web_socket_auth", "frames": []})
 
     def test_malformed_envelopes_and_non_json_numbers_close_the_stream(self):
         envelope = request({"operation": "health"})

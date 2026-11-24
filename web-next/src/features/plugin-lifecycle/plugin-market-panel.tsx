@@ -1,4 +1,4 @@
-import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Textarea } from '@heroui/react'
+import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@heroui/react'
 import { Package } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -107,7 +107,6 @@ function MarketInstallDialog({ entry, onClose, onInstalled, onInstallingChange }
 }) {
   const { t } = useTranslation()
   const [version, setVersion] = useState<MarketVersion | undefined>(entry.versions[0])
-  const [config, setConfig] = useState('')
   const history = usePluginDeploymentHistory(entry.id)
   const install = useInstallMarketPlugin()
   useEffect(() => {
@@ -121,18 +120,12 @@ function MarketInstallDialog({ entry, onClose, onInstalled, onInstallingChange }
   const commit = source?.commit ?? version?.commit
   const changelog = httpsUrl(version?.changelog)
   const repository = httpsUrl(source?.repository ?? entry.repository)
-  const parsedConfig: unknown = useMemo(() => {
-    if (!config.trim()) return undefined
-    try { return JSON.parse(config) } catch { return null }
-  }, [config])
-  const invalidConfig = parsedConfig !== undefined && (!parsedConfig || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig))
   const submit = () => {
-    if (!version || !archiveUrl || !history.isSuccess || history.isFetching || invalidConfig) return
+    if (!version || !archiveUrl || !history.isSuccess || history.isFetching) return
     install.mutate({
       plugin_id: entry.id,
       plugin_version: version.version,
       expected_generation: current?.generation ?? null,
-      ...(parsedConfig ? { config: parsedConfig as Record<string, unknown> } : {}),
       source: {
         kind: source?.kind ?? 'http_archive',
         archive_url: archiveUrl,
@@ -141,7 +134,7 @@ function MarketInstallDialog({ entry, onClose, onInstalled, onInstallingChange }
         commit: source?.commit,
         path: source?.path,
       },
-    }, { onSuccess: () => onInstalled(t('pluginLifecycle.install.success', { plugin: entry.id, version: version.version })) })
+    }, { onSuccess: (deployment) => onInstalled(t(deployment.needsConfiguration ? 'pluginLifecycle.install.successNeedsConfiguration' : 'pluginLifecycle.install.success', { plugin: entry.id, version: version.version })) })
   }
   return (
     <Modal isOpen isDismissable={!install.isPending} isKeyboardDismissDisabled={install.isPending} scrollBehavior="inside"
@@ -171,18 +164,12 @@ function MarketInstallDialog({ entry, onClose, onInstalled, onInstallingChange }
             {changelog ? <a href={changelog} target="_blank" rel="noreferrer" className="text-primary underline">{t('pluginLifecycle.market.changelog')}</a> : null}
           </div>
           {version?.changelog && !changelog ? <p className="whitespace-pre-wrap break-words text-sm">{version.changelog}</p> : null}
-          <details className="text-sm">
-            <summary className="cursor-pointer">{t('pluginLifecycle.install.configure')}</summary>
-            <Textarea label={t('pluginLifecycle.fields.config')} value={config} onValueChange={setConfig} placeholder="{}"
-              isDisabled={install.isPending} isInvalid={invalidConfig} errorMessage={invalidConfig ? t('pluginLifecycle.install.errors.configJson') : undefined}
-              description={t('pluginLifecycle.market.configHint')} className="mt-2" />
-          </details>
           {history.isError ? <button type="button" className="self-start text-sm text-danger underline" onClick={() => void history.refetch()}>{t('pluginLifecycle.market.historyError')}</button> : null}
           {install.isError ? <p role="alert" className="text-sm text-danger">{t(error === 422 ? 'pluginLifecycle.market.needsReview' : error === 409 ? 'pluginLifecycle.install.errors.conflict' : 'pluginLifecycle.market.installError')}</p> : null}
         </ModalBody>
         <ModalFooter>
           <Button variant="light" onPress={onClose} isDisabled={install.isPending}>{t('pluginLifecycle.cancel')}</Button>
-          <Button color="primary" isLoading={install.isPending} isDisabled={!archiveUrl || invalidConfig || !history.isSuccess || history.isFetching || error === 422 || (current?.enabled && current.artifact.pluginVersion === version?.version)} onPress={submit}>
+          <Button color="primary" isLoading={install.isPending} isDisabled={!archiveUrl || !history.isSuccess || history.isFetching || error === 422 || (current?.enabled && current.artifact.pluginVersion === version?.version)} onPress={submit}>
             {t(current ? 'pluginLifecycle.market.update' : 'pluginLifecycle.install.submit')}
           </Button>
         </ModalFooter>

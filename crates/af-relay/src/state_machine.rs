@@ -578,7 +578,15 @@ pub struct ProviderRelaySession {
     /// Contract-validated action; Relay itself does not interpret the plugin protocol.
     pub action: Value,
     pub timeout_ms: u32,
-    pub websocket_endpoints: BTreeMap<String, String>,
+    pub endpoints: BTreeMap<String, ProviderRelayEndpoint>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProviderRelayEndpoint {
+    pub url: String,
+    pub allowed_paths: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub websocket_enabled: bool,
 }
 
 /// Frozen host context used for every step of a Provider session.
@@ -620,6 +628,15 @@ impl ProviderRelaySessionContext<'_> {
             .finalize_request(request, self.credential, self.context)
             .await
             .map_err(map_adaptor_error)
+    }
+
+    /// Prepare a separately granted Provider endpoint without adding the selected
+    /// channel's credential or adapter-specific auth headers to another origin.
+    pub async fn prepare_endpoint_request(
+        &self,
+        request: UpstreamRequest,
+    ) -> Result<UpstreamRequest, UpstreamError> {
+        Ok(request)
     }
 
     /// Send one REST step through the managed HTTP client and map transport errors to Relay errors.

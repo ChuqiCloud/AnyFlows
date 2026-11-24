@@ -1,4 +1,4 @@
-import { Button, Card, CardBody, CardHeader, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Skeleton, Textarea } from '@heroui/react'
+import { Button, Card, CardBody, CardHeader, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Skeleton } from '@heroui/react'
 import { ArrowLeft, Play, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -107,9 +107,7 @@ export function PluginPage() {
         </Button>
       </CardHeader>
       <CardBody className="space-y-3 p-5 pt-0">
-        {inputSchema && (inputSchema.type === 'object' || record(inputSchema.properties))
-          ? <PluginConfigEditor schema={inputSchema} value={input} onChange={updateInput} locale={locale} />
-          : <Textarea aria-label={t('pluginLifecycle.fields.config')} minRows={5} value={input} onValueChange={updateInput} classNames={{ input: 'font-mono text-xs' }} />}
+        {inputSchema ? <PluginConfigEditor schema={inputSchema} value={input} onChange={updateInput} locale={locale} /> : null}
         {!inputValue.valid ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.pages.invalidInput')}</p> : null}
         {callError ? <p role="alert" className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{t('pluginLifecycle.pages.invokeError')}</p> : null}
         {blocks ? <PluginUiBlocksRenderer blocks={blocks} /> : output === undefined && !callError ? <p className="text-sm text-muted-foreground">{t('pluginLifecycle.pages.empty')}</p> : null}
@@ -199,9 +197,7 @@ function PluginPageActions({ deployment, page, locale }: { deployment: PluginDep
       {page.actions.length > 1 ? <select aria-label={t('pluginLifecycle.pages.actions.select')} className="h-9 max-w-full rounded-lg border border-[var(--hairline)] bg-background px-2 text-sm" value={action.id} onChange={(event) => resetAction(event.target.value)}>{page.actions.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}</select> : null}
     </div>
     {action.description ? <p className="text-sm text-muted-foreground">{action.description}</p> : null}
-    {inputSchema && (inputSchema.type === 'object' || record(inputSchema.properties))
-      ? <PluginConfigEditor schema={inputSchema} value={input} onChange={updateInput} locale={locale} />
-      : <Textarea aria-label={t('pluginLifecycle.fields.config')} minRows={4} value={input} onValueChange={updateInput} classNames={{ input: 'font-mono text-xs' }} />}
+    {inputSchema ? <PluginConfigEditor schema={inputSchema} value={input} onChange={updateInput} locale={locale} /> : null}
     {!parsed.valid ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.pages.actions.invalidInput')}</p> : null}
     {proposal.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.pages.actions.proposalError')}</p> : null}
     {confirm.isError ? <p role="alert" className="text-sm text-danger">{t('pluginLifecycle.pages.actions.confirmError')}</p> : null}

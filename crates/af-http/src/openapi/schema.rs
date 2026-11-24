@@ -48,6 +48,15 @@ pub(crate) fn sensitive_free_form_object_schema() -> RefOr<Schema> {
         .into()
 }
 
+/// A public configuration object returned for administrator-owned form editing.
+pub(crate) fn public_plugin_config_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .additional_properties(Some(AdditionalProperties::FreeForm(true)))
+        .build()
+        .into()
+}
+
 /// 生成可省略或为 null 的只写自由对象 schema，用于保留已有敏感配置。
 pub(crate) fn optional_sensitive_free_form_object_schema() -> RefOr<Schema> {
     ObjectBuilder::new()

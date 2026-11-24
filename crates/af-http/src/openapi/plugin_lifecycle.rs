@@ -21,9 +21,11 @@ use crate::{
         PluginDeploymentResponse, PluginDeploymentRollbackRequest, PluginEventResultPageResponse,
         PluginEventResultResponse, PluginMarketEntryResponse, PluginMarketInstallHttpRequest,
         PluginMarketPageResponse, PluginMarketSourceRequest, PluginPackageInstallRequest,
-        PluginProviderSelectionBody, PluginProviderSelectionRequest, PluginRouteInvocationResponse,
-        PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse, PluginRuntimeStateResponse,
-        PluginTaskInvocationRequest, PluginTaskInvocationResponse, PluginUninstallResponse,
+        PluginProviderSelectionBody, PluginProviderSelectionRequest,
+        PluginPublicConfigurationResponse, PluginPublicConfigurationUpdateRequest,
+        PluginRouteInvocationResponse, PluginRuntimeNodeResponse, PluginRuntimeOverviewResponse,
+        PluginRuntimeStateResponse, PluginTaskInvocationRequest, PluginTaskInvocationResponse,
+        PluginUninstallResponse,
     },
 };
 
@@ -227,6 +229,25 @@ fn invoke_admin_plugin_route_get() {}
 fn invoke_admin_plugin_route_post() {}
 
 #[utoipa::path(
+    get,
+    path = "/api/admin/plugins/{plugin_id}/configuration",
+    operation_id = "getAdminPluginConfiguration",
+    tag = "插件生命周期",
+    summary = "读取插件公开配置供设置表单编辑",
+    params(("plugin_id" = String, Path)),
+    responses(
+        (status = 200, description = "当前部署代次与敏感字段过滤后的插件公开配置", body = PluginPublicConfigurationResponse),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 403, description = "缺少插件管理权限", body = ManagementErrorBody),
+        (status = 404, description = "插件部署不存在", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []), ("personalAccessTokenBearer" = [])),
+    extensions(("x-anyflows-pat-scopes" = json!( ["admin:get_admin_plugin_configuration:execute"] )))
+)]
+fn get_admin_plugin_configuration() {}
+
+#[utoipa::path(
     put,
     path = "/api/admin/plugins/{plugin_id}/routes/{route_id}",
     operation_id = "invokeAdminPluginRoutePut",
@@ -402,6 +423,20 @@ fn invoke_model_plugin_route_delete() {}
     security(("bearerAuth" = []))
 )]
 fn configure_provider_selection() {}
+
+#[utoipa::path(
+    put,
+    path = "/api/admin/plugins/{plugin_id}/configuration",
+    operation_id = "configureAdminPluginConfiguration",
+    tag = "插件生命周期",
+    summary = "更新插件公开配置并保留当前能力授权",
+    params(("plugin_id" = String, Path)),
+    request_body = PluginPublicConfigurationUpdateRequest,
+    responses((status = 200, description = "已更新插件配置并生成新部署代次", body = PluginDeploymentResponse), (status = 400, description = "配置不符合插件 Schema 或包含敏感字段", body = ManagementErrorBody), (status = 409, description = "部署代次已变化", body = ManagementErrorBody)),
+    security(("bearerAuth" = []), ("personalAccessTokenBearer" = [])),
+    extensions(("x-anyflows-pat-scopes" = json!( ["admin:configure_admin_plugin_configuration:execute"] )))
+)]
+fn configure_admin_plugin_configuration() {}
 
 #[utoipa::path(
     post,
@@ -855,6 +890,8 @@ fn list_plugin_catalog_models() {}
         invoke_model_plugin_route_patch,
         invoke_model_plugin_route_delete,
         configure_provider_selection,
+        get_admin_plugin_configuration,
+        configure_admin_plugin_configuration,
         submit_model_plugin_task,
         get_model_plugin_task,
         cancel_model_plugin_task,
@@ -910,6 +947,8 @@ fn list_plugin_catalog_models() {}
         PluginDeploymentRequest,
         PluginDeploymentResponse,
         PluginDeploymentRollbackRequest,
+        PluginPublicConfigurationResponse,
+        PluginPublicConfigurationUpdateRequest,
         PluginEventResultResponse,
         PluginEventResultPageResponse,
         PluginRuntimeOverviewResponse,
