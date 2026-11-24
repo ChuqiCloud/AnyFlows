@@ -149,6 +149,7 @@ function UsageLogItem({ log, admin, showPrincipal, formatQuota, onSelect, onFail
             {log.model ?? t('usageLogs.values.legacyModel')}
           </button>
           <ProtocolBadge log={log} />
+          {log.reasoning_effort ? <span className="shrink-0 text-xs text-muted-foreground" title={t('usageLogs.detailFields.reasoningEffort')}>{log.reasoning_effort === 'extra_high' ? 'xhigh' : log.reasoning_effort}</span> : null}
         </div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
           <span>{log.operation ? t(`usageLogs.operation.${log.operation}`) : t('usageLogs.values.notSpecified')}</span>

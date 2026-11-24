@@ -40,6 +40,22 @@ const model = {
   ratios: { group_micros: '1000000', group_model_micros: '1000000', peak_micros: '1000000' },
   price_version: 1, available_protocols: ['openai_chat', 'openai_responses', 'anthropic'],
 }
+const usageLog = {
+  id: 101, token_id: 1, request_id: 'ci-usage-log-1', model: 'ci-reasoning-effort',
+  protocol: 'open_ai_responses', operation: 'responses', is_stream: true,
+  reasoning_effort: 'extra_high', reasoning_budget_tokens: null,
+  first_token_ms: 300, duration_ms: 800, billing_mode: 'per_token',
+  input_tokens: 100, output_tokens: 50, cache_read: 0, cache_creation_5m: 0,
+  cache_creation_1h: 0, reasoning_tokens: 20, audio_input_tokens: 0, audio_output_tokens: 0,
+  audio_duration_nanoseconds: null, video_duration_seconds: null, video_resolution: null,
+  quota: 100, created_at: Math.floor(Date.now() / 1000),
+}
+const usageLogs = [
+  usageLog,
+  { ...usageLog, id: 102, request_id: 'ci-usage-log-2', model: 'ci-reasoning-off', reasoning_effort: 'none', reasoning_tokens: 0 },
+  { ...usageLog, id: 103, request_id: 'ci-usage-log-3', model: 'ci-reasoning-budget', protocol: 'anthropic', operation: 'chat', reasoning_effort: null, reasoning_budget_tokens: 2048 },
+  { ...usageLog, id: 104, request_id: 'ci-usage-log-4', model: 'ci-reasoning-unspecified', reasoning_effort: null },
+]
 const site = {
   site_name: 'CI AnyFlows', public_base_url: 'https://gateway.example.test/',
   brand: { logo_url: null, tagline: '', description: '' },
@@ -277,7 +293,7 @@ try {
       case '/api/tokens': data = { tokens: [], next_cursor: null, capacity: 32 }; break
       case '/api/user-routes': data = { items: [], capacity: 32 }; break
       case '/api/token-groups': data = { groups: [], next_cursor: null }; break
-      case '/api/account/usage-logs': data = { logs: [], failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
+      case '/api/account/usage-logs': data = { logs: usageLogs, failed_logs: [], next_cursor: null, failed_next_cursor: null }; break
       case '/api/admin/tokens': data = { tokens: [], next_cursor: null }; break
       case '/api/admin/email-settings': data = emailSettings; break
       case '/api/admin/groups': data = { groups: adminGroups, next_cursor: null }; break
@@ -414,6 +430,31 @@ try {
   assert.equal(new URL(page.url()).pathname, '/console')
   assert.ok(requests.some(request => request.role === 'user' && request.path === '/api/account/wallet'))
   assert.ok(!requests.some(request => request.role === 'user' && request.path.startsWith('/api/admin/')), 'User overview never calls management APIs')
+
+  await open('/console/usage-logs', 'user')
+  const usageRow = modelName => page.getByRole('row').filter({ has: page.getByText(modelName, { exact: true }) })
+  const effortTitle = label('usageLogs.detailFields.reasoningEffort')
+  const explicitEffortRow = usageRow('ci-reasoning-effort')
+  const explicitEffort = explicitEffortRow.getByTitle(effortTitle, { exact: true })
+  await explicitEffort.waitFor()
+  assert.equal(await explicitEffort.textContent(), 'xhigh')
+  const cells = await Promise.all([
+    explicitEffortRow.getByText('ci-reasoning-effort', { exact: true }).boundingBox(),
+    explicitEffortRow.getByText(label('usageLogs.protocol.open_ai_responses'), { exact: true }).boundingBox(),
+    explicitEffort.boundingBox(),
+  ])
+  assert.ok(cells.every(Boolean))
+  const [modelBox, protocolBox, effortBox] = cells
+  assert.ok(modelBox.x + modelBox.width <= protocolBox.x && protocolBox.x + protocolBox.width <= effortBox.x, 'Model, protocol and effort are in reading order')
+  const center = box => box.y + box.height / 2
+  assert.ok(Math.abs(center(modelBox) - center(effortBox)) <= 2 && Math.abs(center(protocolBox) - center(effortBox)) <= 2, 'Model, protocol and effort share one line')
+  await usageRow('ci-reasoning-off').getByText('none', { exact: true }).waitFor()
+  await usageRow('ci-reasoning-budget').waitFor()
+  assert.equal(await usageRow('ci-reasoning-budget').getByTitle(effortTitle, { exact: true }).count(), 0, 'A fixed token budget does not produce a label')
+  assert.equal(await usageRow('ci-reasoning-budget').getByText(/思考预算/).count(), 0, 'A fixed token budget is omitted from the model cell')
+  await usageRow('ci-reasoning-unspecified').waitFor()
+  assert.equal(await usageRow('ci-reasoning-unspecified').getByTitle(effortTitle, { exact: true }).count(), 0, 'Reasoning token usage does not imply a requested effort')
+  await page.screenshot({ path: resolve(screenshots, 'usage-log-reasoning.png'), fullPage: true, animations: 'disabled' })
 
   // A first create failure must be visible even though no order was returned,
   // and its retry must use the same idempotency key without an unhandled rejection.
