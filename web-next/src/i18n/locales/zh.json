@@ -1488,55 +1488,74 @@
     }
   },
   "channelModels": {
-    "title": "渠道模型",
+    "title": "渠道模型管理",
     "summary": {
-      "models_one": "{{count}} 个已接入模型",
-      "models_other": "{{count}} 个已接入模型",
-      "groups_one": "{{count}} 个路由分组",
-      "groups_other": "{{count}} 个路由分组",
-      "mapping_one": "{{count}} 条映射",
-      "mapping_other": "{{count}} 条映射"
+      "mapping_one": "{{count}} 条",
+      "mapping_other": "{{count}} 条"
     },
     "sections": {
-      "connected": "已接入模型",
-      "connectedHint": "这里只维护本渠道允许调用的模型。模型资料、能力和价格请在模型目录维护。",
+      "connected": "已添加模型",
       "mapping": "模型映射",
-      "mappingHint": "左侧是对外模型名，右侧是上游实际模型名。没有映射时使用同名模型。",
+      "mappingHint": "调用方使用对外模型名，系统将请求转发给对应的上游模型。两边同名时无需添加。",
       "groups": "路由分组",
-      "groupsHint": "模型和分组需要成对配置，保存后才会进入渠道路由。",
-      "discovery": "从上游获取",
-      "discoveryHint": "使用当前渠道凭据读取上游模型列表，只会预览，不会覆盖已有配置。"
+      "groupsHint": "选择哪些分组可以使用这个渠道的模型。",
+      "advanced": "高级设置",
+      "advancedHint": "上游模型限制、凭据覆盖",
+      "upstreamPolicy": "上游模型限制"
     },
     "actions": {
-      "back": "返回渠道",
+      "back": "返回渠道列表",
       "credentials": "管理凭据",
-      "refresh": "刷新",
-      "discover": "获取上游模型",
+      "refresh": "重新加载渠道",
+      "discover": "从上游获取",
       "discovering": "正在获取…",
-      "addSelected": "加入所选（{{count}}）",
-      "close": "关闭预览",
-      "save": "保存模型配置",
+      "add": "添加",
+      "addSelected": "添加所选（{{count}}）",
+      "close": "关闭",
+      "save": "保存更改",
       "saving": "保存中…",
-      "cancel": "返回",
+      "retry": "重试",
       "models": "管理模型"
     },
-    "discovery": {
-      "candidates": "可加入模型（{{count}}）",
-      "empty": "上游没有返回新的模型。",
-      "unsupported": "当前渠道协议不支持自动获取模型，可手动添加。",
-      "upstream": "上游模型"
+    "modelInput": {
+      "label": "模型 ID",
+      "placeholder": "输入模型 ID",
+      "hint": "支持粘贴多个模型 ID，用逗号或换行分隔。"
     },
-    "mapping": { "empty": "暂未配置模型映射。" },
-    "feedback": { "saved": "渠道模型配置已保存。" },
+    "discovery": {
+      "candidates": "可添加模型（{{count}}）",
+      "empty": "没有可添加的新模型。",
+      "upstream": "上游名称 {{model}}",
+      "search": "搜索模型",
+      "noMatch": "没有匹配的模型。",
+      "selectVisible": "全选当前结果",
+      "limit": "渠道最多可添加 512 个模型，请减少勾选。"
+    },
+    "mapping": {
+      "optional": "选填",
+      "publicName": "对外模型名",
+      "upstreamName": "上游模型名",
+      "empty": "当前使用同名模型。"
+    },
+    "feedback": {
+      "saved": "更改已保存。",
+      "unsaved": "有未保存的更改",
+      "finishAdding": "先添加输入框里的模型，或清空输入框。",
+      "added_one": "已加入 {{count}} 个模型，保存后生效。",
+      "added_other": "已加入 {{count}} 个模型，保存后生效。",
+      "discard": "还有未保存的更改。确定离开吗？"
+    },
     "validation": {
-      "routing": "模型和路由分组必须同时为空或同时配置。",
-      "limit": "模型或分组数量超过限制，请减少后重试。",
-      "configuration": "模型名称和映射必须唯一、非空，且不能超过长度限制。"
+      "pickGroup": "至少选一个路由分组。",
+      "addModel": "添加至少一个模型，或移除所有分组。",
+      "limit": "最多支持 512 个模型、64 个分组，模型数与分组数的乘积不能超过 4096。",
+      "models": "请检查模型 ID。每个 ID 最长 255 字节。",
+      "mapping": "请填写映射两侧的模型名，对外模型名不能重复。每侧最多 256 字节，合计最多 512 条、64 KB。"
     },
     "errors": {
-      "load": "无法读取渠道模型配置。",
-      "save": "渠道模型配置保存失败，请稍后重试。",
-      "discovery": "上游模型获取失败，请先检查凭据和渠道连通性。"
+      "load": "无法加载渠道。",
+      "save": "保存失败。更改已保留，可以重试。",
+      "discovery": "获取失败。请检查渠道地址和凭据后重试。"
     }
   },
   "credentials": {

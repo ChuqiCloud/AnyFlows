@@ -15,6 +15,8 @@ const require = createRequire(resolve(process.env.PLAYWRIGHT_PACKAGE_ROOT, 'pack
 const { chromium } = require('playwright')
 const translations = JSON.parse(await readFile(resolve(directory, 'src/i18n/key-capabilities.json'), 'utf8'))
 const label = (key, vars = {}) => Object.entries(vars).reduce((value, [name, item]) => value.replaceAll(`{{${name}}}`, String(item)), key.split('.').reduce((node, part) => node[part], translations.zh))
+const zh = JSON.parse(await readFile(resolve(directory, 'src/i18n/locales/zh.json'), 'utf8'))
+const copy = key => key.split('.').reduce((node, part) => node[part], zh)
 const html = resolve(directory, '.key-capabilities-smoke.html')
 const entry = resolve(directory, '.key-capabilities-smoke.tsx')
 const screenshots = resolve(process.env.RUNNER_TEMP, 'key-capabilities-screenshots-web-next')
@@ -53,6 +55,7 @@ const modelFetches = []
 const policyWrites = []
 const configWrites = []
 const profileWrites = []
+const channelWrites = []
 const browserErrors = []
 let profiles = []
 let policyFailures = 1
@@ -63,6 +66,12 @@ let model13Failures = 1
 let usageRefreshes = 0
 let coverageFailures = 1
 let catalogPages = 0
+let channel = {
+  id: 7, name: 'Fixture channel', provider: 'openai', type: 'openai', protocol: 'openai_chat',
+  status: 'enabled', weight: 10, priority: 0, base_url: 'https://example.invalid',
+  models: ['public-a', 'public-b', 'public-c'], group_ids: [1],
+  model_mapping: { 'public-b': 'Raw-B' }, param_override: {},
+}
 let server
 let browser
 let page
@@ -77,12 +86,11 @@ try {
     import { HeroUIProvider } from '@heroui/react';
     import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
     import { CredentialList } from './src/features/credentials/credential-list';
-    import { UpstreamModelPolicyEditor } from './src/features/credentials/upstream-model-policy-editor';
-    import { ChannelModelCoverage } from './src/features/credentials/channel-model-coverage';
+    import { ChannelModelPage } from './src/features/channels/channel-model-page';
     import './src/index.css'; import './src/i18n';
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false }, mutations: { retry: false } } });
     const credentials = [11, 12, 13].map(id => ({ id, channel_id: 7, kind: 'api_key', status: id === 12 ? 'disabled' : 'enabled', schedulable: true, priority: 0, weight: 10, concurrency: null, oauth_token_pending: false, parent_id: null, quota_dimension: 'global', last_used_at: null, rate_limited_at: null, rate_limit_reset_at: null, overload_until: null, temp_unschedulable_until: null }));
-    function Fixture() { const [view, setView] = useState('keys'); return <HeroUIProvider><QueryClientProvider client={client}><main className="mx-auto max-w-5xl p-4"><nav><button onClick={() => setView('keys')}>keys</button><button onClick={() => setView('channel')}>channel</button></nav>{view === 'keys' ? <CredentialList channel={{id:7,type:'openai',protocol:'openai_chat',provider:'openai',name:'Fixture'}} credentials={credentials} loading={false} loadError={false} refreshing={false} refreshError={false} loadingMore={false} hasNextPage={false} active onRefresh={async () => {}} onLoadMore={async () => {}} onEdit={() => {}} /> : <><UpstreamModelPolicyEditor channelId={7} /><ChannelModelCoverage channelId={7} models={['public-a','public-b','public-c']} /></>}</main></QueryClientProvider></HeroUIProvider> }
+    function Fixture() { const [view, setView] = useState('keys'); return <HeroUIProvider><QueryClientProvider client={client}><main className="mx-auto max-w-5xl p-4"><nav><button onClick={() => setView('keys')}>keys</button><button onClick={() => setView('channel')}>channel</button></nav>{view === 'keys' ? <CredentialList channel={{id:7,type:'openai',protocol:'openai_chat',provider:'openai',name:'Fixture'}} credentials={credentials} loading={false} loadError={false} refreshing={false} refreshError={false} loadingMore={false} hasNextPage={false} active onRefresh={async () => {}} onLoadMore={async () => {}} onEdit={() => {}} /> : <ChannelModelPage channelId={7} />}</main></QueryClientProvider></HeroUIProvider> }
     createRoot(document.getElementById('root')).render(<Fixture />);
   `)
   server = spawn(process.execPath, [resolve(directory, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -102,6 +110,28 @@ try {
     const method = request.method()
     assert.equal(request.headers().authorization, 'Bearer ci-key-capabilities')
     const respond = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
+    if (path === '/api/admin/channels/7') {
+      if (method === 'GET') return respond(channel)
+      assert.equal(method, 'PUT')
+      const body = request.postDataJSON()
+      channelWrites.push(body)
+      if (channelWrites.length === 1) return respond({ code: 'internal_error' }, 500)
+      channel = { ...channel, ...body }
+      return respond(channel)
+    }
+    if (path === '/api/admin/groups') return respond({
+      groups: [{ id: 1, name: 'default', display_name: 'Default group' }], next_cursor: null,
+    })
+    if (path === '/api/admin/models/sync-previews') {
+      assert.equal(method, 'POST')
+      assert.deepEqual(request.postDataJSON(), { channel_id: 7 })
+      return respond({ items: [
+        { item_id: 1, canonical_model: 'public-a', upstream_model: 'Raw-A', relation: 'existing' },
+        { item_id: 2, canonical_model: 'public-d', upstream_model: 'Raw-D', relation: 'discovered_unconfigured' },
+        { item_id: 3, canonical_model: 'public-e', upstream_model: 'Raw-E', relation: 'discovered_unconfigured' },
+        { item_id: 4, canonical_model: 'offline', upstream_model: null, relation: 'not_reported' },
+      ] }, 201)
+    }
     if (path === '/api/admin/channels/7/credentials') {
       const after = new URL(request.url()).searchParams.get('after')
       catalogPages += 1
@@ -261,6 +291,29 @@ try {
   assert.equal(configWrites.at(-1).body.refresh_interval_secs, null, 'Background polling stays off by default')
   await dialog().getByRole('button', { name: label('close'), exact: true }).click(); await dialog().waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'channel', exact: true }).click()
+  await page.getByRole('heading', { name: copy('channelModels.title'), exact: true }).waitFor()
+  const saveRouting = page.getByRole('button', { name: copy('channelModels.actions.save'), exact: true })
+  assert.equal(await saveRouting.isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: label('savePolicy'), exact: true }).count(), 0, 'Advanced controls are initially hidden')
+  await page.getByRole('button', { name: copy('channelModels.actions.discover'), exact: true }).click()
+  const deselect = page.getByRole('checkbox', { name: /^public-e/ })
+  await deselect.uncheck()
+  await page.getByRole('button', { name: copy('channelModels.actions.addSelected').replace('{{count}}', '1'), exact: true }).click()
+  assert.equal(channelWrites.length, 0, 'Adding discovered models only changes the draft')
+  await page.getByRole('textbox', { name: copy('channelModels.modelInput.label'), exact: true }).fill('public-manual')
+  await page.getByRole('button', { name: copy('channelModels.actions.add'), exact: true }).click()
+  await saveRouting.click()
+  await page.getByText(copy('channelModels.errors.save'), { exact: true }).waitFor()
+  await saveRouting.click()
+  await page.getByText(copy('channelModels.feedback.saved'), { exact: true }).waitFor()
+  assert.deepEqual(channelWrites[1], channelWrites[0], 'A failed save preserves the draft for retry')
+  assert.deepEqual(channelWrites[1].models, ['public-a', 'public-b', 'public-c', 'public-d', 'public-manual'])
+  assert.deepEqual(channelWrites[1].model_mapping, { 'public-b': 'Raw-B', 'public-d': 'Raw-D' })
+  assert.deepEqual(channelWrites[1].group_ids, [1])
+  await page.screenshot({ path: resolve(screenshots, 'channel-models-mobile.png'), fullPage: true })
+  await page.setViewportSize({ width: 1280, height: 960 })
+  await page.screenshot({ path: resolve(screenshots, 'channel-models-desktop.png'), fullPage: true })
+  await page.getByText(copy('channelModels.sections.advanced'), { exact: true }).click()
   await page.getByRole('combobox', { name: label('policyMode'), exact: true }).selectOption('denylist')
   await page.getByRole('textbox', { name: label('exactNames'), exact: true }).fill('Raw-B')
   await page.getByRole('region', { name: label('channelPolicy'), exact: true }).getByRole('switch').nth(1).click()
