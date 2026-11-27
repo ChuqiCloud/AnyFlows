@@ -77,6 +77,7 @@ fn service_write(pool: i64) -> MerchantServiceWrite {
         pool_id: pool,
         name: "Reviewed Service".to_owned(),
         description: "Reviewed description".to_owned(),
+        listed: None,
         base_url: "https://api.example.com/v1".to_owned(),
         protocol: "openai_chat".to_owned(),
         api_key: Some("upstream-private-key".to_owned()),
@@ -90,6 +91,7 @@ fn service_write(pool: i64) -> MerchantServiceWrite {
             supports_streaming: true,
             supports_tools: true,
             supports_vision: false,
+            pricing: None,
         }],
         concurrency: Some(5),
         timeout_secs: 60,
@@ -1001,6 +1003,7 @@ async fn price_activation_is_versioned_idempotent_and_owner_scoped() -> Result<(
     invalid_model.model_ratios.push(MerchantModelRatio {
         model: "unreviewed-model".to_owned(),
         ratio_micros: None,
+        pricing: None,
     });
     assert!(matches!(
         fixture
@@ -1462,6 +1465,7 @@ async fn price_override_replacement_and_cancellation_keep_reviewed_model_mapping
     first.model_ratios.push(MerchantModelRatio {
         model: "gpt-test".to_owned(),
         ratio_micros: Some(700_000),
+        pricing: None,
     });
     let first = fixture
         .repository

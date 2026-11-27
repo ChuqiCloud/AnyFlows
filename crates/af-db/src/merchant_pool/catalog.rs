@@ -1,4 +1,5 @@
 use super::*;
+use af_domain::{MerchantModelPricing, MerchantModelPricingMode};
 
 impl MerchantPoolRepository {
     pub async fn quote(
@@ -31,12 +32,22 @@ impl MerchantPoolRepository {
                 if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) {
                     return Err(MerchantPoolError::InvalidInput);
                 }
-                let base_prices = model_price(self.pool.connection(), &model.model, 1_000_000)
-                    .await?
-                    .ok_or(MerchantPoolError::ModelPriceUnavailable)?;
-                let prices = model_price(self.pool.connection(), &model.model, ratio)
-                    .await?
-                    .ok_or(MerchantPoolError::ModelPriceUnavailable)?;
+                let base_prices = model_price_with_override(
+                    self.pool.connection(),
+                    &model.model,
+                    1_000_000,
+                    model.pricing.as_ref(),
+                )
+                .await?
+                .ok_or(MerchantPoolError::ModelPriceUnavailable)?;
+                let prices = model_price_with_override(
+                    self.pool.connection(),
+                    &model.model,
+                    ratio,
+                    model.pricing.as_ref(),
+                )
+                .await?
+                .ok_or(MerchantPoolError::ModelPriceUnavailable)?;
                 let net_prices = net_prices(&prices, commission)?;
                 models.push(af_domain::MerchantQuoteModel {
                     model: model.model,
@@ -93,6 +104,7 @@ impl MerchantPoolRepository {
             let mut selection = services::Entity::find()
                 .filter(services::Column::PoolId.eq(pool_id))
                 .filter(services::Column::DeletedAt.is_null())
+                .filter(services::Column::Listed.eq(true))
                 .filter(services::Column::Status.eq("published"));
             if let Some(id) = merchant_id {
                 selection = selection.filter(services::Column::MerchantId.eq(id));
@@ -162,9 +174,14 @@ impl MerchantPoolRepository {
                 if !(pool.min_ratio_micros..=pool.max_ratio_micros).contains(&ratio) {
                     continue;
                 }
-                if model_price(self.pool.connection(), &model.model, ratio)
-                    .await?
-                    .is_none()
+                if model_price_with_override(
+                    self.pool.connection(),
+                    &model.model,
+                    ratio,
+                    model.pricing.as_ref(),
+                )
+                .await?
+                .is_none()
                 {
                     continue;
                 }
@@ -266,6 +283,7 @@ impl MerchantPoolRepository {
         let rows = services::Entity::find()
             .filter(services::Column::PoolId.eq(pool_id))
             .filter(services::Column::DeletedAt.is_null())
+            .filter(services::Column::Listed.eq(true))
             .filter(services::Column::PublishedRevisionId.is_not_null())
             .order_by_asc(services::Column::Id)
             .limit(10_001)
@@ -320,7 +338,13 @@ impl MerchantPoolRepository {
             for model in super::policies::price_models(&price)? {
                 let ratio = model.ratio_micros.unwrap_or(price.default_ratio_micros);
                 models.push(MerchantModelOffer {
-                    prices: model_price(self.pool.connection(), &model.model, ratio).await?,
+                    prices: model_price_with_override(
+                        self.pool.connection(),
+                        &model.model,
+                        ratio,
+                        model.pricing.as_ref(),
+                    )
+                    .await?,
                     model: model.model,
                     provider: None,
                     sales_ratio_micros: ratio,
@@ -603,8 +627,21 @@ fn net_prices(
         cache_write_5m: net(&prices.cache_write_5m)?,
         cache_write_1h: net(&prices.cache_write_1h)?,
         request_price: prices.request_price.as_deref().map(net).transpose()?,
+        billing_expression: prices
+            .billing_expression
+            .as_deref()
+            .map(|expression| scale_billing_expression(expression, ratio)),
         version: prices.version,
     })
+}
+
+fn scale_billing_expression(expression: &str, multiplier: Decimal) -> String {
+    if multiplier == Decimal::ONE {
+        return expression.to_owned();
+    }
+    let source = expression.trim();
+    let body = source.strip_prefix("v1:").unwrap_or(source);
+    format!("v1:({body}) * {}", multiplier.normalize())
 }
 
 pub(super) async fn model_price<C: ConnectionTrait>(
@@ -612,6 +649,95 @@ pub(super) async fn model_price<C: ConnectionTrait>(
     model: &str,
     ratio: i64,
 ) -> Result<Option<MerchantModelPrices>, MerchantPoolError> {
+    model_price_with_override(connection, model, ratio, None).await
+}
+
+pub(super) async fn model_price_with_override<C: ConnectionTrait>(
+    connection: &C,
+    model: &str,
+    ratio: i64,
+    pricing: Option<&MerchantModelPricing>,
+) -> Result<Option<MerchantModelPrices>, MerchantPoolError> {
+    if let Some(pricing) = pricing.filter(|price| price.mode != MerchantModelPricingMode::Platform)
+    {
+        let multiplier = Decimal::from(ratio)
+            .checked_div(Decimal::from(1_000_000))
+            .ok_or(MerchantPoolError::Unavailable)?;
+        let scale = |value: Option<&String>| -> Result<String, MerchantPoolError> {
+            let value = value
+                .map(|value| value.parse::<Decimal>())
+                .transpose()
+                .map_err(internal)?
+                .unwrap_or(Decimal::ZERO);
+            value
+                .checked_mul(multiplier)
+                .map(|value| value.normalize().to_string())
+                .ok_or(MerchantPoolError::Unavailable)
+        };
+        let zero = || "0".to_owned();
+        return Ok(Some(match pricing.mode {
+            MerchantModelPricingMode::Free => MerchantModelPrices {
+                currency: "USD".to_owned(),
+                unit: "million_tokens".to_owned(),
+                billing_mode: "free".to_owned(),
+                video_per_second: None,
+                input: zero(),
+                output: zero(),
+                cache_read: zero(),
+                cache_write_5m: zero(),
+                cache_write_1h: zero(),
+                request_price: None,
+                billing_expression: None,
+                version: 1,
+            },
+            MerchantModelPricingMode::PerCall => MerchantModelPrices {
+                currency: "USD".to_owned(),
+                unit: "request".to_owned(),
+                billing_mode: "per_call".to_owned(),
+                video_per_second: None,
+                input: zero(),
+                output: zero(),
+                cache_read: zero(),
+                cache_write_5m: zero(),
+                cache_write_1h: zero(),
+                request_price: Some(scale(pricing.request_price.as_ref())?),
+                billing_expression: None,
+                version: 1,
+            },
+            MerchantModelPricingMode::PerToken => MerchantModelPrices {
+                currency: "USD".to_owned(),
+                unit: "million_tokens".to_owned(),
+                billing_mode: "token".to_owned(),
+                video_per_second: None,
+                input: scale(pricing.input.as_ref())?,
+                output: scale(pricing.output.as_ref())?,
+                cache_read: scale(pricing.cache_read.as_ref())?,
+                cache_write_5m: scale(pricing.cache_write_5m.as_ref())?,
+                cache_write_1h: scale(pricing.cache_write_1h.as_ref())?,
+                request_price: None,
+                billing_expression: None,
+                version: 1,
+            },
+            MerchantModelPricingMode::Expression => MerchantModelPrices {
+                currency: "USD".to_owned(),
+                unit: "expression".to_owned(),
+                billing_mode: "expression".to_owned(),
+                video_per_second: None,
+                input: zero(),
+                output: zero(),
+                cache_read: zero(),
+                cache_write_5m: zero(),
+                cache_write_1h: zero(),
+                request_price: None,
+                billing_expression: pricing
+                    .expression
+                    .as_deref()
+                    .map(|expression| scale_billing_expression(expression, multiplier)),
+                version: 1,
+            },
+            MerchantModelPricingMode::Platform => unreachable!(),
+        }));
+    }
     if model == "grok-imagine-video"
         || model == "grok-imagine-video-1.5"
         || model.starts_with("grok-imagine-video-1.5-")
@@ -641,6 +767,7 @@ pub(super) async fn model_price<C: ConnectionTrait>(
             cache_write_5m: "0".to_owned(),
             cache_write_1h: "0".to_owned(),
             request_price: None,
+            billing_expression: None,
             version: 1,
         }));
     }
@@ -675,6 +802,7 @@ pub(super) async fn model_price<C: ConnectionTrait>(
             cache_write_5m: "0".to_owned(),
             cache_write_1h: "0".to_owned(),
             request_price: Some(final_price(price.request_price.expose())?),
+            billing_expression: None,
             version: price.version,
         }));
     }
@@ -694,6 +822,7 @@ pub(super) async fn model_price<C: ConnectionTrait>(
         cache_write_5m: final_price(price.cache_creation_5m_price.expose())?,
         cache_write_1h: final_price(price.cache_creation_1h_price.expose())?,
         request_price: None,
+        billing_expression: None,
         version: price.version,
     }))
 }

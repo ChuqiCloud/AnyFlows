@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Modal, ModalBody, ModalContent, ModalHeader } from '@heroui/react'
-import { ArrowUpRight, GitBranch, ShieldCheck, Store } from 'lucide-react'
+import { GitBranch, RefreshCw, ShieldCheck, Store } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMerchantCatalog, useMerchantModelProviders, useMerchantPools, useMerchantStatistics, useMerchantTimeline } from './merchant-pool-api'
@@ -9,7 +9,7 @@ import { MerchantCatalogTable } from './merchant-catalog-table'
 import { MerchantMarketFiltersPanel, type MerchantMarketFilters } from './merchant-market-filters'
 import { parseMerchantProviders, serializeMerchantProviders } from './merchant-model-provider'
 import { merchantTextProtocol, parsePoolRatio, poolTimestamp, positiveInteger } from './merchant-pool-model'
-import { PoolButton as Button, PoolEmpty, PoolError, PoolHeader, PoolLoading, PoolNavigation, PoolPager, PoolSelect } from './merchant-pool-ui'
+import { PoolButton as Button, PoolEmpty, PoolError, PoolLoading, PoolNavigation, PoolPager, PoolSelect } from './merchant-pool-ui'
 
 const initialFilters = { search: '', status: '', sort: 'name', protocol: '', streaming: '', capability: '', minRatio: '', maxRatio: '' }
 
@@ -55,19 +55,34 @@ export function MerchantPoolPage() {
   const resetFilters = () => { setFilters(initialFilters); const next = new URLSearchParams(params); next.delete('model'); next.delete('provider'); setParams(next, { replace: true }); setPage(0); setCompared([]) }
   const refresh = () => { void pools.refetch(); if (poolId !== undefined) void Promise.all([providerFacets.refetch(), catalog.refetch(), stats.refetch(), timeline.refetch()]) }
   const refreshing = pools.isFetching || providerFacets.isFetching || catalog.isFetching || stats.isFetching || timeline.isFetching
-  return <div className="flex min-w-0 flex-col gap-4">
-    <PoolHeader title={t('merchantPool.market.title')} description={t('merchantPool.market.subtitle')} refreshing={refreshing} onRefresh={refresh}><Link className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={routeUrl}><GitBranch className="size-3.5" aria-hidden="true" />{t('merchantPool.createRoute')}</Link></PoolHeader>
+  return <div className="flex min-w-0 flex-col gap-5">
+    <header className="flex flex-col gap-4 rounded-2xl border border-[var(--hairline)] bg-surface-1 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+      <div className="flex min-w-0 items-start gap-3.5">
+        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:size-12">
+          <Store className="size-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{t('merchantPool.market.title')}</h1>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground sm:text-sm">{t('merchantPool.market.subtitle')}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pl-4">
+        <Button type="button" size="sm" variant="bordered" isDisabled={refreshing} onPress={refresh}>
+          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+          {t('merchantPool.refresh')}
+        </Button>
+        <Link className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" to={routeUrl}>
+          <GitBranch className="size-3.5" aria-hidden="true" />
+          {t('merchantPool.createRoute')}
+        </Link>
+      </div>
+    </header>
     <PoolNavigation />
     <MerchantMarketFiltersPanel pools={pools.data?.items ?? []} poolId={poolId} loading={pools.isPending} providers={providerFacets.data?.providers ?? []} providersLoading={poolId !== undefined && providerFacets.isPending} providersError={providerFacets.isError} onRetryProviders={() => void providerFacets.refetch()} filters={{ ...filters, model, providers }} invalidPriceRange={invalidPriceRange} onPoolChange={(value) => setParam('pool', value)} onChange={changeFilters} onReset={resetFilters} />
     {pools.isError ? <PoolError onRetry={() => void pools.refetch()} /> : null}
-    <section aria-label={t('merchantPool.market.routing')} className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-primary/15 bg-primary/4 px-3 py-3 sm:px-4">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-primary/8 text-primary"><GitBranch className="size-4" aria-hidden="true" /></div>
-      <div className="min-w-0 flex-1"><h3 className="text-xs font-semibold">{t('merchantPool.market.routingTitle')}</h3><p className="mt-1 text-[11px] leading-5 text-muted-foreground">{t('merchantPool.market.routingHint')}</p></div>
-      <Link to={routeUrl} className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-primary/20 bg-surface-1 px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10">{t('merchantPool.market.configureRouting')}<ArrowUpRight className="size-3.5" aria-hidden="true" /></Link>
-    </section>
     <section aria-label={t('merchantPool.market.results')} className="flex min-w-0 flex-col gap-2.5">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-0.5">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"><h3 className="flex items-center gap-2 text-sm font-semibold"><Store className="size-4 text-primary" aria-hidden="true" />{t('merchantPool.catalogCount', { count: catalog.data?.total ?? 0 })}</h3><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><ShieldCheck className="size-3.5 text-primary" aria-hidden="true" />{t('merchantPool.market.reviewed')}</span></div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5"><h2 className="flex items-center gap-2 text-sm font-semibold"><Store className="size-4 text-primary" aria-hidden="true" />{t('merchantPool.catalogCount', { count: catalog.data?.total ?? 0 })}</h2><span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/8 px-2 py-1 text-[10px] font-medium text-success"><ShieldCheck className="size-3.5" aria-hidden="true" />{t('merchantPool.market.reviewed')}</span></div>
         <div className="flex flex-wrap items-center gap-2"><div className="w-28"><PoolSelect label={t('merchantPool.statWindow')} allowEmpty={false} value={windowSeconds} onChange={setWindowSeconds} options={['900', '3600', '86400', '604800'].map((value) => ({ value, label: t(`merchantPool.windows.${value}`) }))} /></div><Button size="sm" variant="bordered" isDisabled={!model || selected.length < 2} onPress={() => setComparisonOpen(true)}>{t('merchantPool.compare', { count: selected.length })}</Button></div>
       </div>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-0.5 text-[11px] text-muted-foreground"><span>{model ? t('merchantPool.market.modelQuote', { model }) : t('merchantPool.selectModelToCompare')}</span>{stats.data ? <span>{t('merchantPool.statsAsOf', { value: poolTimestamp(stats.data.as_of, i18n.language) })}</span> : null}</div>

@@ -1,17 +1,17 @@
-import type { MerchantModelWrite, MerchantPool, MerchantProtocol, MerchantServiceWrite } from './merchant-pool-model'
+import type { MerchantModelPricingMode, MerchantModelWrite, MerchantPool, MerchantProtocol, MerchantServiceWrite } from './merchant-pool-model'
 import { merchantTextProtocol, parsePoolRatio, poolRatio, positiveInteger } from './merchant-pool-model'
 import { merchantDescriptionError, merchantTextError } from './merchant-form-validation'
 
 export const MAX_MERCHANT_MODELS = 128
 export const MAX_MERCHANT_MODEL_TOKENS = 4_294_967_295
 
-export type MerchantModelDraft = { rowId: string; model: string; upstream: string; ratio: string; context: string; maxOutput: string; streaming: boolean; tools: boolean; vision: boolean }
+export type MerchantModelDraft = { rowId: string; model: string; upstream: string; ratio: string; context: string; maxOutput: string; streaming: boolean; tools: boolean; vision: boolean; pricingMode: MerchantModelPricingMode; inputPrice: string; outputPrice: string; cacheReadPrice: string; cacheWrite5mPrice: string; cacheWrite1hPrice: string; requestPrice: string; expression: string }
 export type MerchantFieldError = { key: string; values?: Record<string, string | number> }
 export type MerchantServiceErrors = Record<string, MerchantFieldError>
 type Validation<T> = { value: T; errors: undefined } | { value: undefined; errors: MerchantServiceErrors }
 type ModelFields = { pool: string; ratio: string; models: MerchantModelDraft[]; protocol: MerchantProtocol; pools: MerchantPool[] }
 type QuotedFields = Pick<MerchantServiceWrite, 'pool_id' | 'default_ratio_micros' | 'models'>
-export type MerchantServiceFields = ModelFields & { name: string; description: string; baseUrl: string; apiKey: string; concurrency: string; timeout: string; keyRequired: boolean }
+export type MerchantServiceFields = ModelFields & { name: string; description: string; listed: boolean; baseUrl: string; apiKey: string; concurrency: string; timeout: string; keyRequired: boolean }
 
 export function merchantModelField(rowId: string, field: string) { return `model.${rowId}.${field}` }
 
@@ -44,6 +44,25 @@ function ratioValue(errors: MerchantServiceErrors, field: string, value: string,
   return parsed
 }
 
+function pricingValue(errors: MerchantServiceErrors, field: string, draft: MerchantModelDraft) {
+  const decimal = /^(?:0|[1-9]\d{0,9})(?:\.\d{1,28})?$/
+  const values = [draft.inputPrice, draft.outputPrice, draft.cacheReadPrice, draft.cacheWrite5mPrice, draft.cacheWrite1hPrice]
+  if (draft.pricingMode === 'platform') return undefined
+  if (draft.pricingMode === 'per_token') {
+    if (values.some((value) => value.trim() !== '' && !decimal.test(value.trim()))) errors[field] = fieldError('priceDecimal')
+    return { mode: draft.pricingMode, input: draft.inputPrice.trim() || '0', output: draft.outputPrice.trim() || '0', cache_read: draft.cacheReadPrice.trim() || '0', cache_write_5m: draft.cacheWrite5mPrice.trim() || '0', cache_write_1h: draft.cacheWrite1hPrice.trim() || '0' } as const
+  }
+  if (draft.pricingMode === 'per_call') {
+    if (!decimal.test(draft.requestPrice.trim()) || !/[1-9]/.test(draft.requestPrice)) errors[field] = fieldError('positivePrice')
+    return { mode: draft.pricingMode, request_price: draft.requestPrice.trim() } as const
+  }
+  if (draft.pricingMode === 'expression') {
+    if (!draft.expression.trim() || new TextEncoder().encode(draft.expression).byteLength > 8192) errors[field] = fieldError('expressionRequired')
+    return { mode: draft.pricingMode, expression: draft.expression.trim() } as const
+  }
+  return { mode: draft.pricingMode } as const
+}
+
 /** Quote and save use the same model payload; invalid numbers never become omitted limits. */
 export function validateMerchantServiceModels(fields: ModelFields): Validation<QuotedFields> {
   const errors: MerchantServiceErrors = {}
@@ -66,11 +85,13 @@ export function validateMerchantServiceModels(fields: ModelFields): Validation<Q
     const video = model === 'grok-imagine-video' || model === 'grok-imagine-video-1.5' || model.startsWith('grok-imagine-video-1.5-')
     if (model && (fields.protocol === 'xai_video') !== video) errors[field('model')] = fieldError('videoModel')
     if (video && upstream !== model) errors[field('upstream')] = fieldError('videoModelMapping')
+    if (fields.protocol === 'xai_video' && draft.pricingMode !== 'platform') errors[field('pricing')] = fieldError('videoPricingUnsupported')
     const ratio = draft.ratio.trim() === '' ? null : ratioValue(errors, field('ratio'), draft.ratio, selectedPool)
     const context = optionalInteger(errors, field('context'), draft.context, MAX_MERCHANT_MODEL_TOKENS)
     const maxOutput = optionalInteger(errors, field('maxOutput'), draft.maxOutput, MAX_MERCHANT_MODEL_TOKENS)
     if (context !== null && maxOutput !== null && maxOutput > context) errors[field('maxOutput')] = fieldError('outputExceedsContext')
-    return { model, upstream_model: upstream, ratio_micros: ratio ?? null, context_window: context, max_output_tokens: maxOutput, supports_streaming: merchantTextProtocol(fields.protocol) && draft.streaming, supports_tools: merchantTextProtocol(fields.protocol) && draft.tools, supports_vision: merchantTextProtocol(fields.protocol) && draft.vision }
+    const pricing = pricingValue(errors, field('pricing'), draft)
+    return { model, upstream_model: upstream, ratio_micros: ratio ?? null, context_window: context, max_output_tokens: maxOutput, supports_streaming: merchantTextProtocol(fields.protocol) && draft.streaming, supports_tools: merchantTextProtocol(fields.protocol) && draft.tools, supports_vision: merchantTextProtocol(fields.protocol) && draft.vision, pricing }
   })
   if (Object.keys(errors).length > 0 || poolId === undefined || defaultRatio === undefined) return { value: undefined, errors }
   return { value: { pool_id: poolId, default_ratio_micros: defaultRatio, models }, errors: undefined }
@@ -94,5 +115,5 @@ export function validateMerchantService(fields: MerchantServiceFields): Validati
   const timeout = optionalInteger(errors, 'timeout', fields.timeout, 300)
   if (timeout === null) errors.timeout = fieldError('positiveIntegerRange', { max: 300 })
   if (Object.keys(errors).length > 0 || modelResult.value === undefined || timeout === null) return { value: undefined, errors }
-  return { value: { ...modelResult.value, name: fields.name.trim(), description: fields.description.trim(), base_url: baseUrl, protocol: fields.protocol, api_key: fields.apiKey.trim() || null, concurrency, timeout_secs: timeout }, errors: undefined }
+  return { value: { ...modelResult.value, name: fields.name.trim(), description: fields.description.trim(), listed: fields.listed, base_url: baseUrl, protocol: fields.protocol, api_key: fields.apiKey.trim() || null, concurrency, timeout_secs: timeout }, errors: undefined }
 }

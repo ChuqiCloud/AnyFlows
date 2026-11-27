@@ -2,10 +2,10 @@ import { Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@herou
 import { useTranslation } from 'react-i18next'
 import { ApiError } from '@/lib/api'
 import { useMerchantAction } from './merchant-pool-api'
-import type { MerchantPool, MerchantProfile } from './merchant-pool-model'
+import type { MerchantOwnedService, MerchantPool, MerchantProfile } from './merchant-pool-model'
 import { PoolButton as Button, PoolError } from './merchant-pool-ui'
 
-export type MerchantDeleteTarget = { kind: 'pool'; item: MerchantPool } | { kind: 'merchant'; item: MerchantProfile }
+export type MerchantDeleteTarget = { kind: 'pool'; item: MerchantPool } | { kind: 'merchant'; item: MerchantProfile } | { kind: 'service'; item: MerchantOwnedService }
 
 function deleteErrorCode(error: unknown) {
   if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null || !('error' in error.details)) return undefined
@@ -13,13 +13,14 @@ function deleteErrorCode(error: unknown) {
   return typeof detail === 'object' && detail !== null && 'code' in detail && typeof detail.code === 'string' ? detail.code : undefined
 }
 
-export function MerchantAdminDelete({ target, onClose }: { target: MerchantDeleteTarget; onClose: () => void }) {
+export function MerchantDeleteDialog({ target, onClose }: { target: MerchantDeleteTarget; onClose: () => void }) {
   const { t } = useTranslation()
   const action = useMerchantAction()
   const remove = async () => {
     if (action.isPending) return
     try {
-      await action.mutateAsync({ url: target.kind === 'pool' ? `/api/admin/merchant-pools/${target.item.id}` : `/api/admin/merchants/${target.item.id}`, method: 'delete' })
+      const url = target.kind === 'pool' ? `/api/admin/merchant-pools/${target.item.id}` : target.kind === 'merchant' ? `/api/admin/merchants/${target.item.id}` : `/api/merchant/services/${target.item.id}`
+      await action.mutateAsync({ url, method: 'delete' })
       onClose()
     } catch { /* Keep the selected resource and confirmation open for retry. */ }
   }

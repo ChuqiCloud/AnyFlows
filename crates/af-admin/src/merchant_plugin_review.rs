@@ -338,6 +338,7 @@ mod tests {
                 supports_streaming: true,
                 supports_tools: false,
                 supports_vision: true,
+                pricing: None,
             }],
             concurrency: Some(5),
             timeout_secs: 60,

@@ -484,6 +484,7 @@
     "accessCredentials": "Access credentials",
     "userRoutes": "My smart routes",
     "merchantPool": "Merchant pool",
+    "sharedPool": "Shared pool",
     "merchantWorkspace": "Merchant workspace",
     "merchantPoolAdmin": "Merchant pool management",
     "organizationApiKeys": "Organization API keys",

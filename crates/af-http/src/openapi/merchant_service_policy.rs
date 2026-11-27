@@ -39,8 +39,9 @@ pub(super) fn document() -> OpenApi {
                         json!({"type":"integer","format":"int64","minimum":1,"maximum":100000000}),
                     ),
                 ),
+                ("pricing", nullable(reference("MerchantModelPricing"))),
             ],
-            &["ratio_micros"],
+            &["ratio_micros", "pricing"],
         ),
     );
     let price_write = vec![
@@ -189,4 +190,17 @@ pub(super) fn document() -> OpenApi {
     }
     serde_json::from_value(json!({"openapi":"3.1.0","info":{"title":"Merchant service policies","version":"1"},"paths":paths,"components":{"schemas":schemas}}))
         .expect("merchant policy OpenAPI contract is static")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn merchant_scheduled_price_accepts_model_pricing() {
+        let value = serde_json::to_value(super::document()).unwrap();
+        assert_eq!(
+            value["components"]["schemas"]["MerchantModelRatio"]["properties"]["pricing"]["anyOf"]
+                [0]["$ref"],
+            "#/components/schemas/MerchantModelPricing"
+        );
+    }
 }

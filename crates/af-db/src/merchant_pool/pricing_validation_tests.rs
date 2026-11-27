@@ -297,3 +297,175 @@ async fn fixed_request_prices_are_available_in_merchant_quotes() -> Result<(), B
     fixture.pool.close().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn merchant_per_call_price_can_publish_without_a_platform_price_card()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let owner = UserId::new(1)?;
+    let mut write = service_write(fixture.shared_pool);
+    write.models[0].model = "merchant-only-paid-model".to_owned();
+    write.models[0].pricing = Some(af_domain::MerchantModelPricing {
+        mode: af_domain::MerchantModelPricingMode::PerCall,
+        input: None,
+        output: None,
+        cache_read: None,
+        cache_write_5m: None,
+        cache_write_1h: None,
+        request_price: Some("0.025".to_owned()),
+        expression: None,
+    });
+    let quote = fixture
+        .repository
+        .quote(
+            owner,
+            MerchantQuoteWrite {
+                pool_id: write.pool_id,
+                default_ratio_micros: write.default_ratio_micros,
+                models: write.models.clone(),
+            },
+        )
+        .await?;
+    assert_eq!(
+        quote.models[0].base_prices.request_price.as_deref(),
+        Some("0.025")
+    );
+    assert_eq!(
+        quote.models[0].prices.request_price.as_deref(),
+        Some("0.0125")
+    );
+
+    let draft = fixture
+        .repository
+        .write_service(owner, None, write, envelope)
+        .await?;
+    let pending = fixture.repository.submit_service(owner, draft.id).await?;
+    let revision = pending.draft.as_ref().expect("pending revision").revision;
+    let published = fixture
+        .repository
+        .review_service(UserId::new(3)?, draft.id, review("approve", Some(revision)))
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "merchant-only-paid-model")
+            .await?
+            .len(),
+        1
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .catalog(owner, fixture.shared_pool, MerchantListQuery::default(),)
+            .await?
+            .items[0]
+            .models[0]
+            .prices
+            .as_ref()
+            .and_then(|prices| prices.request_price.as_deref()),
+        Some("0.0125")
+    );
+    assert!(published.listed);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_expression_price_scales_for_sale_ratio_and_commission()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let mut write = service_write(fixture.shared_pool);
+    write.models[0].model = "merchant-expression-model".to_owned();
+    write.models[0].pricing = Some(af_domain::MerchantModelPricing {
+        mode: af_domain::MerchantModelPricingMode::Expression,
+        input: None,
+        output: None,
+        cache_read: None,
+        cache_write_5m: None,
+        cache_write_1h: None,
+        request_price: None,
+        expression: Some("v1:tier(\"base\", p * 2 + c * 10)".to_owned()),
+    });
+    let quote = fixture
+        .repository
+        .quote(
+            UserId::new(1)?,
+            MerchantQuoteWrite {
+                pool_id: write.pool_id,
+                default_ratio_micros: write.default_ratio_micros,
+                models: write.models.clone(),
+            },
+        )
+        .await?;
+    let sale = quote.models[0]
+        .prices
+        .billing_expression
+        .as_deref()
+        .expect("sale expression");
+    let net = quote.models[0]
+        .net_prices
+        .billing_expression
+        .as_deref()
+        .expect("net expression");
+    let net_ratio = Decimal::new(i64::from(10_000 - quote.effective_commission_bps), 4).normalize();
+    assert_eq!(sale, "v1:(tier(\"base\", p * 2 + c * 10)) * 0.5");
+    assert_eq!(
+        net,
+        format!("v1:((tier(\"base\", p * 2 + c * 10)) * 0.5) * {net_ratio}")
+    );
+    assert_eq!(quote.models[0].prices.billing_mode, "expression");
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn merchant_free_price_can_quote_and_publish_without_a_platform_price_card()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let owner = UserId::new(1)?;
+    let mut write = service_write(fixture.shared_pool);
+    write.models[0].model = "merchant-only-free-model".to_owned();
+    write.models[0].pricing = Some(af_domain::MerchantModelPricing {
+        mode: af_domain::MerchantModelPricingMode::Free,
+        input: None,
+        output: None,
+        cache_read: None,
+        cache_write_5m: None,
+        cache_write_1h: None,
+        request_price: None,
+        expression: None,
+    });
+    let quote = fixture
+        .repository
+        .quote(
+            owner,
+            MerchantQuoteWrite {
+                pool_id: write.pool_id,
+                default_ratio_micros: write.default_ratio_micros,
+                models: write.models.clone(),
+            },
+        )
+        .await?;
+    assert_eq!(quote.models[0].prices.billing_mode, "free");
+    assert_eq!(quote.models[0].prices.input, "0");
+    let draft = fixture
+        .repository
+        .write_service(owner, None, write, envelope)
+        .await?;
+    let pending = fixture.repository.submit_service(owner, draft.id).await?;
+    let revision = pending.draft.as_ref().expect("pending revision").revision;
+    fixture
+        .repository
+        .review_service(UserId::new(3)?, draft.id, review("approve", Some(revision)))
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "merchant-only-free-model")
+            .await?
+            .len(),
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}

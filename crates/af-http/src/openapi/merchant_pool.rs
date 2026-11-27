@@ -117,12 +117,45 @@ pub(super) fn document() -> OpenApi {
     model_write.extend([
         ("upstream_model", string()),
         ("ratio_micros", nullable(integer())),
+        ("pricing", nullable(reference("MerchantModelPricing"))),
     ]);
     schemas.insert(
         "MerchantModelWrite".to_owned(),
         object(
             &model_write,
-            &["context_window", "max_output_tokens", "ratio_micros"],
+            &[
+                "context_window",
+                "max_output_tokens",
+                "ratio_micros",
+                "pricing",
+            ],
+        ),
+    );
+    schemas.insert(
+        "MerchantModelPricing".to_owned(),
+        object(
+            &[
+                (
+                    "mode",
+                    enumeration(&["platform", "per_token", "per_call", "free", "expression"]),
+                ),
+                ("input", nullable(string())),
+                ("output", nullable(string())),
+                ("cache_read", nullable(string())),
+                ("cache_write_5m", nullable(string())),
+                ("cache_write_1h", nullable(string())),
+                ("request_price", nullable(string())),
+                ("expression", nullable(string())),
+            ],
+            &[
+                "input",
+                "output",
+                "cache_read",
+                "cache_write_5m",
+                "cache_write_1h",
+                "request_price",
+                "expression",
+            ],
         ),
     );
     schemas.insert(
@@ -133,7 +166,7 @@ pub(super) fn document() -> OpenApi {
                 ("unit", string()),
                 (
                     "billing_mode",
-                    enumeration(&["token", "free", "video", "per_call"]),
+                    enumeration(&["token", "free", "video", "per_call", "expression"]),
                 ),
                 (
                     "video_per_second",
@@ -152,6 +185,7 @@ pub(super) fn document() -> OpenApi {
                 ("cache_write_5m", string()),
                 ("cache_write_1h", string()),
                 ("request_price", nullable(string())),
+                ("billing_expression", nullable(string())),
                 ("version", integer()),
             ],
             &[],
@@ -321,6 +355,7 @@ pub(super) fn document() -> OpenApi {
     let mut service_write = revision_fields.clone();
     service_write.extend([
         ("pool_id", integer()),
+        ("listed", boolean()),
         (
             "api_key",
             nullable(json!({"type":"string","writeOnly":true,"maxLength":8192})),
@@ -328,7 +363,7 @@ pub(super) fn document() -> OpenApi {
     ]);
     schemas.insert(
         "MerchantServiceWriteRequest".to_owned(),
-        object(&service_write, &["api_key", "concurrency"]),
+        object(&service_write, &["api_key", "concurrency", "listed"]),
     );
     let mut revision = revision_fields;
     revision.extend([
@@ -364,6 +399,7 @@ pub(super) fn document() -> OpenApi {
                         "rejected",
                     ]),
                 ),
+                ("listed", boolean()),
                 ("published", nullable(reference("MerchantRevision"))),
                 ("draft", nullable(reference("MerchantRevision"))),
                 ("active_price", nullable(reference("MerchantServicePrice"))),
@@ -419,6 +455,10 @@ pub(super) fn document() -> OpenApi {
     schemas.insert(
         "MerchantPauseRequest".to_owned(),
         object(&[("paused", boolean())], &[]),
+    );
+    schemas.insert(
+        "MerchantServiceListingRequest".to_owned(),
+        object(&[("listed", boolean())], &[]),
     );
     schemas.insert(
         "MerchantKeyRotationRequest".to_owned(),
@@ -559,6 +599,22 @@ pub(super) fn document() -> OpenApi {
             "/api/merchant/services/{id}",
             "updateMerchantService",
             Some("MerchantServiceWriteRequest"),
+            "MerchantOwnedService",
+            200,
+        ),
+        (
+            "delete",
+            "/api/merchant/services/{id}",
+            "deleteMerchantService",
+            None,
+            "",
+            204,
+        ),
+        (
+            "put",
+            "/api/merchant/services/{id}/listing",
+            "setMerchantServiceListing",
+            Some("MerchantServiceListingRequest"),
             "MerchantOwnedService",
             200,
         ),
@@ -819,6 +875,7 @@ mod tests {
         for (path, operation) in [
             ("/api/admin/merchant-pools/{id}", "deleteAdminMerchantPool"),
             ("/api/admin/merchants/{id}", "deleteAdminMerchant"),
+            ("/api/merchant/services/{id}", "deleteMerchantService"),
         ] {
             let delete = &value["paths"][path]["delete"];
             assert_eq!(delete["operationId"], operation);
@@ -827,6 +884,30 @@ mod tests {
             assert!(!delete["responses"]["403"].is_null());
             assert!(!delete["responses"]["409"].is_null());
         }
+
+        let listing = &value["paths"]["/api/merchant/services/{id}/listing"]["put"];
+        assert_eq!(listing["operationId"], "setMerchantServiceListing");
+        assert_eq!(
+            listing["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/MerchantServiceListingRequest"
+        );
+        assert_eq!(
+            value["components"]["schemas"]["MerchantServiceWriteRequest"]["properties"]["listed"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            value["components"]["schemas"]["MerchantOwnedService"]["properties"]["listed"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            value["components"]["schemas"]["MerchantModelPricing"]["properties"]["mode"]["enum"],
+            serde_json::json!(["platform", "per_token", "per_call", "free", "expression"])
+        );
+        assert_eq!(
+            value["components"]["schemas"]["MerchantModelPrices"]["properties"]["billing_mode"]["enum"]
+                [4],
+            "expression"
+        );
     }
 
     #[test]

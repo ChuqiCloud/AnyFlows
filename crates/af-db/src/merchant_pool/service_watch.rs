@@ -46,7 +46,10 @@ impl MerchantPoolRepository {
                 return Err(MerchantPoolError::NotFound);
             }
             let service = lock_service(&txn, service_id).await?;
-            if service.pool_id != pool_id || service.published_revision_id.is_none() {
+            if service.pool_id != pool_id
+                || !service.listed
+                || service.published_revision_id.is_none()
+            {
                 return Err(MerchantPoolError::NotFound);
             }
 
@@ -213,7 +216,7 @@ async fn watch_snapshot<C: ConnectionTrait>(
 ) -> Result<MerchantServiceWatch, MerchantPoolError> {
     let pool = find_pool(connection, row.pool_id).await?;
     let service = find_service(connection, row.service_id).await?;
-    if service.pool_id != pool.id {
+    if service.pool_id != pool.id || !service.listed {
         return Err(MerchantPoolError::NotFound);
     }
     let merchant = profiles::Entity::find_by_id(service.merchant_id)
@@ -254,6 +257,7 @@ pub(super) async fn record_service_event(
         "service_restored",
     ];
     if service.deleted_at.is_some()
+        || !service.listed
         || service.published_revision_id.is_none()
         || !EVENT_KINDS.contains(&event_kind)
         || transition_key.is_empty()
