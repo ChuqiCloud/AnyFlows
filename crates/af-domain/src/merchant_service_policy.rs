@@ -1,5 +1,5 @@
 //! Supply pricing schedules never modify reviewed upstream configuration.
-use crate::{MerchantPoolError, validate_merchant_text};
+use crate::{MerchantModelPricing, MerchantPoolError, validate_merchant_text};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct MerchantModelRatio {
     pub model: String,
     pub ratio_micros: Option<i64>,
+    /// 价格计划中可选的商户自定义价格。为空时保留当前定义。
+    #[serde(default)]
+    pub pricing: Option<MerchantModelPricing>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -71,6 +74,10 @@ impl MerchantServicePriceWrite {
                 || model
                     .ratio_micros
                     .is_some_and(|ratio| !(1..=100_000_000).contains(&ratio))
+                || model
+                    .pricing
+                    .as_ref()
+                    .is_some_and(|pricing| pricing.validate().is_err())
         }) {
             return Err(MerchantPoolError::InvalidInput);
         }

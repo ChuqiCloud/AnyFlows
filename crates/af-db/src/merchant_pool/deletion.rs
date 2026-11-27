@@ -3,11 +3,28 @@ use super::*;
 use crate::ability_write::delete_channel_abilities;
 use crate::entity::{
     async_task_submission_claims, async_tasks, channel_groups, channel_models,
-    merchant_maintenance, merchant_service_prices,
+    merchant_maintenance, merchant_service_prices, merchant_service_watches,
 };
 use sea_orm::sea_query::{Alias, Query};
 
 impl MerchantPoolRepository {
+    /// Retire one merchant-owned service after all in-flight commercial work has settled.
+    /// The service row, revisions, channel and credentials remain as history tombstones.
+    pub async fn delete_service(&self, actor: UserId, id: i64) -> Result<(), MerchantPoolError> {
+        self.bounded(async {
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            let service = super::policies::lock_scoped_service(&txn, Some(actor), id).await?;
+            let now = DatabaseTimestamp::now_utc();
+            ensure_no_active_billing(&txn, "service_id", id).await?;
+            ensure_no_active_tasks(&txn, None, None, Some(id)).await?;
+            retire_service(&txn, service.id, now).await?;
+            audit_control(&txn, actor, "service.delete", id, None, None).await?;
+            txn.commit().await.map_err(internal)?;
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn delete_pool(&self, actor: UserId, id: i64) -> Result<(), MerchantPoolError> {
         self.bounded(async {
             let txn = self.pool.connection().begin().await.map_err(internal)?;
@@ -34,7 +51,7 @@ impl MerchantPoolRepository {
                 return Ok(());
             }
             ensure_no_active_billing(&txn, "pool_id", id).await?;
-            ensure_no_active_tasks(&txn, Some(id), None).await?;
+            ensure_no_active_tasks(&txn, Some(id), None, None).await?;
             let mut selection = services::Entity::find()
                 .filter(services::Column::PoolId.eq(id))
                 .filter(services::Column::DeletedAt.is_null())
@@ -136,7 +153,7 @@ impl MerchantPoolRepository {
                     return Err(MerchantPoolError::InUse);
                 }
             }
-            ensure_no_active_tasks(&txn, None, Some(id)).await?;
+            ensure_no_active_tasks(&txn, None, Some(id), None).await?;
             let mut selection = services::Entity::find()
                 .filter(services::Column::MerchantId.eq(id))
                 .filter(services::Column::DeletedAt.is_null())
@@ -230,6 +247,7 @@ async fn ensure_no_active_tasks(
     txn: &DatabaseTransaction,
     pool: Option<i64>,
     merchant: Option<i64>,
+    service: Option<i64>,
 ) -> Result<(), MerchantPoolError> {
     let mut selection = unresolved_merchant_claims();
     if txn.get_database_backend() != DbBackend::Sqlite {
@@ -249,6 +267,7 @@ async fn ensure_no_active_tasks(
         .map_err(internal)?;
         if pool.is_some_and(|id| terms.pool_id() != id)
             || merchant.is_some_and(|id| terms.merchant_id() != id)
+            || service.is_some_and(|id| terms.service_id() != id)
         {
             continue;
         }
@@ -281,6 +300,9 @@ async fn ensure_no_active_tasks(
     }
     if let Some(id) = merchant {
         services_query = services_query.filter(services::Column::MerchantId.eq(id));
+    }
+    if let Some(id) = service {
+        services_query = services_query.filter(services::Column::Id.eq(id));
     }
     if txn.get_database_backend() != DbBackend::Sqlite {
         services_query = services_query.lock(LockType::Update);
@@ -363,6 +385,7 @@ async fn retire_service(
     let mut service = lock_service(txn, id).await?.into_active_model();
     service.deleted_at = Set(Some(now));
     service.status = Set("suspended".to_owned());
+    service.listed = Set(false);
     service.platform_suspended = Set(true);
     service.updated_at = Set(now);
     service.update(txn).await.map_err(internal)?;
@@ -431,6 +454,17 @@ async fn retire_service(
         .filter(merchant_maintenance::Column::ServiceId.eq(id))
         .col_expr(merchant_maintenance::Column::Cancelled, Expr::value(true))
         .col_expr(merchant_maintenance::Column::UpdatedAt, Expr::value(now))
+        .exec(txn)
+        .await
+        .map_err(internal)?;
+    merchant_service_watches::Entity::update_many()
+        .filter(merchant_service_watches::Column::ServiceId.eq(id))
+        .filter(merchant_service_watches::Column::Active.eq(true))
+        .col_expr(merchant_service_watches::Column::Active, Expr::value(false))
+        .col_expr(
+            merchant_service_watches::Column::UpdatedAt,
+            Expr::value(now),
+        )
         .exec(txn)
         .await
         .map_err(internal)?;

@@ -212,41 +212,19 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                     } else {
                         None
                     };
-                let estimated = if let Some(prices) = model.and_then(|m| m.prices.as_ref()) {
-                    let parse = |value: &str| {
-                        value
-                            .parse::<Decimal>()
-                            .map_err(|_| UserRouteError::Internal)
-                    };
-                    let input = parse(&prices.input)?
-                        .checked_mul(Decimal::from(request.input_tokens))
-                        .ok_or(UserRouteError::Internal)?;
-                    let output = parse(&prices.output)?
-                        .checked_mul(Decimal::from(request.output_tokens))
-                        .ok_or(UserRouteError::Internal)?;
-                    let mut usd = input
-                        .checked_add(output)
-                        .and_then(|n| n.checked_div(Decimal::from(1_000_000)))
-                        .ok_or(UserRouteError::Internal)?;
-                    if let Some(rates) = &prices.video_per_second {
-                        let rate = match request.resolution.as_deref().unwrap_or("480p") {
-                            "480p" => Some(rates.p480.as_str()),
-                            "720p" => Some(rates.p720.as_str()),
-                            _ => rates.p1080.as_deref(),
-                        }
-                        .ok_or(UserRouteError::InvalidInput)?;
-                        usd = parse(rate)?
-                            .checked_mul(Decimal::from(request.duration_seconds.unwrap_or(8)))
-                            .ok_or(UserRouteError::Internal)?;
-                    }
-                    Some(
-                        af_billing::quota_math::quota_from_usd(usd)
-                            .map_err(|_| UserRouteError::Internal)?
-                            .units(),
-                    )
-                } else {
-                    None
-                };
+                let estimated = model
+                    .and_then(|m| m.prices.as_ref())
+                    .map(|prices| {
+                        estimate_merchant_price(
+                            prices,
+                            request.input_tokens,
+                            request.output_tokens,
+                            request.duration_seconds,
+                            request.resolution.as_deref(),
+                        )
+                    })
+                    .transpose()?;
+                let estimated = estimated.flatten();
                 rows.push((
                     member.map_or(i32::MAX, |m| m.priority),
                     member.map_or(1, |m| m.weight),
@@ -464,5 +442,117 @@ impl MerchantRouteService for DatabaseMerchantRouteService {
                 )
                 .await
         })
+    }
+}
+
+fn estimate_merchant_price(
+    prices: &af_domain::MerchantModelPrices,
+    input_tokens: i64,
+    output_tokens: i64,
+    duration_seconds: Option<u8>,
+    resolution: Option<&str>,
+) -> Result<Option<i64>, UserRouteError> {
+    let parse = |value: &str| {
+        value
+            .parse::<Decimal>()
+            .map_err(|_| UserRouteError::Internal)
+    };
+    let usd = match prices.billing_mode.as_str() {
+        "free" => Decimal::ZERO,
+        "per_call" => parse(
+            prices
+                .request_price
+                .as_deref()
+                .ok_or(UserRouteError::Internal)?,
+        )?,
+        "expression" => {
+            let definition = af_billing::BillingExpressionDefinition::new(
+                prices
+                    .billing_expression
+                    .clone()
+                    .ok_or(UserRouteError::Internal)?,
+            )
+            .map_err(|_| UserRouteError::Internal)?;
+            let expression = definition
+                .compile(af_billing::PricingRatios::new(
+                    af_billing::PricingRatio::ONE,
+                    af_billing::PricingRatio::ONE,
+                    af_billing::PricingRatio::ONE,
+                ))
+                .map_err(|_| UserRouteError::Internal)?;
+            let usage = af_billing::BillingExpressionUsage::new(
+                input_tokens,
+                output_tokens,
+                0,
+                0,
+                0,
+                af_billing::BillingExpressionUsageSemantics::Inclusive,
+            )
+            .map_err(|_| UserRouteError::InvalidInput)?;
+            return Ok(Some(
+                expression
+                    .evaluate_prepared_usage(&usage)
+                    .map_err(|_| UserRouteError::Internal)?
+                    .quota()
+                    .units(),
+            ));
+        }
+        _ => {
+            let input = parse(&prices.input)?
+                .checked_mul(Decimal::from(input_tokens))
+                .ok_or(UserRouteError::Internal)?;
+            let output = parse(&prices.output)?
+                .checked_mul(Decimal::from(output_tokens))
+                .ok_or(UserRouteError::Internal)?;
+            let mut total = input
+                .checked_add(output)
+                .and_then(|value| value.checked_div(Decimal::from(1_000_000)))
+                .ok_or(UserRouteError::Internal)?;
+            if let Some(rates) = &prices.video_per_second {
+                let rate = match resolution.unwrap_or("480p") {
+                    "480p" => Some(rates.p480.as_str()),
+                    "720p" => Some(rates.p720.as_str()),
+                    _ => rates.p1080.as_deref(),
+                }
+                .ok_or(UserRouteError::InvalidInput)?;
+                total = parse(rate)?
+                    .checked_mul(Decimal::from(duration_seconds.unwrap_or(8)))
+                    .ok_or(UserRouteError::Internal)?;
+            }
+            total
+        }
+    };
+    Ok(Some(
+        af_billing::quota_math::quota_from_usd(usd)
+            .map_err(|_| UserRouteError::Internal)?
+            .units(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::estimate_merchant_price;
+    use af_domain::MerchantModelPrices;
+
+    #[test]
+    fn route_preview_uses_the_already_scaled_expression_price() {
+        let prices = MerchantModelPrices {
+            currency: "USD".to_owned(),
+            unit: "expression".to_owned(),
+            billing_mode: "expression".to_owned(),
+            video_per_second: None,
+            input: "0".to_owned(),
+            output: "0".to_owned(),
+            cache_read: "0".to_owned(),
+            cache_write_5m: "0".to_owned(),
+            cache_write_1h: "0".to_owned(),
+            request_price: None,
+            billing_expression: Some("v1:(tier(\"base\", p * 2)) * 0.5".to_owned()),
+            version: 1,
+        };
+
+        let estimate = estimate_merchant_price(&prices, 1_000_000, 0, None, None).unwrap();
+
+        assert_eq!(estimate, Some(500_000));
     }
 }

@@ -78,6 +78,13 @@ pub trait MerchantPoolService: Send + Sync {
         id: i64,
         paused: bool,
     ) -> MerchantFuture<'_, MerchantOwnedService>;
+    fn set_service_listing(
+        &self,
+        principal: SessionPrincipal,
+        id: i64,
+        listed: bool,
+    ) -> MerchantFuture<'_, MerchantOwnedService>;
+    fn delete_service(&self, principal: SessionPrincipal, id: i64) -> MerchantFuture<'_, ()>;
     fn rotate_service_key(
         &self,
         principal: SessionPrincipal,
@@ -274,7 +281,10 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
         p: SessionPrincipal,
         write: af_domain::MerchantQuoteWrite,
     ) -> MerchantFuture<'_, af_domain::MerchantQuote> {
-        Box::pin(async move { self.repository.quote(p.user_id(), write).await })
+        Box::pin(async move {
+            validate_merchant_pricing_models(&write.models)?;
+            self.repository.quote(p.user_id(), write).await
+        })
     }
     fn apply(
         &self,
@@ -308,6 +318,7 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
     ) -> MerchantFuture<'_, MerchantOwnedService> {
         Box::pin(async move {
             write.validate()?;
+            validate_merchant_pricing_models(&write.models)?;
             let merchant = self
                 .repository
                 .owner_merchant(p.user_id())
@@ -374,6 +385,21 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
         paused: bool,
     ) -> MerchantFuture<'_, MerchantOwnedService> {
         Box::pin(async move { self.repository.pause_service(p.user_id(), id, paused).await })
+    }
+    fn set_service_listing(
+        &self,
+        p: SessionPrincipal,
+        id: i64,
+        listed: bool,
+    ) -> MerchantFuture<'_, MerchantOwnedService> {
+        Box::pin(async move {
+            self.repository
+                .set_service_listing(p.user_id(), id, listed)
+                .await
+        })
+    }
+    fn delete_service(&self, p: SessionPrincipal, id: i64) -> MerchantFuture<'_, ()> {
+        Box::pin(async move { self.repository.delete_service(p.user_id(), id).await })
     }
     fn rotate_service_key(
         &self,
@@ -495,6 +521,7 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
                     .as_ref()
                     .or(service.published.as_ref())
                     .ok_or(MerchantPoolError::Conflict)?;
+                validate_merchant_pricing_models(&revision.models)?;
                 self.validate_endpoint(&revision.base_url).await?;
             }
             self.repository
@@ -559,6 +586,27 @@ impl MerchantPoolService for DatabaseMerchantPoolService {
                 .await
         })
     }
+}
+
+fn validate_merchant_pricing_models(
+    models: &[af_domain::MerchantModelWrite],
+) -> Result<(), MerchantPoolError> {
+    for model in models {
+        let Some(pricing) = model.pricing.as_ref() else {
+            continue;
+        };
+        pricing.validate()?;
+        if pricing.mode == af_domain::MerchantModelPricingMode::Expression {
+            af_billing::BillingExpressionDefinition::new(
+                pricing
+                    .expression
+                    .clone()
+                    .ok_or(MerchantPoolError::InvalidInput)?,
+            )
+            .map_err(|_| MerchantPoolError::InvalidInput)?;
+        }
+    }
+    Ok(())
 }
 
 fn admin(principal: SessionPrincipal) -> Result<(), MerchantPoolError> {

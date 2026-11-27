@@ -512,6 +512,7 @@ async fn service_snapshot<C: ConnectionTrait>(
         name: row.name,
         description: row.description,
         status: row.status,
+        listed: row.listed,
         published: published.map(revision_snapshot).transpose()?,
         draft: draft.map(revision_snapshot).transpose()?,
         active_price: policies::active_price(connection, row.id, row.published_revision_id)

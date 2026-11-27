@@ -1,6 +1,10 @@
 use super::*;
 use af_db::{MerchantAttemptWrite, MerchantRouteMember};
-use af_domain::{ChannelId, MerchantBillingSnapshot, MerchantRuntimeCandidate};
+use af_domain::{
+    ChannelId, MerchantBillingSnapshot, MerchantModelPricing, MerchantModelPricingMode,
+    MerchantRuntimeCandidate,
+};
+use rust_decimal::Decimal;
 
 pub(crate) struct MerchantVideoCandidate {
     pub(crate) offer: MerchantRuntimeCandidate,
@@ -282,12 +286,26 @@ impl UserRouteRuntime {
             {
                 continue;
             }
-            let snapshot = pricing
-                .capture_for_request_at(&plan.model, group_id, group_id, None, protocol, time)
-                .await
-                .map_err(|_| AfError::Internal)?
-                .with_merchant_sales_ratio(offer.sales_ratio_micros)
-                .map_err(|_| AfError::ModelNotAllowed)?;
+            let snapshot = if let Some(override_price) = offer
+                .model
+                .pricing
+                .as_ref()
+                .filter(|pricing| pricing.mode != MerchantModelPricingMode::Platform)
+            {
+                af_billing::RequestPricingSnapshot::from_merchant_override(
+                    u64::try_from(offer.price_version).map_err(|_| AfError::Internal)?,
+                    merchant_price_override(override_price)?,
+                    offer.sales_ratio_micros,
+                )
+                .map_err(|_| AfError::ModelNotAllowed)?
+            } else {
+                pricing
+                    .capture_for_request_at(&plan.model, group_id, group_id, None, protocol, time)
+                    .await
+                    .map_err(|_| AfError::Internal)?
+                    .with_merchant_sales_ratio(offer.sales_ratio_micros)
+                    .map_err(|_| AfError::ModelNotAllowed)?
+            };
             if !price_ratio_allowed(&snapshot, plan.route.max_price_ratio_micros)? {
                 continue;
             }
@@ -503,5 +521,40 @@ impl UserRouteRuntime {
         {
             tracing::warn!(target:"af_server::merchant_pool",error_kind="merchant_feedback_unavailable","商户调用统计暂不可用");
         }
+    }
+}
+
+fn merchant_price_override(
+    pricing: &MerchantModelPricing,
+) -> Result<af_billing::MerchantPriceOverride, AfError> {
+    let decimal = |value: Option<&String>| -> Result<Decimal, AfError> {
+        value
+            .map(|value| value.parse::<Decimal>())
+            .transpose()
+            .map_err(|_| AfError::ModelNotAllowed)
+            .map(|value| value.unwrap_or(Decimal::ZERO))
+    };
+    match pricing.mode {
+        MerchantModelPricingMode::Platform => Err(AfError::ModelNotAllowed),
+        MerchantModelPricingMode::Free => Ok(af_billing::MerchantPriceOverride::Free),
+        MerchantModelPricingMode::PerCall => Ok(af_billing::MerchantPriceOverride::PerCall(
+            decimal(pricing.request_price.as_ref())?,
+        )),
+        MerchantModelPricingMode::PerToken => Ok(af_billing::MerchantPriceOverride::PerToken(
+            af_billing::TokenPrices::new(
+                decimal(pricing.input.as_ref())?,
+                decimal(pricing.output.as_ref())?,
+                decimal(pricing.cache_read.as_ref())?,
+                decimal(pricing.cache_write_5m.as_ref())?,
+                decimal(pricing.cache_write_1h.as_ref())?,
+            )
+            .map_err(|_| AfError::ModelNotAllowed)?,
+        )),
+        MerchantModelPricingMode::Expression => Ok(af_billing::MerchantPriceOverride::Expression(
+            af_billing::BillingExpressionDefinition::new(
+                pricing.expression.clone().ok_or(AfError::ModelNotAllowed)?,
+            )
+            .map_err(|_| AfError::ModelNotAllowed)?,
+        )),
     }
 }

@@ -75,6 +75,135 @@ pub struct MerchantPoolWrite {
     pub settlement_delay_secs: u32,
 }
 
+/// 商户模型自己的价格定义。缺省时沿用平台模型目录价格并应用商户倍率。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MerchantModelPricing {
+    pub mode: MerchantModelPricingMode,
+    #[serde(default)]
+    pub input: Option<String>,
+    #[serde(default)]
+    pub output: Option<String>,
+    #[serde(default)]
+    pub cache_read: Option<String>,
+    #[serde(default)]
+    pub cache_write_5m: Option<String>,
+    #[serde(default)]
+    pub cache_write_1h: Option<String>,
+    #[serde(default)]
+    pub request_price: Option<String>,
+    #[serde(default)]
+    pub expression: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MerchantModelPricingMode {
+    /// 明确沿用平台价格目录。
+    Platform,
+    /// 五类 Token 单价，单位为美元/百万 Token。
+    PerToken,
+    /// 固定美元/请求价格。
+    PerCall,
+    /// 显式免费。
+    Free,
+    /// 使用受限计费表达式。
+    Expression,
+}
+
+impl MerchantModelPricing {
+    pub fn validate(&self) -> Result<(), MerchantPoolError> {
+        let values = [
+            self.input.as_deref(),
+            self.output.as_deref(),
+            self.cache_read.as_deref(),
+            self.cache_write_5m.as_deref(),
+            self.cache_write_1h.as_deref(),
+        ];
+        if values
+            .into_iter()
+            .flatten()
+            .any(|value| !valid_pricing_decimal(value))
+            || self
+                .request_price
+                .as_deref()
+                .is_some_and(|value| !valid_pricing_decimal(value))
+            || self
+                .expression
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty() || value.len() > 8192)
+        {
+            return Err(MerchantPoolError::InvalidInput);
+        }
+        match self.mode {
+            MerchantModelPricingMode::Platform => {
+                if values.into_iter().flatten().next().is_some()
+                    || self.request_price.is_some()
+                    || self.expression.is_some()
+                {
+                    return Err(MerchantPoolError::InvalidInput);
+                }
+            }
+            MerchantModelPricingMode::PerToken => {
+                if self.request_price.is_some() || self.expression.is_some() {
+                    return Err(MerchantPoolError::InvalidInput);
+                }
+            }
+            MerchantModelPricingMode::PerCall => {
+                if self
+                    .request_price
+                    .as_deref()
+                    .and_then(|value| value.parse::<rust_decimal::Decimal>().ok())
+                    .is_none_or(|value| value <= rust_decimal::Decimal::ZERO)
+                    || values.into_iter().flatten().next().is_some()
+                    || self.expression.is_some()
+                {
+                    return Err(MerchantPoolError::InvalidInput);
+                }
+            }
+            MerchantModelPricingMode::Free => {
+                if values.into_iter().flatten().any(|value| {
+                    value
+                        .parse::<rust_decimal::Decimal>()
+                        .is_ok_and(|price| !price.is_zero())
+                }) || self.request_price.is_some()
+                    || self.expression.is_some()
+                {
+                    return Err(MerchantPoolError::InvalidInput);
+                }
+            }
+            MerchantModelPricingMode::Expression => {
+                if values.into_iter().flatten().any(|value| {
+                    value
+                        .parse::<rust_decimal::Decimal>()
+                        .is_ok_and(|price| !price.is_zero())
+                }) || self.request_price.is_some()
+                    || self.expression.as_deref().is_none_or(str::is_empty)
+                {
+                    return Err(MerchantPoolError::InvalidInput);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn valid_pricing_decimal(value: &str) -> bool {
+    let Ok(price) = value.parse::<rust_decimal::Decimal>() else {
+        return false;
+    };
+    if price < rust_decimal::Decimal::ZERO || price.scale() > 28 {
+        return false;
+    }
+    let significant = price
+        .normalize()
+        .mantissa()
+        .unsigned_abs()
+        .to_string()
+        .len();
+    significant.saturating_sub(price.normalize().scale() as usize) <= 10
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MerchantModelWrite {
@@ -86,6 +215,9 @@ pub struct MerchantModelWrite {
     pub supports_streaming: bool,
     pub supports_tools: bool,
     pub supports_vision: bool,
+    /// 空值保持历史行为，使用平台价格目录。
+    #[serde(default)]
+    pub pricing: Option<MerchantModelPricing>,
 }
 
 /// Only this write-only command accepts a key. Do not derive Debug/Serialize.
@@ -95,6 +227,9 @@ pub struct MerchantServiceWrite {
     pub pool_id: i64,
     pub name: String,
     pub description: String,
+    /// Create defaults to listed. Omitted updates preserve the current setting.
+    #[serde(default)]
+    pub listed: Option<bool>,
     pub base_url: String,
     pub protocol: String,
     pub api_key: Option<String>,
@@ -131,12 +266,19 @@ pub struct MerchantOwnedService {
     pub name: String,
     pub description: String,
     pub status: String,
+    pub listed: bool,
     pub published: Option<MerchantRevision>,
     pub draft: Option<MerchantRevision>,
     pub active_price: Option<crate::MerchantServicePrice>,
     pub maintenance: Vec<crate::MerchantMaintenance>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MerchantServiceListingWrite {
+    pub listed: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -151,6 +293,8 @@ pub struct MerchantModelPrices {
     pub cache_write_5m: String,
     pub cache_write_1h: String,
     pub request_price: Option<String>,
+    #[serde(default)]
+    pub billing_expression: Option<String>,
     pub version: i64,
 }
 
@@ -364,6 +508,11 @@ impl MerchantServiceWrite {
                 || model.model.starts_with("grok-imagine-video-1.5-");
             if (self.protocol == "xai_video") != video
                 || (video && model.upstream_model != model.model)
+                || (video
+                    && model
+                        .pricing
+                        .as_ref()
+                        .is_some_and(|pricing| pricing.mode != MerchantModelPricingMode::Platform))
             {
                 return Err(MerchantPoolError::InvalidInput);
             }
@@ -380,6 +529,10 @@ impl MerchantServiceWrite {
                 || (!matches!(self.protocol.as_str(), "openai_chat" | "openai_responses")
                     && (model.supports_streaming || model.supports_tools))
                 || matches!((model.context_window,model.max_output_tokens),(Some(c),Some(o)) if o > c)
+                || model
+                    .pricing
+                    .as_ref()
+                    .is_some_and(|pricing| pricing.validate().is_err())
             {
                 return Err(MerchantPoolError::InvalidInput);
             }

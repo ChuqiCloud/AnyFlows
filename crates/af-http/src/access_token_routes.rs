@@ -615,6 +615,7 @@ fn user_scopes(method: &str, path: &str) -> &'static [&'static str] {
         | "/api/merchant/apply"
         | "/api/merchant/available-pools"
         | "/api/merchant/services/{id}/pause"
+        | "/api/merchant/services/{id}/listing"
         | "/api/merchant/services/{id}/submit"
         | "/api/merchant/services/{id}/maintenance"
         | "/api/merchant/services/{id}/maintenance/{notice}"
@@ -742,6 +743,18 @@ fn scope_label(scope: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merchant_service_listing_and_delete_require_merchant_write_scope() {
+        for (method, path) in [
+            ("PUT", "/api/merchant/services/{id}/listing"),
+            ("DELETE", "/api/merchant/services/{id}"),
+        ] {
+            let route = policy(method, path).expect("merchant service route policy");
+            assert_eq!(route.required_scopes, ["merchant:write"]);
+            assert!(!route.admin_only && !route.session_only);
+        }
+    }
 
     #[test]
     fn grants_are_exact_operations_and_cannot_cross_authentication_domains() {

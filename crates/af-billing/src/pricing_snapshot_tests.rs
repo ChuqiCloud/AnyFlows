@@ -9,10 +9,10 @@ use rust_decimal::Decimal;
 use crate::{
     BillingExpressionDefinition, BillingMode, CachedRequestPricingSnapshotSource,
     GroupModelRatioSourceRecord, GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog,
-    GroupPricingSourceFuture, GroupPricingSourceRecord, ModelPriceCache, ModelPriceMode,
-    ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio,
-    PricingRatios, PricingResolver, RatioPricingResolver, RequestPricingSnapshotError,
-    RequestPricingSnapshotSource, TokenPrices,
+    GroupPricingSourceFuture, GroupPricingSourceRecord, MerchantPriceOverride, ModelPriceCache,
+    ModelPriceMode, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
+    PricingContext, PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver,
+    RequestPricingSnapshot, RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
 };
 
 struct ModelSource;
@@ -441,6 +441,84 @@ async fn expression_snapshot_freezes_ratios_and_executes_through_the_unified_res
         .unwrap();
     assert_eq!(price.quota(), Quota::new(450_000).unwrap());
     assert!(!price.is_free());
+}
+
+#[test]
+fn merchant_price_overrides_apply_the_sales_ratio_to_each_pricing_mode() {
+    let token_snapshot = RequestPricingSnapshot::from_merchant_override(
+        21,
+        MerchantPriceOverride::PerToken(
+            TokenPrices::new(
+                Decimal::new(2, 0),
+                Decimal::new(4, 0),
+                Decimal::new(6, 0),
+                Decimal::new(8, 0),
+                Decimal::new(10, 0),
+            )
+            .unwrap(),
+        ),
+        500_000,
+    )
+    .unwrap();
+    assert_eq!(token_snapshot.model_mode(), ModelPriceMode::PerToken);
+    assert_eq!(
+        token_snapshot
+            .ratio_resolver()
+            .unwrap()
+            .effective_token_prices()
+            .unwrap()
+            .unwrap()
+            .input(),
+        Decimal::ONE
+    );
+    assert_eq!(
+        token_snapshot
+            .resolver()
+            .resolve(&PricingContext::new(&million_input_usage()))
+            .unwrap()
+            .quota(),
+        Quota::new(500_000).unwrap()
+    );
+
+    let call_snapshot = RequestPricingSnapshot::from_merchant_override(
+        22,
+        MerchantPriceOverride::PerCall(Decimal::new(2, 1)),
+        500_000,
+    )
+    .unwrap();
+    assert_eq!(
+        call_snapshot
+            .per_call_resolver()
+            .unwrap()
+            .effective_price_usd()
+            .unwrap(),
+        Decimal::new(1, 1)
+    );
+
+    let free_snapshot =
+        RequestPricingSnapshot::from_merchant_override(23, MerchantPriceOverride::Free, 500_000)
+            .unwrap();
+    let free_price = free_snapshot
+        .resolver()
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(free_snapshot.billing_mode(), BillingMode::Free);
+    assert!(free_price.is_free());
+
+    let expression_snapshot = RequestPricingSnapshot::from_merchant_override(
+        24,
+        MerchantPriceOverride::Expression(
+            BillingExpressionDefinition::new(r#"tier("base", p)"#.to_owned()).unwrap(),
+        ),
+        500_000,
+    )
+    .unwrap();
+    let expression_price = expression_snapshot
+        .resolver()
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(expression_snapshot.model_mode(), ModelPriceMode::Expression);
+    assert_eq!(expression_price.quota(), Quota::new(250_000).unwrap());
 }
 
 #[test]

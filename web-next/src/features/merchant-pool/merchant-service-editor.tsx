@@ -7,12 +7,12 @@ import { MerchantQuotePreview } from './merchant-quote-preview'
 import { MerchantModelPicker } from './merchant-model-picker'
 import { merchantPoolErrorCode } from './merchant-pool-error'
 import { useMerchantAction, useMerchantQuote } from './merchant-pool-api'
-import type { MerchantOwnedService, MerchantPool, MerchantServiceWrite } from './merchant-pool-model'
+import type { MerchantModelPricingMode, MerchantOwnedService, MerchantPool, MerchantServiceWrite } from './merchant-pool-model'
 import { poolRatio, merchantProtocols, merchantTextProtocol } from './merchant-pool-model'
 import { MAX_MERCHANT_MODELS, MAX_MERCHANT_MODEL_TOKENS, merchantModelField, validateMerchantService, validateMerchantServiceModels, type MerchantModelDraft, type MerchantServiceErrors } from './merchant-service-validation'
 import { PoolButton as Button, PoolError, PoolField, PoolSelect } from './merchant-pool-ui'
 
-function blankModel(): MerchantModelDraft { return { rowId: crypto.randomUUID(), model: '', upstream: '', ratio: '', context: '', maxOutput: '', streaming: true, tools: false, vision: false } }
+function blankModel(): MerchantModelDraft { return { rowId: crypto.randomUUID(), model: '', upstream: '', ratio: '', context: '', maxOutput: '', streaming: true, tools: false, vision: false, pricingMode: 'platform', inputPrice: '', outputPrice: '', cacheReadPrice: '', cacheWrite5mPrice: '', cacheWrite1hPrice: '', requestPrice: '', expression: '' } }
 
 export function MerchantServiceEditor({ service, pools, onClose }: { service?: MerchantOwnedService; pools: MerchantPool[]; onClose: () => void }) {
   const { t } = useTranslation()
@@ -20,16 +20,17 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
   const [pool, setPool] = useState(String(service?.pool_id ?? pools[0]?.id ?? ''))
   const [name, setName] = useState(revision?.name ?? service?.name ?? '')
   const [description, setDescription] = useState(revision?.description ?? service?.description ?? '')
+  const [listed, setListed] = useState(service?.listed ?? true)
   const [baseUrl, setBaseUrl] = useState(revision?.base_url ?? '')
   const [protocol, setProtocol] = useState<MerchantServiceWrite['protocol']>(revision?.protocol ?? 'openai_chat')
   const [apiKey, setApiKey] = useState('')
   const [ratio, setRatio] = useState(poolRatio(revision?.default_ratio_micros ?? 1_000_000))
   const [concurrency, setConcurrency] = useState(revision?.concurrency ? String(revision.concurrency) : '')
   const [timeout, setTimeout] = useState(String(revision?.timeout_secs ?? 120))
-  const [models, setModels] = useState<MerchantModelDraft[]>(() => revision?.models.map((model) => ({ rowId: crypto.randomUUID(), model: model.model, upstream: model.upstream_model, ratio: model.ratio_micros === null ? '' : poolRatio(model.ratio_micros), context: model.context_window === null ? '' : String(model.context_window), maxOutput: model.max_output_tokens === null ? '' : String(model.max_output_tokens), streaming: model.supports_streaming, tools: model.supports_tools, vision: model.supports_vision })) ?? [blankModel()])
+  const [models, setModels] = useState<MerchantModelDraft[]>(() => revision?.models.map((model) => ({ rowId: crypto.randomUUID(), model: model.model, upstream: model.upstream_model, ratio: model.ratio_micros === null ? '' : poolRatio(model.ratio_micros), context: model.context_window === null ? '' : String(model.context_window), maxOutput: model.max_output_tokens === null ? '' : String(model.max_output_tokens), streaming: model.supports_streaming, tools: model.supports_tools, vision: model.supports_vision, pricingMode: model.pricing?.mode ?? 'platform', inputPrice: model.pricing?.input ?? '', outputPrice: model.pricing?.output ?? '', cacheReadPrice: model.pricing?.cache_read ?? '', cacheWrite5mPrice: model.pricing?.cache_write_5m ?? '', cacheWrite1hPrice: model.pricing?.cache_write_1h ?? '', requestPrice: model.pricing?.request_price ?? '', expression: model.pricing?.expression ?? '' })) ?? [blankModel()])
   const [errors, setErrors] = useState<MerchantServiceErrors>({})
   const [connectionOptionsOpen, setConnectionOptionsOpen] = useState(Boolean(revision && (revision.default_ratio_micros !== 1_000_000 || revision.concurrency !== null || revision.timeout_secs !== 120)))
-  const [expandedModels, setExpandedModels] = useState(() => models.filter((model) => model.ratio || model.context || model.maxOutput || model.tools || model.vision || (merchantTextProtocol(protocol) && !model.streaming)).map((model) => model.rowId))
+  const [expandedModels, setExpandedModels] = useState(() => models.filter((model) => model.ratio || model.context || model.maxOutput || model.tools || model.vision || model.pricingMode !== 'platform' || (merchantTextProtocol(protocol) && !model.streaming)).map((model) => model.rowId))
   const action = useMerchantAction<MerchantOwnedService>()
   const quote = useMerchantQuote()
   const [quotedFingerprint, setQuotedFingerprint] = useState('')
@@ -54,7 +55,7 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
   const showValidationErrors = (nextErrors: MerchantServiceErrors = {}) => {
     setErrors(nextErrors)
     if (nextErrors.ratio || nextErrors.concurrency || nextErrors.timeout) setConnectionOptionsOpen(true)
-    const invalidModels = models.filter((model) => ['ratio', 'context', 'maxOutput'].some((name) => nextErrors[merchantModelField(model.rowId, name)])).map((model) => model.rowId)
+    const invalidModels = models.filter((model) => ['ratio', 'context', 'maxOutput', 'pricing'].some((name) => nextErrors[merchantModelField(model.rowId, name)])).map((model) => model.rowId)
     if (invalidModels.length > 0) setExpandedModels((current) => [...new Set([...current, ...invalidModels])])
   }
   const previewQuote = async () => {
@@ -67,7 +68,7 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
   const save = async () => {
     if (action.isPending || quote.isPending) return
     const keyRequired = !revision?.has_api_key || baseUrl.trim() !== revision.base_url
-    const result = validateMerchantService({ pool, ratio, models, protocol, pools, name, description, baseUrl, apiKey, concurrency, timeout, keyRequired })
+    const result = validateMerchantService({ pool, ratio, models, protocol, pools, name, description, listed, baseUrl, apiKey, concurrency, timeout, keyRequired })
     showValidationErrors(result.errors)
     if (result.value === undefined) return
     try {
@@ -80,6 +81,7 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
     if (!selected) return
     setProtocol(selected.value)
     if (!merchantTextProtocol(value)) setModels((current) => current.map((model) => ({ ...model, streaming: false, tools: false, vision: false })))
+    if (value === 'xai_video') setModels((current) => current.map((model) => ({ ...model, pricingMode: 'platform' })))
     clearFeedback()
   }
   return <Drawer isOpen placement="right" size="3xl" scrollBehavior="inside" onOpenChange={(open) => { if (!open && !action.isPending) onClose() }}>
@@ -96,6 +98,7 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
           </PoolField>
         </div>
         <PoolField label={t('merchantPool.description')} hint={`${t('merchantPool.market.introHint')} ${t('merchantPool.validation.multilineHint')}`}><Textarea size="sm" aria-label={t('merchantPool.description')} value={description} onValueChange={editText(setDescription)} maxLength={2048} {...inputError('description')} /></PoolField>
+        <Checkbox size="sm" isDisabled={action.isPending} isSelected={listed} onValueChange={setListed}>{t('merchantPool.listService')}</Checkbox>
         <h3 className="border-t border-[var(--hairline)] pt-3 text-sm font-semibold">{t('merchantPool.upstreamConnection')}</h3>
         <PoolField label={t('merchantPool.baseUrl')} hint={t('merchantPool.baseUrlHint')}><Input size="sm" aria-label={t('merchantPool.baseUrl')} type="url" value={baseUrl} onValueChange={editText(setBaseUrl)} autoComplete="off" placeholder="https://api.example.com/v1" {...inputError('baseUrl')} /></PoolField>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -135,6 +138,14 @@ export function MerchantServiceEditor({ service, pools, onClose }: { service?: M
                   <PoolField label={t('merchantPool.contextWindow')}><Input size="sm" aria-label={t('merchantPool.contextWindow')} type="number" min="1" max={MAX_MERCHANT_MODEL_TOKENS} value={model.context} onValueChange={(value) => updateModel(model.rowId, { context: value })} {...inputError(field('context'))} /></PoolField>
                   <PoolField label={t('merchantPool.maxOutput')}><Input size="sm" aria-label={t('merchantPool.maxOutput')} type="number" min="1" max={MAX_MERCHANT_MODEL_TOKENS} value={model.maxOutput} onValueChange={(value) => updateModel(model.rowId, { maxOutput: value })} {...inputError(field('maxOutput'))} /></PoolField>
                 </div>
+                {protocol === 'xai_video' ? <p className="mt-3 text-xs leading-5 text-muted-foreground">{t('merchantPool.videoPricingHint')}</p> : <>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <PoolField label={t('merchantPool.modelPricing')} hint={t('merchantPool.priceUnitHint')}><PoolSelect label={t('merchantPool.modelPricing')} allowEmpty={false} value={model.pricingMode} onChange={(value) => updateModel(model.rowId, { pricingMode: value as MerchantModelPricingMode })} options={(['platform', 'per_token', 'per_call', 'free', 'expression'] as const).map((value) => ({ value, label: t(`merchantPool.pricingModes.${value}`) }))} /></PoolField>
+                    {model.pricingMode === 'per_call' ? <PoolField label={t('merchantPool.requestPrice')}><Input size="sm" aria-label={t('merchantPool.requestPrice')} inputMode="decimal" value={model.requestPrice} onValueChange={(value) => updateModel(model.rowId, { requestPrice: value })} placeholder="0.001" /></PoolField> : null}
+                  </div>
+                  {model.pricingMode === 'per_token' ? <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3"><PoolField label={t('merchantPool.inputPrice')}><Input size="sm" aria-label={t('merchantPool.inputPrice')} inputMode="decimal" value={model.inputPrice} onValueChange={(value) => updateModel(model.rowId, { inputPrice: value })} placeholder="0" /></PoolField><PoolField label={t('merchantPool.outputPrice')}><Input size="sm" aria-label={t('merchantPool.outputPrice')} inputMode="decimal" value={model.outputPrice} onValueChange={(value) => updateModel(model.rowId, { outputPrice: value })} placeholder="0" /></PoolField><PoolField label={t('merchantPool.cacheRead')}><Input size="sm" aria-label={t('merchantPool.cacheRead')} inputMode="decimal" value={model.cacheReadPrice} onValueChange={(value) => updateModel(model.rowId, { cacheReadPrice: value })} placeholder="0" /></PoolField><PoolField label={t('merchantPool.cacheWrite5m')}><Input size="sm" aria-label={t('merchantPool.cacheWrite5m')} inputMode="decimal" value={model.cacheWrite5mPrice} onValueChange={(value) => updateModel(model.rowId, { cacheWrite5mPrice: value })} placeholder="0" /></PoolField><PoolField label={t('merchantPool.cacheWrite1h')}><Input size="sm" aria-label={t('merchantPool.cacheWrite1h')} inputMode="decimal" value={model.cacheWrite1hPrice} onValueChange={(value) => updateModel(model.rowId, { cacheWrite1hPrice: value })} placeholder="0" /></PoolField><p className="self-end pb-2 text-[11px] text-muted-foreground">{t('merchantPool.priceUnitHint')}</p></div> : null}
+                  {model.pricingMode === 'expression' ? <PoolField label={t('merchantPool.billingExpression')} hint={t('merchantPool.billingExpressionHint')}><Textarea size="sm" aria-label={t('merchantPool.billingExpression')} value={model.expression} onValueChange={(value) => updateModel(model.rowId, { expression: value })} maxLength={8192} {...inputError(field('pricing'))} /></PoolField> : null}
+                </>}
                 <div className="mt-3 flex flex-wrap gap-4">
                   <Checkbox size="sm" isDisabled={!merchantTextProtocol(protocol)} isSelected={merchantTextProtocol(protocol) && model.streaming} onValueChange={(value) => updateModel(model.rowId, { streaming: value })}>{t('merchantPool.streaming')}</Checkbox>
                   <Checkbox size="sm" isDisabled={!merchantTextProtocol(protocol)} isSelected={merchantTextProtocol(protocol) && model.tools} onValueChange={(value) => updateModel(model.rowId, { tools: value })}>{t('merchantPool.tools')}</Checkbox>

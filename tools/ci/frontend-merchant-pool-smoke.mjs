@@ -887,7 +887,7 @@ try {
   await page.screenshot({ path: resolve(screenshots, 'merchant-catalog-mobile-actions.png'), fullPage: true, animations: 'disabled' })
   await page.setViewportSize({ width: 1280, height: 1000 })
   await page.getByText(label('moreFilters'), { exact: true }).click()
-  await page.getByRole('combobox', { name: label('protocol'), exact: true }).selectOption('xai_video')
+  await page.getByRole('group', { name: label('market.protocols'), exact: true }).getByRole('button', { name: label('market.protocolLabels.xai_video'), exact: true }).click()
   await page.getByRole('textbox', { name: label('model'), exact: true }).fill('grok-imagine-video')
   await page.getByText('480p: ' + label('pricePerSecond').replace('{{value}}', '0.04'), { exact: true }).waitFor()
   await page.getByText(label('ttftNotApplicable'), { exact: true }).waitFor()

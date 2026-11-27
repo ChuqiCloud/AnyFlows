@@ -8,10 +8,12 @@ use af_db::{
     EncryptedCredentialEnvelope, MerchantPoolRepository, MerchantRouteMember, MerchantRouteWrite,
 };
 use af_domain::{
-    ChannelId, MerchantApplication, MerchantModelWrite, MerchantOwnedService, MerchantPoolWrite,
-    MerchantReview, MerchantServiceWrite, TokenId, UserId,
+    ChannelId, MerchantApplication, MerchantModelPricing, MerchantModelPricingMode,
+    MerchantModelWrite, MerchantOwnedService, MerchantPoolWrite, MerchantReview,
+    MerchantServiceWrite, TokenId, UserId,
 };
 use af_protocol::{TokenCount, UsageDetails, UsageSemantics, UsageSource};
+use rust_decimal::Decimal;
 use sea_orm::{ConnectionTrait, Statement};
 use std::sync::Mutex;
 
@@ -171,6 +173,7 @@ fn service_write(pool: i64, ratio: i64) -> MerchantServiceWrite {
         pool_id: pool,
         name: "Merchant service".to_owned(),
         description: "Approved service".to_owned(),
+        listed: None,
         base_url: "https://api.example.com/v1".to_owned(),
         protocol: "openai_chat".to_owned(),
         api_key: Some("fixture-upstream".to_owned()),
@@ -184,6 +187,7 @@ fn service_write(pool: i64, ratio: i64) -> MerchantServiceWrite {
             supports_streaming: true,
             supports_tools: true,
             supports_vision: false,
+            pricing: None,
         }],
         concurrency: Some(5),
         timeout_secs: 60,
@@ -255,6 +259,66 @@ async fn explicit_merchant_never_expands_to_another_merchant_in_same_pool() {
     assert_eq!(
         principal.merchant_billing_snapshot().unwrap().merchant_id(),
         fixture.merchant_a
+    );
+    fixture.database.close().await;
+}
+
+#[tokio::test]
+async fn merchant_custom_price_is_used_by_the_live_route_quote() {
+    let fixture = fixture("merchant-custom-price-route", true, None).await;
+    let owner = UserId::new(1).unwrap();
+    let mut write = service_write(fixture.pool_id, 500_000);
+    write.api_key = Some("fixture-upstream-updated".to_owned());
+    write.models[0].pricing = Some(MerchantModelPricing {
+        mode: MerchantModelPricingMode::PerCall,
+        input: None,
+        output: None,
+        cache_read: None,
+        cache_write_5m: None,
+        cache_write_1h: None,
+        request_price: Some("0.2".to_owned()),
+        expression: None,
+    });
+    let draft = fixture
+        .pools
+        .write_service(owner, Some(fixture.service_a.id), write, |_, _, _, _| {
+            EncryptedCredentialEnvelope::new("merchant-tests", [2; 24], vec![3; 32])
+                .map_err(|_| af_domain::MerchantPoolError::Unavailable)
+        })
+        .await
+        .unwrap();
+    let pending = fixture.pools.submit_service(owner, draft.id).await.unwrap();
+    let revision = pending.draft.as_ref().unwrap().revision;
+    fixture
+        .pools
+        .review_service(
+            UserId::new(3).unwrap(),
+            draft.id,
+            review("approve", Some(revision)),
+        )
+        .await
+        .unwrap();
+
+    let selected = candidates(&fixture).await;
+    assert_eq!(selected.len(), 1);
+    assert_eq!(
+        selected[0]
+            .snapshot
+            .per_call_resolver()
+            .unwrap()
+            .effective_price_usd()
+            .unwrap(),
+        Decimal::new(1, 1)
+    );
+    assert_eq!(
+        selected[0].quoted_quota,
+        selected[0]
+            .snapshot
+            .resolver()
+            .resolve(&af_billing::PricingContext::new(&usage()))
+            .unwrap()
+            .quota()
+            .units()
     );
     fixture.database.close().await;
 }

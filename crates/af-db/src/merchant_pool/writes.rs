@@ -181,6 +181,7 @@ impl MerchantPoolRepository {
     {
         write.validate()?;
         let mut write = write;
+        let requested_listing = write.listed;
         self.bounded(async {
             let txn=self.pool.connection().begin().await.map_err(internal)?;
             lock_owner(&txn,owner).await?;
@@ -206,8 +207,15 @@ impl MerchantPoolRepository {
                 let count=services::Entity::find().filter(services::Column::MerchantId.eq(merchant.id)).filter(services::Column::DeletedAt.is_null()).count(&txn).await.map_err(internal)?;
                 if count>=32 { return Err(MerchantPoolError::LimitReached); }
                 services::ActiveModel{merchant_id:Set(merchant.id),pool_id:Set(write.pool_id),name:Set(write.name.clone()),
-                    description:Set(write.description.clone()),status:Set("draft".to_owned()),published_revision_id:Set(None),pending_revision_id:Set(None),
+                    description:Set(write.description.clone()),status:Set("draft".to_owned()),listed:Set(requested_listing.unwrap_or(true)),published_revision_id:Set(None),pending_revision_id:Set(None),
                     created_at:Set(now),updated_at:Set(now),..Default::default()}.insert(&txn).await.map_err(internal)?
+            };
+            let service = if id.is_some()
+                && let Some(listed) = requested_listing
+            {
+                apply_service_listing(&txn, service, listed, owner, now).await?
+            } else {
+                service
             };
             let previous_id=service.pending_revision_id.or(service.published_revision_id);
             let previous=match previous_id { Some(id)=>Some(load_revision(&txn,id,service.id).await?),None=>None };
@@ -265,6 +273,24 @@ impl MerchantPoolRepository {
             txn.commit().await.map_err(internal)?;
             Ok(result)
         }).await
+    }
+
+    pub async fn set_service_listing(
+        &self,
+        owner: UserId,
+        id: i64,
+        listed: bool,
+    ) -> Result<MerchantOwnedService, MerchantPoolError> {
+        self.bounded(async {
+            let txn = self.pool.connection().begin().await.map_err(internal)?;
+            let service = super::policies::lock_scoped_service(&txn, Some(owner), id).await?;
+            let now = DatabaseTimestamp::now_utc();
+            let service = apply_service_listing(&txn, service, listed, owner, now).await?;
+            let result = service_snapshot(&txn, service).await?;
+            txn.commit().await.map_err(internal)?;
+            Ok(result)
+        })
+        .await
     }
 
     pub async fn submit_service(
@@ -341,7 +367,7 @@ impl MerchantPoolRepository {
             .await?;
             let now = DatabaseTimestamp::now_utc();
             let was_paused = service.merchant_paused;
-            set_channel_enabled(&txn, revision.channel_id, !paused, now).await?;
+            set_channel_enabled(&txn, revision.channel_id, !paused && service.listed, now).await?;
             let mut service = service.into_active_model();
             service.merchant_paused = Set(paused);
             service.status = Set(if paused { "paused" } else { "published" }.to_owned());
@@ -412,7 +438,13 @@ impl MerchantPoolRepository {
                 .col_expr(credentials::Column::UpdatedAt,Expr::value(now))
                 .exec(&txn).with_subscriber(NoSubscriber::default()).await.map_err(internal)?;
             if affected.rows_affected!=1 { return Err(MerchantPoolError::Conflict); }
-            set_channel_enabled(&txn,channel_id.get(),!service.merchant_paused,now).await?;
+            set_channel_enabled(
+                &txn,
+                channel_id.get(),
+                !service.merchant_paused && service.listed,
+                now,
+            )
+            .await?;
             enqueue_scheduler_catalog_change(&txn,SchedulerCatalogSubject::Channel(channel_id),now).await.map_err(internal)?;
             audit_control(&txn,owner,"service.key.rotate",id,None,Some(serde_json::json!({"revision_id":revision.id}))).await?;
             let result=service_snapshot(&txn,service).await?;
@@ -470,7 +502,9 @@ impl MerchantPoolRepository {
                 super::policies::effective_price_terms(&txn, &revision).await?;
             validate_ratios(&pool, default_ratio, &models)?;
             for model in &models {
-                if super::catalog::model_price(
+                if model.pricing.as_ref().is_none_or(|pricing| {
+                    pricing.mode == af_domain::MerchantModelPricingMode::Platform
+                }) && super::catalog::model_price(
                     &txn,
                     &model.model,
                     model.ratio_micros.unwrap_or(default_ratio),
@@ -508,7 +542,7 @@ impl MerchantPoolRepository {
                 ChannelId::new(channel.id).map_err(internal)?,
                 &routing,
                 ChannelAbilityMetadata {
-                    enabled: !service.merchant_paused,
+                    enabled: !service.merchant_paused && service.listed,
                     priority: 0,
                     weight: 1,
                     tag: Some("merchant-pool"),
@@ -517,7 +551,13 @@ impl MerchantPoolRepository {
             )
             .await
             .map_err(internal)?;
-            set_channel_enabled(&txn, channel.id, !service.merchant_paused, now).await?;
+            set_channel_enabled(
+                &txn,
+                channel.id,
+                !service.merchant_paused && service.listed,
+                now,
+            )
+            .await?;
             let merchant_paused = service.merchant_paused;
             let mut active = service.into_active_model();
             active.platform_suspended = Set(false);
@@ -598,12 +638,17 @@ impl MerchantPoolRepository {
                 let (models,default_ratio)=super::policies::effective_price_terms(&txn,&revision).await?;
                 validate_ratios(&pool,default_ratio,&models)?;
                 for model in &models {
-                    if super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(default_ratio)).await?.is_none() { return Err(MerchantPoolError::ModelPriceUnavailable); }
+                    if model
+                        .pricing
+                        .as_ref()
+                        .is_none_or(|pricing| pricing.mode == af_domain::MerchantModelPricingMode::Platform)
+                        && super::catalog::model_price(&txn,&model.model,model.ratio_micros.unwrap_or(default_ratio)).await?.is_none()
+                    { return Err(MerchantPoolError::ModelPriceUnavailable); }
                 }
                 let routing=ValidatedChannelRouting::new(models.into_iter().map(|m|m.model).collect(),vec![GroupId::new(pool.group_id).map_err(internal)?]).map_err(internal)?;
                 let channel=ChannelId::new(revision.channel_id).map_err(internal)?;
-                synchronize_channel_routing(&txn,channel,&routing,ChannelAbilityMetadata{enabled:!service.merchant_paused,priority:0,weight:1,tag:Some("merchant-pool")},now).await.map_err(internal)?;
-                set_channel_enabled(&txn,revision.channel_id,!service.merchant_paused,now).await?;
+                synchronize_channel_routing(&txn,channel,&routing,ChannelAbilityMetadata{enabled:!service.merchant_paused && service.listed,priority:0,weight:1,tag:Some("merchant-pool")},now).await.map_err(internal)?;
+                set_channel_enabled(&txn,revision.channel_id,!service.merchant_paused && service.listed,now).await?;
                 if let Some(previous_id)=service.published_revision_id
                     && previous_id!=revision.id {
                         let previous=load_revision(&txn,previous_id,id).await?;
@@ -692,4 +737,52 @@ async fn set_channel_enabled(
         .await
         .map_err(internal)?;
     Ok(())
+}
+
+async fn apply_service_listing(
+    txn: &DatabaseTransaction,
+    service: services::Model,
+    listed: bool,
+    actor: UserId,
+    now: DatabaseTimestamp,
+) -> Result<services::Model, MerchantPoolError> {
+    if service.listed == listed {
+        return Ok(service);
+    }
+
+    if let Some(revision_id) = service.published_revision_id {
+        let revision = load_revision(txn, revision_id, service.id).await?;
+        if !listed {
+            set_channel_enabled(txn, revision.channel_id, false, now).await?;
+        } else if service.status == "published"
+            && !service.merchant_paused
+            && !service.platform_suspended
+            && revision.status == "published"
+            && find_pool(txn, service.pool_id).await?.enabled
+            && profiles::Entity::find_by_id(service.merchant_id)
+                .filter(profiles::Column::Status.eq("approved"))
+                .filter(profiles::Column::DeletedAt.is_null())
+                .one(txn)
+                .await
+                .map_err(internal)?
+                .is_some()
+        {
+            set_channel_enabled(txn, revision.channel_id, true, now).await?;
+        }
+    }
+
+    let mut active = service.into_active_model();
+    active.listed = Set(listed);
+    active.updated_at = Set(now);
+    let updated = active.update(txn).await.map_err(internal)?;
+    audit_control(
+        txn,
+        actor,
+        "service.listing",
+        updated.id,
+        None,
+        Some(serde_json::json!({"listed": listed})),
+    )
+    .await?;
+    Ok(updated)
 }

@@ -10192,6 +10192,100 @@
         "x-anyflows-pat-scopes": [
           "merchant:write"
         ]
+      },
+      "delete": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "deleteMerchantService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resource deleted; historical records retained"
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
+        ]
       }
     },
     "/api/merchant/services/{id}/key": {
@@ -10305,6 +10399,119 @@
         "x-anyflows-pat-scopes": [
           "merchant:write",
           "merchant_secrets:write"
+        ]
+      }
+    },
+    "/api/merchant/services/{id}/listing": {
+      "put": {
+        "tags": [
+          "商户共享池"
+        ],
+        "operationId": "setMerchantServiceListing",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantServiceListingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Merchant pool operation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantOwnedService"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "personalAccessTokenBearer": []
+          }
+        ],
+        "x-anyflows-pat-scopes": [
+          "merchant:write"
         ]
       }
     },
@@ -51875,16 +52082,28 @@
           "cache_write_5m",
           "cache_write_1h",
           "request_price",
+          "billing_expression",
           "version"
         ],
         "properties": {
+          "billing_expression": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "billing_mode": {
             "type": "string",
             "enum": [
               "token",
               "free",
               "video",
-              "per_call"
+              "per_call",
+              "expression"
             ]
           },
           "cache_read": {
@@ -51959,6 +52178,95 @@
         },
         "additionalProperties": false
       },
+      "MerchantModelPricing": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "cache_read": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cache_write_1h": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cache_write_5m": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expression": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "platform",
+              "per_token",
+              "per_call",
+              "free",
+              "expression"
+            ]
+          },
+          "output": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "MerchantModelRatio": {
         "type": "object",
         "required": [
@@ -51968,6 +52276,16 @@
           "model": {
             "type": "string",
             "maxLength": 255
+          },
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MerchantModelPricing"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "ratio_micros": {
             "anyOf": [
@@ -52020,6 +52338,16 @@
           "model": {
             "type": "string"
           },
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MerchantModelPricing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ratio_micros": {
             "anyOf": [
               {
@@ -52055,6 +52383,7 @@
           "name",
           "description",
           "status",
+          "listed",
           "published",
           "draft",
           "active_price",
@@ -52093,6 +52422,9 @@
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "listed": {
+            "type": "boolean"
           },
           "maintenance": {
             "type": "array",
@@ -53417,6 +53749,18 @@
         },
         "additionalProperties": false
       },
+      "MerchantServiceListingRequest": {
+        "type": "object",
+        "required": [
+          "listed"
+        ],
+        "properties": {
+          "listed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "MerchantServicePrice": {
         "type": "object",
         "required": [
@@ -53798,6 +54142,9 @@
           },
           "description": {
             "type": "string"
+          },
+          "listed": {
+            "type": "boolean"
           },
           "models": {
             "type": "array",

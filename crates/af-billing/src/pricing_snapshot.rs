@@ -4,11 +4,20 @@ use af_domain::{BillingContractPriceSnapshot, GroupId, OrganizationId, PricingWe
 use thiserror::Error;
 
 use crate::{
-    BillingMode, ContractPriceSource, ContractPriceSourceError, GroupPricingCache,
-    GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache, ModelPriceCacheError,
-    ModelPriceMode, PerCallPricingResolver, PricingRatio, PricingRatios, PricingResolver,
-    RatioPricingResolver, TokenPrices,
+    BillingExpressionDefinition, BillingMode, ContractPriceSource, ContractPriceSourceError,
+    GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError, ModelPriceCache,
+    ModelPriceCacheError, ModelPriceMode, PerCallPricingResolver, PricingRatio, PricingRatios,
+    PricingResolver, RatioPricingResolver, TokenPrices,
 };
+
+/// 商户服务可选的独立价格定义。平台价格目录缺失时也能直接完成计费。
+#[derive(Clone)]
+pub enum MerchantPriceOverride {
+    PerToken(TokenPrices),
+    PerCall(rust_decimal::Decimal),
+    Free,
+    Expression(BillingExpressionDefinition),
+}
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
 pub trait RequestPricingSnapshotSource: Send + Sync + 'static {
@@ -94,6 +103,77 @@ pub struct RequestPricingSnapshot {
 }
 
 impl RequestPricingSnapshot {
+    /// 从商户自己的价格定义构造请求快照，只应用商户倍率。
+    pub fn from_merchant_override(
+        model_version: u64,
+        definition: MerchantPriceOverride,
+        ratio_micros: i64,
+    ) -> Result<Self, RequestPricingSnapshotError> {
+        if model_version == 0 || ratio_micros <= 0 {
+            return Err(RequestPricingSnapshotError::MerchantPricingUnavailable);
+        }
+        let ratio = PricingRatio::new(ratio_micros)
+            .map_err(|_| RequestPricingSnapshotError::MerchantPricingUnavailable)?;
+        let ratios = PricingRatios::new(ratio, PricingRatio::ONE, PricingRatio::ONE);
+        let (billing_mode, model_mode, ratio_resolver, per_call_resolver, resolver) =
+            match definition {
+                MerchantPriceOverride::PerToken(prices) => {
+                    let resolver = RatioPricingResolver::metered(prices, ratios);
+                    (
+                        BillingMode::PerToken,
+                        ModelPriceMode::PerToken,
+                        Some(resolver),
+                        None,
+                        Arc::new(resolver) as Arc<dyn PricingResolver>,
+                    )
+                }
+                MerchantPriceOverride::PerCall(price) => {
+                    let resolver = PerCallPricingResolver::new(price, ratios)
+                        .map_err(|_| RequestPricingSnapshotError::MerchantPricingUnavailable)?;
+                    (
+                        BillingMode::PerCall,
+                        ModelPriceMode::PerCall,
+                        None,
+                        Some(resolver),
+                        Arc::new(resolver) as Arc<dyn PricingResolver>,
+                    )
+                }
+                MerchantPriceOverride::Free => (
+                    BillingMode::Free,
+                    ModelPriceMode::Free,
+                    Some(RatioPricingResolver::free()),
+                    None,
+                    Arc::new(RatioPricingResolver::free()) as Arc<dyn PricingResolver>,
+                ),
+                MerchantPriceOverride::Expression(definition) => {
+                    let resolver = definition
+                        .compile(ratios)
+                        .map_err(|_| RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
+                    (
+                        BillingMode::PerToken,
+                        ModelPriceMode::Expression,
+                        None,
+                        None,
+                        Arc::new(crate::expression_pricing::ExpressionPricingResolver::new(
+                            resolver,
+                        )) as Arc<dyn PricingResolver>,
+                    )
+                }
+            };
+        Ok(Self {
+            billing_mode,
+            model_mode,
+            resolver,
+            ratio_resolver,
+            per_call_resolver,
+            model_version,
+            ratios,
+            model_generation: 0,
+            group_generation: 0,
+            contract_price: None,
+        })
+    }
+
     /// Merchant pools sell the platform base price at their published sales ratio.
     /// Group, peak and contract multipliers must never leak into this quote.
     pub fn with_merchant_sales_ratio(

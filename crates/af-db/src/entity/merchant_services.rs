@@ -9,6 +9,7 @@ pub struct Model {
     pub name: String,
     pub description: String,
     pub status: String,
+    pub listed: bool,
     pub merchant_paused: bool,
     pub platform_suspended: bool,
     pub published_revision_id: Option<i64>,

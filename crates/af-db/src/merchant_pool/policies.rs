@@ -61,6 +61,15 @@ impl MerchantPoolRepository {
             if service.published_revision_id != Some(write.expected_revision_id) { return Err(MerchantPoolError::Conflict); }
             let revision = load_revision(&txn, write.expected_revision_id, service.id).await?;
             if revision.status != "published" { return Err(MerchantPoolError::Conflict); }
+            if revision.protocol == "xai_video"
+                && write.model_ratios.iter().any(|item| {
+                    item.pricing.as_ref().is_some_and(|pricing| {
+                        pricing.mode != af_domain::MerchantModelPricingMode::Platform
+                    })
+                })
+            {
+                return Err(MerchantPoolError::InvalidInput);
+            }
             if active_price(&txn, service.id, Some(revision.id)).await?
                 .is_some_and(|price| price.effective_at > write.effective_at) { return Err(MerchantPoolError::Conflict); }
             let mut models = revision_models(&revision)?;
@@ -68,8 +77,12 @@ impl MerchantPoolRepository {
                 return Err(MerchantPoolError::InvalidInput);
             }
             for model in &mut models {
-                model.ratio_micros = write.model_ratios.iter().find(|item| item.model == model.model)
-                    .and_then(|item| item.ratio_micros);
+                if let Some(item) = write.model_ratios.iter().find(|item| item.model == model.model) {
+                    model.ratio_micros = item.ratio_micros;
+                    if let Some(pricing) = &item.pricing {
+                        model.pricing = Some(pricing.clone());
+                    }
+                }
             }
             let pool = find_pool(&txn, service.pool_id).await?;
             validate_price(&txn, &pool, write.default_ratio_micros, &models).await?;
@@ -370,7 +383,7 @@ async fn scoped_service<C: ConnectionTrait>(
     Ok(service)
 }
 
-async fn lock_scoped_service(
+pub(super) async fn lock_scoped_service(
     txn: &DatabaseTransaction,
     owner: Option<UserId>,
     id: i64,
@@ -408,6 +421,7 @@ pub(super) fn price_snapshot(
             .map(|model| MerchantModelRatio {
                 model: model.model,
                 ratio_micros: model.ratio_micros,
+                pricing: model.pricing,
             })
             .collect(),
         status: row.status,
@@ -515,13 +529,17 @@ async fn validate_price<C: ConnectionTrait>(
 ) -> Result<(), MerchantPoolError> {
     super::writes::validate_ratios(pool, default, models)?;
     for model in models {
-        if super::catalog::model_price(
-            connection,
-            &model.model,
-            model.ratio_micros.unwrap_or(default),
-        )
-        .await?
-        .is_none()
+        if model
+            .pricing
+            .as_ref()
+            .is_none_or(|pricing| pricing.mode == af_domain::MerchantModelPricingMode::Platform)
+            && super::catalog::model_price(
+                connection,
+                &model.model,
+                model.ratio_micros.unwrap_or(default),
+            )
+            .await?
+            .is_none()
         {
             return Err(MerchantPoolError::InvalidInput);
         }

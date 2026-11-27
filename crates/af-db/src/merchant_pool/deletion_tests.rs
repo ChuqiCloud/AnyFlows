@@ -465,6 +465,112 @@ async fn accepted_tasks_block_deletion_until_polled_terminal_state() -> Result<(
 }
 
 #[tokio::test]
+async fn unlisted_service_disappears_from_market_and_can_be_listed_again()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    assert!(service.listed);
+    assert_eq!(
+        fixture
+            .repository
+            .catalog(
+                UserId::new(2)?,
+                fixture.shared_pool,
+                MerchantListQuery::default(),
+            )
+            .await?
+            .total,
+        1
+    );
+
+    let unlisted = fixture
+        .repository
+        .set_service_listing(UserId::new(1)?, service.id, false)
+        .await?;
+    assert!(!unlisted.listed);
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .catalog(
+                UserId::new(2)?,
+                fixture.shared_pool,
+                MerchantListQuery::default(),
+            )
+            .await?
+            .total,
+        0
+    );
+    assert!(matches!(
+        fixture
+            .repository
+            .catalog_service(UserId::new(2)?, fixture.shared_pool, service.id)
+            .await,
+        Err(MerchantPoolError::NotFound)
+    ));
+
+    let listed = fixture
+        .repository
+        .set_service_listing(UserId::new(1)?, service.id, true)
+        .await?;
+    assert!(listed.listed);
+    assert_eq!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .len(),
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn deleting_service_keeps_revision_history_and_removes_public_supply()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let service = publish(&fixture).await?;
+    fixture
+        .repository
+        .delete_service(UserId::new(1)?, service.id)
+        .await?;
+
+    assert!(matches!(
+        fixture.repository.get_service(None, service.id).await,
+        Err(MerchantPoolError::NotFound)
+    ));
+    assert!(
+        fixture
+            .repository
+            .published_candidates(fixture.shared_pool, None, "gpt-test")
+            .await?
+            .is_empty()
+    );
+    assert_eq!(
+        revisions::Entity::find()
+            .filter(revisions::Column::ServiceId.eq(service.id))
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    let retired = services::Entity::find_by_id(service.id)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("service tombstone");
+    assert!(retired.deleted_at.is_some());
+    assert!(!retired.listed);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn unattempted_merchant_claim_does_not_keep_unused_supply_alive() -> Result<(), Box<dyn Error>>
 {
     use crate::{

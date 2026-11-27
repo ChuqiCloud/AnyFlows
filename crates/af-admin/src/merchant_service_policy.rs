@@ -85,6 +85,19 @@ impl MerchantServicePolicy for DatabaseMerchantServicePolicy {
         write: MerchantServicePriceWrite,
     ) -> MerchantFuture<'_, MerchantServicePrice> {
         Box::pin(async move {
+            for model in &write.model_ratios {
+                if let Some(pricing) = model.pricing.as_ref()
+                    && pricing.mode == af_domain::MerchantModelPricingMode::Expression
+                {
+                    af_billing::BillingExpressionDefinition::new(
+                        pricing
+                            .expression
+                            .clone()
+                            .ok_or(MerchantPoolError::InvalidInput)?,
+                    )
+                    .map_err(|_| MerchantPoolError::InvalidInput)?;
+                }
+            }
             self.repository
                 .schedule_service_price(
                     scope(principal, administrative)?,

@@ -2137,7 +2137,8 @@ export type MerchantModelOffer = {
     supports_vision: boolean;
 };
 export type MerchantModelPrices = {
-    billing_mode: 'token' | 'free' | 'video' | 'per_call';
+    billing_expression: string | null;
+    billing_mode: 'token' | 'free' | 'video' | 'per_call' | 'expression';
     cache_read: string;
     cache_write_1h: string;
     cache_write_5m: string;
@@ -2153,14 +2154,26 @@ export type MerchantModelPrices = {
         p720: string;
     } | null;
 };
+export type MerchantModelPricing = {
+    cache_read?: string | null;
+    cache_write_1h?: string | null;
+    cache_write_5m?: string | null;
+    expression?: string | null;
+    input?: string | null;
+    mode: 'platform' | 'per_token' | 'per_call' | 'free' | 'expression';
+    output?: string | null;
+    request_price?: string | null;
+};
 export type MerchantModelRatio = {
     model: string;
+    pricing?: MerchantModelPricing | null;
     ratio_micros?: number | null;
 };
 export type MerchantModelWrite = {
     context_window?: number | null;
     max_output_tokens?: number | null;
     model: string;
+    pricing?: MerchantModelPricing | null;
     ratio_micros?: number | null;
     supports_streaming: boolean;
     supports_tools: boolean;
@@ -2173,6 +2186,7 @@ export type MerchantOwnedService = {
     description: string;
     draft: MerchantRevision | null;
     id: number;
+    listed: boolean;
     maintenance: Array<MerchantMaintenance>;
     merchant_id: number;
     name: string;
@@ -2420,6 +2434,9 @@ export type MerchantRouteWriteRequest = {
     pool_id: number;
     strategy: 'price_first' | 'stable_first' | 'ordered' | 'round_robin' | 'weighted';
 };
+export type MerchantServiceListingRequest = {
+    listed: boolean;
+};
 export type MerchantServicePrice = {
     created_at: number;
     default_ratio_micros: number;
@@ -2486,6 +2503,7 @@ export type MerchantServiceWriteRequest = {
     concurrency?: number | null;
     default_ratio_micros: number;
     description: string;
+    listed?: boolean;
     models: Array<MerchantModelWrite>;
     name: string;
     pool_id: number;
@@ -4264,6 +4282,7 @@ export type MerchantServiceWriteRequestWritable = {
     concurrency?: number | null;
     default_ratio_micros: number;
     description: string;
+    listed?: boolean;
     models: Array<MerchantModelWrite>;
     name: string;
     pool_id: number;
@@ -6716,6 +6735,39 @@ export type CreateMerchantServiceResponses = {
     201: MerchantOwnedService;
 };
 export type CreateMerchantServiceResponse = CreateMerchantServiceResponses[keyof CreateMerchantServiceResponses];
+export type DeleteMerchantServiceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}';
+};
+export type DeleteMerchantServiceErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type DeleteMerchantServiceError = DeleteMerchantServiceErrors[keyof DeleteMerchantServiceErrors];
+export type DeleteMerchantServiceResponses = {
+    204: void;
+};
+export type DeleteMerchantServiceResponse = DeleteMerchantServiceResponses[keyof DeleteMerchantServiceResponses];
 export type GetOwnedMerchantServiceData = {
     body?: never;
     path: {
@@ -6815,6 +6867,39 @@ export type RotateMerchantServiceKeyResponses = {
     200: MerchantOwnedService;
 };
 export type RotateMerchantServiceKeyResponse = RotateMerchantServiceKeyResponses[keyof RotateMerchantServiceKeyResponses];
+export type SetMerchantServiceListingData = {
+    body: MerchantServiceListingRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/merchant/services/{id}/listing';
+};
+export type SetMerchantServiceListingErrors = {
+    400: {
+        [key: string]: unknown;
+    };
+    401: {
+        [key: string]: unknown;
+    };
+    403: {
+        [key: string]: unknown;
+    };
+    404: {
+        [key: string]: unknown;
+    };
+    409: {
+        [key: string]: unknown;
+    };
+    503: {
+        [key: string]: unknown;
+    };
+};
+export type SetMerchantServiceListingError = SetMerchantServiceListingErrors[keyof SetMerchantServiceListingErrors];
+export type SetMerchantServiceListingResponses = {
+    200: MerchantOwnedService;
+};
+export type SetMerchantServiceListingResponse = SetMerchantServiceListingResponses[keyof SetMerchantServiceListingResponses];
 export type PauseMerchantServiceData = {
     body: MerchantPauseRequest;
     path: {

@@ -5,7 +5,7 @@ import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { merchantPoolErrorCode } from './merchant-pool-error'
 import { useMerchantAction, useMerchantPools, useMerchantProfiles, useMerchantServices, useMerchantWithdrawals } from './merchant-pool-api'
 import { MerchantAdminReview, type MerchantReviewTarget } from './merchant-admin-review'
-import { MerchantAdminDelete, type MerchantDeleteTarget } from './merchant-admin-delete'
+import { MerchantDeleteDialog, type MerchantDeleteTarget } from './merchant-admin-delete'
 import { MerchantAdminFinance } from './merchant-admin-finance'
 import { MerchantPoolAdminEditor } from './merchant-pool-admin-editor'
 import { MerchantCommissionSettings, MerchantSettlementReversal, MerchantTermsEditor } from './merchant-commission-settings'
@@ -68,6 +68,6 @@ export function MerchantAdminPage() {
     {termsMerchant !== undefined && termsPools.data ? <MerchantTermsEditor merchantId={termsMerchant} pools={termsPools.data.items} onClose={() => setTermsMerchant(undefined)} /> : null}
     {reversalOpen ? <MerchantSettlementReversal onClose={() => setReversalOpen(false)} /> : null}
     {review ? <MerchantAdminReview key={`${review.kind}-${review.item.id}`} target={review} onClose={() => setReview(undefined)} /> : null}
-    {deleting ? <MerchantAdminDelete key={`${deleting.kind}-${deleting.item.id}`} target={deleting} onClose={() => setDeleting(undefined)} /> : null}
+    {deleting ? <MerchantDeleteDialog key={`${deleting.kind}-${deleting.item.id}`} target={deleting} onClose={() => setDeleting(undefined)} /> : null}
   </div>
 }

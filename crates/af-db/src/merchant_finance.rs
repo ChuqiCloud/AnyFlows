@@ -1364,6 +1364,9 @@ pub(crate) async fn reserve_merchant_billing(
             .from(Alias::new(table))
             .and_where(Expr::col(Alias::new("id")).eq(id))
             .to_owned();
+        if table == "merchant_services" {
+            query.column(Alias::new("listed"));
+        }
         if tx.get_database_backend() != sea_orm::DbBackend::Sqlite {
             query.lock(LockType::Update);
         }
@@ -1376,6 +1379,9 @@ pub(crate) async fn reserve_merchant_billing(
             .map_err(quota_error)?
             .is_some()
         {
+            return Err(QuotaRepositoryError::Conflict);
+        }
+        if table == "merchant_services" && !get::<bool>(&row, "listed").map_err(quota_error)? {
             return Err(QuotaRepositoryError::Conflict);
         }
     }

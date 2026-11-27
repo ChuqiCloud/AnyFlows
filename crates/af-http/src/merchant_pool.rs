@@ -7,7 +7,8 @@ use af_admin::{
 };
 use af_domain::{
     MerchantApplication, MerchantListQuery, MerchantPoolError, MerchantPoolSettings,
-    MerchantPoolTerms, MerchantPoolWrite, MerchantReview, MerchantServiceWrite,
+    MerchantPoolTerms, MerchantPoolWrite, MerchantReview, MerchantServiceListingWrite,
+    MerchantServiceWrite,
 };
 use axum::{
     Json, Router,
@@ -59,7 +60,9 @@ pub fn build_merchant_pool_router(
         )
         .route(
             "/api/merchant/services/{id}",
-            get(owned_service).put(update_service),
+            get(owned_service)
+                .put(update_service)
+                .delete(delete_service),
         )
         .route(
             "/api/merchant/services/{id}/submit",
@@ -72,6 +75,10 @@ pub fn build_merchant_pool_router(
         .route(
             "/api/merchant/services/{id}/pause",
             axum::routing::post(pause),
+        )
+        .route(
+            "/api/merchant/services/{id}/listing",
+            axum::routing::put(set_listing),
         )
         .route(
             "/api/merchant/services/{id}/key",
@@ -377,6 +384,28 @@ async fn pause(
             .pause_service(auth.principal(), id(service)?, body(request)?.paused)
             .await?,
     ))
+}
+async fn set_listing(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(service): Path<i64>,
+    request: Result<Json<MerchantServiceListingWrite>, JsonRejection>,
+) -> Result<Response, MerchantHttpError> {
+    Ok(no_store_json(
+        s.service
+            .set_service_listing(auth.principal(), id(service)?, body(request)?.listed)
+            .await?,
+    ))
+}
+async fn delete_service(
+    State(s): State<MerchantHttpState>,
+    Extension(auth): Extension<SessionAuthentication>,
+    Path(service): Path<i64>,
+) -> Result<Response, MerchantHttpError> {
+    s.service
+        .delete_service(auth.principal(), id(service)?)
+        .await?;
+    Ok(no_store_empty(StatusCode::NO_CONTENT))
 }
 async fn rotate_key(
     State(s): State<MerchantHttpState>,
