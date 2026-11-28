@@ -309,7 +309,7 @@ try {
         break
       }
       case '/api/admin/software':
-        data = { edition: 'community', version: '0.3.0-beta.12', core_version: '0.3.0-beta.12', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.12', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
+        data = { edition: 'community', version: '0.3.0-beta.13', core_version: '0.3.0-beta.13', target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-navigation', launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.13', update_phase: 'idle', check_enabled: true, install_enabled: true, restart_required: false, update_available: false }
         break
       default:
         errors.push(`Unexpected API: ${path} (${role})`)
@@ -647,8 +647,9 @@ try {
   await page.getByRole('button', { name: label('emailSettings.templates.preview'), exact: true }).click()
   const previewFrame = page.locator(`iframe[title="${label('emailSettings.templates.preview')}"]`)
   assert.equal(await previewFrame.getAttribute('sandbox'), '')
-  const preview = previewFrame.contentFrame()
-  await preview.getByText('123456', { exact: true }).waitFor()
+  const previewHtml = await previewFrame.getAttribute('srcdoc')
+  assert.ok(previewHtml?.includes('<p>123456'), 'The preview substitutes a sample verification code')
+  assert.equal(previewHtml?.includes('{{code}}'), false, 'The preview does not leave template variables unresolved')
   await page.getByRole('button', { name: label('emailSettings.actions.save'), exact: true }).click()
   await page.getByText(label('emailSettings.state.saved'), { exact: true }).waitFor()
   assert.deepEqual(emailSettingsWrites, [{ registration: '<p>{{code}}' }])

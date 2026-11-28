@@ -971,10 +971,15 @@ async fn total_timeout_covers_both_rounds_and_retains_first_round_usage() {
     Mock::given(method("POST"))
         .respond_with(move |_request: &Request| {
             let round = count.fetch_add(1, Ordering::SeqCst);
+            let delay = if round == 0 {
+                Duration::ZERO
+            } else {
+                Duration::from_secs(5)
+            };
             ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")
                 .set_body_bytes(sse(Protocol::OpenAiChat, round == 0, round != 0))
-                .set_delay(Duration::from_millis(180))
+                .set_delay(delay)
         })
         .mount(&server)
         .await;
@@ -991,7 +996,7 @@ async fn total_timeout_covers_both_rounds_and_retains_first_round_usage() {
         Protocol::OpenAiChat,
         tools(),
         TokenCount::new(4096).unwrap(),
-        Duration::from_millis(300),
+        Duration::from_secs(3),
     )
     .unwrap();
     let (result, report) =
