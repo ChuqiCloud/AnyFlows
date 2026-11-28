@@ -1,3 +1,26 @@
+## 0.3.0-beta.13 - 2026-11-28
+
+本版本基于 `v0.3.0-beta.12`，完善渠道健康恢复、商户服务计费和共享池市场体验。
+
+### 新增
+
+- 商户可上架、下架或删除服务，并为模型设置按 Token、按次、免费或表达式定价。下架服务不再进入公开目录和路由候选，历史与账务记录继续保留。([#152](https://github.com/ChuqiCloud/AnyFlows/pull/152))
+
+### 改进
+
+- 渠道健康评分支持渠道级开关和手动恢复。单 Key 渠道对网络错误与 5xx 采用更宽松的熔断阈值；多 Key 渠道按凭据和模型隔离，并在多节点间限制恢复试探。([#150](https://github.com/ChuqiCloud/AnyFlows/pull/150))
+- 插件完成安装或授权部署后再进入配置，配置表单仅展示插件实际使用的字段。([#150](https://github.com/ChuqiCloud/AnyFlows/pull/150))
+- 调用日志在模型名和协议旁直接显示原始思考强度。([#151](https://github.com/ChuqiCloud/AnyFlows/pull/151))
+- 共享池增加顶栏入口，并调整市场页标题、厂商筛选和服务筛选布局。([#152](https://github.com/ChuqiCloud/AnyFlows/pull/152))
+
+### 升级与兼容
+
+- 本版本新增商户服务上架状态数据库迁移。升级前备份数据库、配置和计费 WAL，首次启动时自动执行迁移。
+
+本版本为社区版 Beta 预发布。
+
+完整变更：[v0.3.0-beta.12...v0.3.0-beta.13](https://github.com/ChuqiCloud/AnyFlows/compare/v0.3.0-beta.12...v0.3.0-beta.13)。
+
 ## 0.3.0-beta.12 - 2026-11-24
 
 本版本基于 `v0.3.0-beta.11`，完善插件运行链路、上游 Provider 适配、模型定价和管理页面。

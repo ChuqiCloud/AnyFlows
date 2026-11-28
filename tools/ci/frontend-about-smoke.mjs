@@ -59,10 +59,10 @@ const latest = {
   package_url: `https://example.com/download/${packageName}`,
 }
 const initial = {
-  edition: 'community', version: '0.3.0-beta.12', core_version: '0.3.0-beta.12',
+  edition: 'community', version: '0.3.0-beta.13', core_version: '0.3.0-beta.13',
   commit: 'a'.repeat(40), build_time: '2026-10-25T00:00:00Z',
   target: 'x86_64-unknown-linux-gnu', deployment: 'binary', node_id: 'ci-about-node',
-  launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.12',
+  launch_mode: 'launcher', launcher_protocol: 1, launcher_version: '0.3.0-beta.13',
   update_phase: 'idle', check_enabled: true, install_enabled: true,
   restart_required: false, update_available: false,
 }
